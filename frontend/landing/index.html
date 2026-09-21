@@ -1,0 +1,1563 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#070B14">
+<meta name="description" content="静席 JingXi — 图书馆座位预约系统。实时查看每层座位占用，三秒锁定你的位置。">
+<title>静席 JingXi · 图书馆座位预约</title>
+<style>
+/* ============================================================
+   静席 JingXi — 设计令牌 (Design Tokens)
+   ============================================================ */
+:root{
+  /* 色板：深夜读场 —— 深靛蓝底 + 青蓝品牌色 + 琥珀暖光（台灯意象） */
+  --bg-0:#070B14;
+  --bg-1:#0C1220;
+  --bg-2:#121A2B;
+
+  --glass:rgba(255,255,255,.055);
+  --glass-strong:rgba(255,255,255,.088);
+  --stroke:rgba(255,255,255,.10);
+  --stroke-strong:rgba(255,255,255,.20);
+
+  --text-1:#F2F5FA;
+  --text-2:rgba(242,245,250,.70);
+  --text-3:rgba(242,245,250,.44);
+
+  --brand:#4F8CFF;
+  --brand-2:#7BA9FF;
+  --brand-glow:rgba(79,140,255,.45);
+  --amber:#F5B461;
+
+  /* 座位状态语义色（与产品端一致，兼顾色盲：另附图标形状标识） */
+  --st-free:#34D399;
+  --st-booked:#FBBF24;
+  --st-busy:#F87171;
+  --st-off:#64748B;
+
+  /* 字体 */
+  --font-sans:"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei","Noto Sans SC",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-num:"SF Mono",ui-monospace,"JetBrains Mono",Consolas,monospace;
+
+  /* 间距节奏：8px 基准 */
+  --sp-1:8px;  --sp-2:16px; --sp-3:24px; --sp-4:32px;
+  --sp-5:48px; --sp-6:64px; --sp-7:96px; --sp-8:128px;
+
+  /* 圆角 */
+  --r-sm:10px; --r-md:16px; --r-lg:24px; --r-xl:32px; --r-full:999px;
+
+  /* 阴影层级 */
+  --sh-1:0 2px 8px rgba(0,0,0,.28);
+  --sh-2:0 12px 32px rgba(0,0,0,.36);
+  --sh-3:0 28px 64px rgba(0,0,0,.46);
+
+  /* 缓动 */
+  --ease-out:cubic-bezier(.22,.68,.36,1);
+  --ease-in-out:cubic-bezier(.65,.05,.36,1);
+  --dur-1:.18s; --dur-2:.32s; --dur-3:.6s;
+
+  /* 布局 */
+  --wrap:1200px;
+  --nav-h:68px;
+}
+
+/* ============================================================
+   基础重置
+   ============================================================ */
+*,*::before,*::after{box-sizing:border-box;}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;}
+body{
+  margin:0;
+  background:var(--bg-0);
+  color:var(--text-1);
+  font-family:var(--font-sans);
+  font-size:clamp(.95rem,.35vw + .86rem,1.0625rem);
+  line-height:1.65;
+  letter-spacing:.01em;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  overflow-x:hidden;
+}
+img,svg{display:block;max-width:100%;}
+a{color:inherit;text-decoration:none;}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;}
+h1,h2,h3,h4{margin:0;font-weight:700;line-height:1.18;letter-spacing:-.022em;}
+p{margin:0;}
+ul{margin:0;padding:0;list-style:none;}
+
+/* 键盘可达性：只在键盘导航时显示焦点环 */
+:focus-visible{
+  outline:2px solid var(--brand-2);
+  outline-offset:3px;
+  border-radius:var(--r-sm);
+}
+
+/* 尊重系统「减少动态效果」偏好 */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    animation-duration:.01ms !important;
+    transition-duration:.01ms !important;
+    scroll-behavior:auto !important;
+  }
+}
+
+/* 屏幕阅读器专用 */
+.sr-only{
+  position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;
+}
+
+/* ============================================================
+   背景：多层光晕 + 细网格，营造深夜阅览室的纵深
+   ============================================================ */
+.backdrop{
+  position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(1100px 620px at 78% -6%,rgba(79,140,255,.20),transparent 62%),
+    radial-gradient(880px 520px at 12% 8%,rgba(245,180,97,.10),transparent 60%),
+    radial-gradient(900px 700px at 50% 108%,rgba(79,140,255,.10),transparent 65%),
+    linear-gradient(180deg,var(--bg-0) 0%,var(--bg-1) 48%,var(--bg-0) 100%);
+}
+.backdrop::after{
+  content:"";position:absolute;inset:0;opacity:.35;
+  background-image:
+    linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);
+  background-size:64px 64px;
+  mask-image:radial-gradient(circle at 50% 22%,#000 0%,transparent 78%);
+  -webkit-mask-image:radial-gradient(circle at 50% 22%,#000 0%,transparent 78%);
+}
+
+/* ============================================================
+   首屏加载遮罩
+   ============================================================ */
+.boot{
+  position:fixed;inset:0;z-index:200;
+  display:grid;place-items:center;
+  background:var(--bg-0);
+  transition:opacity var(--dur-3) var(--ease-out),visibility var(--dur-3);
+}
+.boot.is-done{opacity:0;visibility:hidden;}
+.boot__mark{
+  display:flex;flex-direction:column;align-items:center;gap:var(--sp-3);
+}
+.boot__glyph{
+  width:52px;height:52px;border-radius:14px;
+  background:linear-gradient(140deg,var(--brand),#2E6BE6);
+  box-shadow:0 0 0 1px rgba(255,255,255,.14),0 16px 40px var(--brand-glow);
+  display:grid;place-items:center;
+  animation:bootPulse 1.5s var(--ease-in-out) infinite;
+}
+.boot__glyph svg{width:26px;height:26px;}
+.boot__label{
+  font-size:.8125rem;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--text-3);
+}
+@keyframes bootPulse{
+  0%,100%{transform:translateY(0) scale(1);opacity:1;}
+  50%{transform:translateY(-6px) scale(1.04);opacity:.82;}
+}
+
+/* ============================================================
+   通用容器与区块
+   ============================================================ */
+.wrap{width:100%;max-width:var(--wrap);margin-inline:auto;padding-inline:var(--sp-3);}
+.section{padding-block:clamp(72px,9vw,var(--sp-8));}
+.section--tight{padding-block:clamp(56px,6vw,var(--sp-7));}
+
+.eyebrow{
+  display:inline-flex;align-items:center;gap:var(--sp-1);
+  font-size:.75rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--brand-2);
+  padding:6px 14px;border-radius:var(--r-full);
+  background:rgba(79,140,255,.10);
+  border:1px solid rgba(79,140,255,.24);
+}
+.eyebrow__dot{
+  width:6px;height:6px;border-radius:50%;background:var(--st-free);
+  box-shadow:0 0 0 3px rgba(52,211,153,.20);
+  animation:livePulse 2s var(--ease-in-out) infinite;
+}
+@keyframes livePulse{
+  0%,100%{opacity:1;transform:scale(1);}
+  50%{opacity:.5;transform:scale(.82);}
+}
+
+.h-sec{font-size:clamp(1.625rem,3.2vw,2.5rem);}
+.lede{color:var(--text-2);max-width:60ch;}
+.section__head{display:flex;flex-direction:column;gap:var(--sp-2);margin-bottom:var(--sp-5);}
+.section__head--center{align-items:center;text-align:center;}
+.section__head--center .lede{text-align:center;}
+
+/* ============================================================
+   毛玻璃卡片基元
+   ============================================================ */
+.glass{
+  background:var(--glass);
+  border:1px solid var(--stroke);
+  border-radius:var(--r-lg);
+  backdrop-filter:blur(22px) saturate(150%);
+  -webkit-backdrop-filter:blur(22px) saturate(150%);
+}
+
+/* ============================================================
+   导航：滚动时加深，移动端收纳为抽屉
+   ============================================================ */
+.nav{
+  position:fixed;inset:0 0 auto;z-index:100;
+  height:var(--nav-h);
+  display:flex;align-items:center;
+  transition:background var(--dur-2) var(--ease-out),
+             border-color var(--dur-2) var(--ease-out),
+             backdrop-filter var(--dur-2) var(--ease-out);
+  border-bottom:1px solid transparent;
+}
+.nav.is-stuck{
+  background:rgba(7,11,20,.72);
+  border-bottom-color:var(--stroke);
+  backdrop-filter:blur(20px) saturate(160%);
+  -webkit-backdrop-filter:blur(20px) saturate(160%);
+}
+.nav__inner{
+  width:100%;max-width:var(--wrap);margin-inline:auto;
+  padding-inline:var(--sp-3);
+  display:flex;align-items:center;gap:var(--sp-4);
+}
+.brand{display:flex;align-items:center;gap:10px;flex-shrink:0;}
+.brand__glyph{
+  width:34px;height:34px;border-radius:10px;
+  background:linear-gradient(140deg,var(--brand),#2E6BE6);
+  box-shadow:0 0 0 1px rgba(255,255,255,.14),0 8px 22px var(--brand-glow);
+  display:grid;place-items:center;
+}
+.brand__glyph svg{width:18px;height:18px;}
+.brand__text{display:flex;flex-direction:column;line-height:1.1;}
+.brand__cn{font-weight:700;font-size:1.0625rem;letter-spacing:.06em;}
+.brand__en{
+  font-family:var(--font-num);font-size:.625rem;letter-spacing:.22em;
+  color:var(--text-3);text-transform:uppercase;
+}
+
+.nav__links{display:flex;align-items:center;gap:var(--sp-1);margin-left:auto;}
+.nav__link{
+  position:relative;
+  padding:8px 14px;border-radius:var(--r-full);
+  font-size:.9375rem;color:var(--text-2);
+  transition:color var(--dur-1) var(--ease-out),background var(--dur-1) var(--ease-out);
+}
+.nav__link::after{
+  content:"";position:absolute;left:50%;bottom:3px;translate:-50% 0;
+  width:0;height:2px;border-radius:2px;
+  background:linear-gradient(90deg,var(--brand),var(--brand-2));
+  transition:width var(--dur-2) var(--ease-out);
+}
+.nav__link:hover{color:var(--text-1);background:rgba(255,255,255,.05);}
+.nav__link:hover::after{width:20px;}
+.nav__link.is-active{color:var(--text-1);}
+.nav__link.is-active::after{width:20px;}
+
+.nav__actions{display:flex;align-items:center;gap:var(--sp-1);}
+
+.nav__toggle{
+  display:none;width:40px;height:40px;border-radius:12px;
+  border:1px solid var(--stroke);background:var(--glass);
+  place-items:center;margin-left:auto;
+}
+.nav__toggle span{
+  display:block;width:16px;height:1.5px;border-radius:2px;background:var(--text-1);
+  transition:transform var(--dur-2) var(--ease-out),opacity var(--dur-1);
+}
+.nav__toggle span + span{margin-top:4px;}
+.nav__toggle[aria-expanded="true"] span:nth-child(1){transform:translateY(5.5px) rotate(45deg);}
+.nav__toggle[aria-expanded="true"] span:nth-child(2){opacity:0;}
+.nav__toggle[aria-expanded="true"] span:nth-child(3){transform:translateY(-5.5px) rotate(-45deg);}
+
+/* ============================================================
+   按钮
+   ============================================================ */
+.btn{
+  position:relative;overflow:hidden;
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  padding:11px 22px;border-radius:var(--r-full);
+  font-size:.9375rem;font-weight:600;letter-spacing:.01em;
+  white-space:nowrap;
+  transition:transform var(--dur-2) var(--ease-out),
+             box-shadow var(--dur-2) var(--ease-out),
+             background var(--dur-2) var(--ease-out),
+             border-color var(--dur-2) var(--ease-out);
+}
+.btn--primary{
+  background:linear-gradient(135deg,var(--brand),#2E6BE6);
+  color:#fff;
+  box-shadow:0 10px 26px var(--brand-glow),inset 0 1px 0 rgba(255,255,255,.22);
+}
+.btn--primary:hover{transform:translateY(-2px);box-shadow:0 16px 38px var(--brand-glow),inset 0 1px 0 rgba(255,255,255,.28);}
+.btn--primary:active{transform:translateY(0) scale(.985);}
+/* 掠光：悬停时一道高光划过，暗示可点击 */
+.btn--primary::after{
+  content:"";position:absolute;inset:0;
+  background:linear-gradient(105deg,transparent 32%,rgba(255,255,255,.42) 50%,transparent 68%);
+  translate:-120% 0;
+  transition:translate var(--dur-3) var(--ease-out);
+}
+.btn--primary:hover::after{translate:120% 0;}
+
+.btn--ghost{
+  background:var(--glass);color:var(--text-1);
+  border:1px solid var(--stroke);
+  backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
+}
+.btn--ghost:hover{background:var(--glass-strong);border-color:var(--stroke-strong);transform:translateY(-2px);}
+.btn--quiet{padding:9px 16px;color:var(--text-2);}
+.btn--quiet:hover{color:var(--text-1);background:rgba(255,255,255,.06);}
+.btn--lg{padding:14px 30px;font-size:1rem;}
+.btn--block{width:100%;}
+
+/* 加载态：文案隐去，旋转指示器进入 */
+.btn[data-loading="true"]{pointer-events:none;color:transparent;}
+.btn[data-loading="true"]::before{
+  content:"";position:absolute;width:16px;height:16px;border-radius:50%;
+  border:2px solid rgba(255,255,255,.34);border-top-color:#fff;
+  animation:spin .7s linear infinite;
+}
+@keyframes spin{to{rotate:360deg;}}
+
+/* ============================================================
+   Hero
+   ============================================================ */
+.hero{padding-top:calc(var(--nav-h) + clamp(48px,7vw,96px));padding-bottom:clamp(64px,8vw,110px);}
+.hero__grid{
+  display:grid;gap:clamp(40px,5vw,72px);
+  grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);
+  align-items:center;
+}
+.hero__copy{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-3);}
+.hero__title{
+  font-size:clamp(2.25rem,5.4vw,4rem);
+  letter-spacing:-.035em;line-height:1.06;
+}
+.hero__title em{
+  font-style:normal;
+  background:linear-gradient(120deg,var(--brand-2) 0%,var(--amber) 92%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.hero__sub{font-size:clamp(1rem,.5vw + .92rem,1.1875rem);color:var(--text-2);max-width:46ch;}
+.hero__cta{display:flex;flex-wrap:wrap;gap:var(--sp-2);padding-top:var(--sp-1);}
+.hero__meta{
+  display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-3);
+  padding-top:var(--sp-3);border-top:1px solid var(--stroke);width:100%;
+}
+.hero__meta-item{display:flex;flex-direction:column;gap:2px;}
+.hero__meta-num{font-family:var(--font-num);font-size:1.25rem;font-weight:700;}
+.hero__meta-lbl{font-size:.75rem;color:var(--text-3);letter-spacing:.06em;}
+
+/* Hero 右侧：座位面板 */
+.panel{padding:var(--sp-3);box-shadow:var(--sh-3);}
+.panel__bar{
+  display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);
+  padding-bottom:var(--sp-2);margin-bottom:var(--sp-2);
+  border-bottom:1px solid var(--stroke);
+}
+.panel__title{font-size:.875rem;font-weight:600;}
+.panel__floor{
+  display:flex;gap:4px;padding:3px;border-radius:var(--r-full);
+  background:rgba(255,255,255,.05);
+}
+.panel__floor button{
+  padding:5px 12px;border-radius:var(--r-full);
+  font-size:.75rem;color:var(--text-3);
+  transition:background var(--dur-1),color var(--dur-1);
+}
+.panel__floor button:hover{color:var(--text-1);}
+.panel__floor button[aria-pressed="true"]{
+  background:rgba(79,140,255,.20);color:var(--brand-2);font-weight:600;
+}
+.panel__stats{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-1);
+  margin-top:var(--sp-2);padding-top:var(--sp-2);
+  border-top:1px solid var(--stroke);
+}
+.panel__stat{display:flex;flex-direction:column;gap:1px;}
+.panel__stat b{font-family:var(--font-num);font-size:1.0625rem;}
+.panel__stat span{font-size:.6875rem;color:var(--text-3);}
+
+/* ============================================================
+   座位网格（核心可视化）
+   ============================================================ */
+.seatmap{display:flex;flex-direction:column;gap:8px;}
+.seatmap__ruler{
+  display:grid;gap:8px;padding-left:22px;
+  font-family:var(--font-num);font-size:.625rem;color:var(--text-3);
+  text-align:center;
+}
+.seatmap__row{display:grid;gap:8px;grid-template-columns:14px 1fr;}
+.seatmap__rowno{
+  display:grid;place-items:center;
+  font-family:var(--font-num);font-size:.625rem;color:var(--text-3);
+}
+.seatmap__cells{display:grid;gap:8px;}
+
+.seat{
+  position:relative;aspect-ratio:1;
+  border-radius:9px;
+  border:1px solid transparent;
+  display:grid;place-items:center;
+  font-family:var(--font-num);font-size:.5625rem;font-weight:600;
+  transition:transform var(--dur-1) var(--ease-out),
+             box-shadow var(--dur-1) var(--ease-out),
+             background var(--dur-1) var(--ease-out),
+             border-color var(--dur-1) var(--ease-out);
+}
+.seat__no{opacity:.9;}
+/* 状态一：空闲 —— 可交互的主体 */
+.seat--free{
+  background:rgba(52,211,153,.16);
+  border-color:rgba(52,211,153,.40);
+  color:#A7F3D0;
+  cursor:pointer;
+}
+.seat--free:hover{
+  transform:translateY(-3px) scale(1.09);
+  background:rgba(52,211,153,.28);
+  box-shadow:0 8px 20px rgba(52,211,153,.30);
+  z-index:2;
+}
+/* 状态二：已预约 —— 右上角单点标记 */
+.seat--booked{
+  background:rgba(251,191,36,.14);
+  border-color:rgba(251,191,36,.34);
+  color:#FDE68A;cursor:not-allowed;
+}
+.seat--booked::after{
+  content:"";position:absolute;top:4px;right:4px;
+  width:5px;height:5px;border-radius:50%;background:var(--st-booked);
+}
+/* 状态三：使用中 —— 右上角双点标记（形状区分，不依赖颜色） */
+.seat--busy{
+  background:rgba(248,113,113,.14);
+  border-color:rgba(248,113,113,.34);
+  color:#FECACA;cursor:not-allowed;
+}
+.seat--busy::after{
+  content:"";position:absolute;top:4px;right:4px;
+  width:5px;height:5px;border-radius:50%;background:var(--st-busy);
+  box-shadow:7px 0 0 var(--st-busy);
+}
+/* 状态四：维护中 —— 斜纹 + 扳手意象 */
+.seat--off{
+  background:rgba(100,116,139,.16);
+  border-color:rgba(100,116,139,.30);
+  color:var(--text-3);cursor:not-allowed;
+}
+.seat--off::after{
+  content:"";position:absolute;inset:0;border-radius:8px;
+  background:repeating-linear-gradient(45deg,transparent 0 4px,rgba(255,255,255,.09) 4px 8px);
+}
+/* 被选中 —— 高亮环 + 呼吸 */
+.seat.is-picked{
+  background:linear-gradient(135deg,var(--brand),#2E6BE6);
+  border-color:rgba(255,255,255,.5);
+  color:#fff;
+  transform:translateY(-3px) scale(1.09);
+  box-shadow:0 0 0 3px rgba(79,140,255,.28),0 12px 26px var(--brand-glow);
+  animation:pickBreath 1.8s var(--ease-in-out) infinite;
+}
+@keyframes pickBreath{
+  0%,100%{box-shadow:0 0 0 3px rgba(79,140,255,.28),0 12px 26px var(--brand-glow);}
+  50%{box-shadow:0 0 0 6px rgba(79,140,255,.14),0 12px 26px var(--brand-glow);}
+}
+
+/* 骨架屏：数据到达前占位 */
+.seat--skeleton{
+  background:rgba(255,255,255,.05);
+  border-color:transparent;
+  overflow:hidden;
+}
+.seat--skeleton::after{
+  content:"";position:absolute;inset:0;
+  background:linear-gradient(100deg,transparent 20%,rgba(255,255,255,.14) 50%,transparent 80%);
+  translate:-100% 0;
+  animation:shimmer 1.4s var(--ease-in-out) infinite;
+}
+@keyframes shimmer{to{translate:100% 0;}}
+
+/* 图例 */
+.legend{
+  display:flex;flex-wrap:wrap;gap:var(--sp-2) var(--sp-3);
+  margin-top:var(--sp-2);padding-top:var(--sp-2);
+  border-top:1px solid var(--stroke);
+}
+.legend__item{display:flex;align-items:center;gap:7px;font-size:.75rem;color:var(--text-2);}
+.legend__swatch{
+  width:11px;height:11px;border-radius:3px;border:1px solid transparent;flex-shrink:0;
+}
+.legend__swatch--free{background:rgba(52,211,153,.5);border-color:rgba(52,211,153,.75);}
+.legend__swatch--booked{background:rgba(251,191,36,.5);border-color:rgba(251,191,36,.75);}
+.legend__swatch--busy{background:rgba(248,113,113,.5);border-color:rgba(248,113,113,.75);}
+.legend__swatch--off{background:rgba(100,116,139,.5);border-color:rgba(100,116,139,.75);}
+
+/* 预约抽屉提示条：选中后浮现 */
+.hintbar{
+  display:grid;grid-template-columns:1fr auto;align-items:center;gap:var(--sp-2);
+  margin-top:var(--sp-2);padding:11px 14px;
+  border-radius:var(--r-md);
+  background:rgba(79,140,255,.12);
+  border:1px solid rgba(79,140,255,.28);
+  font-size:.8125rem;
+  opacity:0;translate:0 8px;
+  transition:opacity var(--dur-2) var(--ease-out),translate var(--dur-2) var(--ease-out);
+}
+.hintbar.is-on{opacity:1;translate:0 0;}
+.hintbar strong{color:var(--brand-2);font-family:var(--font-num);}
+
+/* ============================================================
+   功能卡片
+   ============================================================ */
+.grid-3{display:grid;gap:var(--sp-3);grid-template-columns:repeat(3,minmax(0,1fr));}
+.grid-4{display:grid;gap:var(--sp-3);grid-template-columns:repeat(4,minmax(0,1fr));}
+.grid-2{display:grid;gap:var(--sp-3);grid-template-columns:repeat(2,minmax(0,1fr));}
+
+.card{
+  position:relative;overflow:hidden;
+  padding:var(--sp-4);
+  display:flex;flex-direction:column;gap:var(--sp-2);
+  transition:transform var(--dur-2) var(--ease-out),
+             border-color var(--dur-2) var(--ease-out),
+             box-shadow var(--dur-2) var(--ease-out);
+}
+.card:hover{
+  transform:translateY(-5px);
+  border-color:var(--stroke-strong);
+  box-shadow:var(--sh-2);
+}
+/* 悬停时左上角亮起一道光晕，形成焦点引导 */
+.card::before{
+  content:"";position:absolute;inset:-1px;border-radius:inherit;
+  background:radial-gradient(420px 180px at 18% 0%,rgba(79,140,255,.16),transparent 70%);
+  opacity:0;transition:opacity var(--dur-2) var(--ease-out);pointer-events:none;
+}
+.card:hover::before{opacity:1;}
+.card__icon{
+  width:42px;height:42px;border-radius:12px;
+  display:grid;place-items:center;
+  background:rgba(79,140,255,.14);
+  border:1px solid rgba(79,140,255,.26);
+  color:var(--brand-2);
+}
+.card__icon svg{width:20px;height:20px;}
+.card__title{font-size:1.0625rem;font-weight:600;}
+.card__text{font-size:.875rem;color:var(--text-2);}
+.card__tag{
+  align-self:flex-start;margin-top:auto;
+  font-family:var(--font-num);font-size:.6875rem;letter-spacing:.1em;
+  color:var(--text-3);
+}
+
+/* ============================================================
+   流程步骤
+   ============================================================ */
+.steps{display:grid;gap:var(--sp-3);grid-template-columns:repeat(4,minmax(0,1fr));}
+.step{display:flex;flex-direction:column;gap:var(--sp-2);position:relative;}
+.step__no{
+  width:36px;height:36px;border-radius:11px;display:grid;place-items:center;
+  font-family:var(--font-num);font-size:.8125rem;font-weight:700;
+  background:linear-gradient(140deg,rgba(79,140,255,.22),rgba(79,140,255,.08));
+  border:1px solid rgba(79,140,255,.30);color:var(--brand-2);
+}
+/* 步骤之间的连接线（桌面端） */
+.step:not(:last-child)::after{
+  content:"";position:absolute;top:18px;left:48px;right:-14px;height:1px;
+  background:linear-gradient(90deg,rgba(79,140,255,.34),transparent);
+}
+.step__title{font-size:.9375rem;font-weight:600;}
+.step__text{font-size:.8125rem;color:var(--text-2);}
+
+/* ============================================================
+   数据条
+   ============================================================ */
+.stats{
+  display:grid;gap:var(--sp-3);grid-template-columns:repeat(4,minmax(0,1fr));
+  padding:var(--sp-4);
+}
+.stat{display:flex;flex-direction:column;gap:4px;text-align:center;}
+.stat__num{
+  font-family:var(--font-num);
+  font-size:clamp(1.75rem,3.4vw,2.5rem);font-weight:700;letter-spacing:-.02em;
+  background:linear-gradient(140deg,var(--text-1),var(--brand-2));
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.stat__lbl{font-size:.75rem;color:var(--text-3);letter-spacing:.08em;}
+
+/* ============================================================
+   双栏特性（用户端 / 管理端）
+   ============================================================ */
+.split{display:grid;gap:var(--sp-3);grid-template-columns:repeat(2,minmax(0,1fr));}
+.split__col{padding:var(--sp-4);display:flex;flex-direction:column;gap:var(--sp-2);}
+.split__head{display:flex;align-items:center;gap:10px;}
+.split__badge{
+  font-family:var(--font-num);font-size:.625rem;letter-spacing:.12em;text-transform:uppercase;
+  padding:4px 10px;border-radius:var(--r-full);
+  background:rgba(245,180,97,.14);border:1px solid rgba(245,180,97,.3);color:var(--amber);
+}
+.split__badge--blue{
+  background:rgba(79,140,255,.14);border-color:rgba(79,140,255,.3);color:var(--brand-2);
+}
+.split__list{display:flex;flex-direction:column;gap:10px;}
+.split__list li{
+  display:flex;gap:10px;align-items:flex-start;
+  font-size:.875rem;color:var(--text-2);
+}
+.split__list li::before{
+  content:"";flex-shrink:0;margin-top:8px;
+  width:5px;height:5px;border-radius:50%;
+  background:var(--brand-2);box-shadow:0 0 0 3px rgba(79,140,255,.14);
+}
+
+/* ============================================================
+   收尾 CTA
+   ============================================================ */
+.cta{padding:clamp(40px,5vw,64px) var(--sp-4);text-align:center;}
+.cta__inner{display:flex;flex-direction:column;align-items:center;gap:var(--sp-3);}
+.cta__title{font-size:clamp(1.5rem,3vw,2.25rem);}
+.cta__note{
+  font-size:.8125rem;color:var(--text-3);
+  display:flex;flex-wrap:wrap;justify-content:center;gap:var(--sp-2);
+}
+.cta__note code{
+  font-family:var(--font-num);font-size:.75rem;
+  padding:3px 9px;border-radius:7px;
+  background:rgba(255,255,255,.06);border:1px solid var(--stroke);
+  color:var(--text-2);
+}
+
+/* ============================================================
+   页脚
+   ============================================================ */
+.footer{
+  border-top:1px solid var(--stroke);
+  padding-block:var(--sp-5) var(--sp-4);
+  margin-top:var(--sp-5);
+}
+.footer__grid{
+  display:grid;gap:var(--sp-4);
+  grid-template-columns:minmax(0,1.4fr) repeat(3,minmax(0,1fr));
+}
+.footer__title{font-size:.8125rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);margin-bottom:var(--sp-2);}
+.footer__list{display:flex;flex-direction:column;gap:9px;}
+.footer__list a{font-size:.875rem;color:var(--text-2);transition:color var(--dur-1);}
+.footer__list a:hover{color:var(--text-1);}
+.footer__desc{font-size:.875rem;color:var(--text-2);max-width:34ch;margin-top:var(--sp-2);}
+.footer__bottom{
+  display:flex;flex-wrap:wrap;justify-content:space-between;gap:var(--sp-2);
+  margin-top:var(--sp-5);padding-top:var(--sp-3);
+  border-top:1px solid var(--stroke);
+  font-size:.75rem;color:var(--text-3);
+}
+
+/* ============================================================
+   滚动渐入
+   ============================================================ */
+.reveal{
+  opacity:0;translate:0 22px;
+  transition:opacity .72s var(--ease-out),translate .72s var(--ease-out);
+}
+.reveal.is-in{opacity:1;translate:0 0;}
+.reveal[data-delay="1"]{transition-delay:.08s;}
+.reveal[data-delay="2"]{transition-delay:.16s;}
+.reveal[data-delay="3"]{transition-delay:.24s;}
+.reveal[data-delay="4"]{transition-delay:.32s;}
+
+/* 顶部阅读进度条 */
+.progress{
+  position:fixed;top:0;left:0;z-index:110;height:2px;width:0;
+  background:linear-gradient(90deg,var(--brand),var(--amber));
+  box-shadow:0 0 12px var(--brand-glow);
+  transition:width .1s linear;
+}
+
+/* ============================================================
+   响应式
+   ============================================================ */
+@media (max-width:1080px){
+  .hero__grid{grid-template-columns:minmax(0,1fr);gap:var(--sp-5);}
+  .grid-4,.grid-3{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .steps{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .step:not(:last-child)::after{display:none;}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .footer__grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+}
+
+@media (max-width:760px){
+  :root{--nav-h:60px;}
+  .nav__links{
+    position:fixed;top:var(--nav-h);left:0;right:0;
+    flex-direction:column;align-items:stretch;gap:2px;
+    margin:0;padding:var(--sp-2);
+    background:rgba(9,13,23,.94);
+    border-bottom:1px solid var(--stroke);
+    backdrop-filter:blur(22px) saturate(160%);
+    -webkit-backdrop-filter:blur(22px) saturate(160%);
+    /* 收起态：不可见且不可交互 */
+    opacity:0;visibility:hidden;translate:0 -10px;
+    transition:opacity var(--dur-2) var(--ease-out),
+               translate var(--dur-2) var(--ease-out),
+               visibility var(--dur-2);
+  }
+  .nav__links.is-open{opacity:1;visibility:visible;translate:0 0;}
+  .nav__link{padding:12px 14px;font-size:1rem;}
+  .nav__link::after{display:none;}
+  .nav__actions .btn--quiet{display:none;}
+  .nav__toggle{display:grid;}
+
+  .hero__cta{width:100%;}
+  .hero__cta .btn{flex:1 1 auto;}
+  .hero__meta{gap:var(--sp-2) var(--sp-4);}
+
+  .grid-3,.grid-4,.grid-2,.split,.steps,.stats{grid-template-columns:minmax(0,1fr);}
+  .stats{padding:var(--sp-3);}
+  .stat{text-align:left;}
+  .footer__grid{grid-template-columns:minmax(0,1fr);}
+  .panel{padding:var(--sp-2);}
+  .seatmap__cells{gap:6px;}
+  .seatmap__ruler{gap:6px;}
+  /* 移动端座位方块保持足够点击热区（≥40px），容纳不下则横向滚动 */
+  .panel__map{overflow-x:auto;padding-bottom:4px;}
+  .seatmap{min-width:320px;}
+}
+</style>
+</head>
+<body>
+
+<!-- 首屏加载 -->
+<div class="boot" id="boot" aria-hidden="true">
+  <div class="boot__mark">
+    <div class="boot__glyph">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 19V6.5A2.5 2.5 0 0 1 6.5 4H19v15"/><path d="M4 19h15"/><path d="M8 8h7"/>
+      </svg>
+    </div>
+    <span class="boot__label">JingXi</span>
+  </div>
+</div>
+
+<div class="backdrop" aria-hidden="true"></div>
+<div class="progress" id="progress" aria-hidden="true"></div>
+
+<!-- ============ 导航 ============ -->
+<header class="nav" id="nav">
+  <div class="nav__inner">
+    <a class="brand" href="#top" aria-label="静席 首页">
+      <span class="brand__glyph" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 19V6.5A2.5 2.5 0 0 1 6.5 4H19v15"/><path d="M4 19h15"/><path d="M8 8h7"/>
+        </svg>
+      </span>
+      <span class="brand__text">
+        <span class="brand__cn">静席</span>
+        <span class="brand__en">JingXi</span>
+      </span>
+    </a>
+
+    <button class="nav__toggle" id="navToggle" aria-expanded="false" aria-controls="navLinks" aria-label="展开导航菜单">
+      <span></span><span></span><span></span>
+    </button>
+
+    <nav class="nav__links" id="navLinks" aria-label="主导航">
+      <a class="nav__link" href="#live">实时座位</a>
+      <a class="nav__link" href="#features">核心能力</a>
+      <a class="nav__link" href="#flow">使用流程</a>
+      <a class="nav__link" href="#roles">双端设计</a>
+    </nav>
+
+    <div class="nav__actions">
+      <button class="btn btn--quiet" type="button">登录</button>
+      <button class="btn btn--primary" type="button">立即预约</button>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- ============ Hero ============ -->
+  <section class="hero wrap" aria-labelledby="heroTitle">
+    <div class="hero__grid">
+      <div class="hero__copy">
+        <span class="eyebrow reveal">
+          <span class="eyebrow__dot" aria-hidden="true"></span>
+          座位数据实时同步
+        </span>
+
+        <h1 class="hero__title reveal" id="heroTitle" data-delay="1">
+          一座之约，<br><em>从容入席</em>
+        </h1>
+
+        <p class="hero__sub reveal" data-delay="2">
+          打开即见每层座位的真实占用。先看清哪里有空位，再走过去——不必再绕场一圈，也不必再赌运气。
+        </p>
+
+        <div class="hero__cta reveal" data-delay="3">
+          <button class="btn btn--primary btn--lg" type="button" id="heroCta">开始预约</button>
+          <a class="btn btn--ghost btn--lg" href="#live">看实时演示</a>
+        </div>
+
+        <div class="hero__meta reveal" data-delay="4">
+          <div class="hero__meta-item">
+            <span class="hero__meta-num">3</span>
+            <span class="hero__meta-lbl">开放楼层</span>
+          </div>
+          <div class="hero__meta-item">
+            <span class="hero__meta-num">124</span>
+            <span class="hero__meta-lbl">总座位数</span>
+          </div>
+          <div class="hero__meta-item">
+            <span class="hero__meta-num">&lt;30s</span>
+            <span class="hero__meta-lbl">状态刷新延迟</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧：真实座位面板 -->
+      <div class="panel glass reveal" data-delay="2">
+        <div class="panel__bar">
+          <span class="panel__title" id="panelTitle">一楼自习区</span>
+          <div class="panel__floor" role="group" aria-label="切换楼层">
+            <button type="button" data-floor="0" aria-pressed="true">1F</button>
+            <button type="button" data-floor="1" aria-pressed="false">2F</button>
+            <button type="button" data-floor="2" aria-pressed="false">3F</button>
+          </div>
+        </div>
+
+        <div class="panel__map">
+          <div class="seatmap" id="seatmap" aria-live="polite" aria-busy="true">
+            <!-- 由脚本渲染 -->
+          </div>
+        </div>
+
+        <div class="panel__stats">
+          <div class="panel__stat"><b id="statFree">—</b><span>空闲</span></div>
+          <div class="panel__stat"><b id="statBooked">—</b><span>已预约</span></div>
+          <div class="panel__stat"><b id="statBusy">—</b><span>使用中</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 实时座位演示 ============ -->
+  <section class="section wrap" id="live" aria-labelledby="liveTitle">
+    <div class="section__head section__head--center">
+      <span class="eyebrow reveal"><span class="eyebrow__dot" aria-hidden="true"></span>交互演示</span>
+      <h2 class="h-sec reveal" id="liveTitle" data-delay="1">点一个空位，试试看</h2>
+      <p class="lede reveal" data-delay="2">
+        下面是二楼阅览区的实时平面图。绿色为空闲，点选后确认即可预约；橙黄与红色分别是已预约和使用中。
+      </p>
+    </div>
+
+    <div class="grid-2">
+      <div class="card glass reveal">
+        <div class="panel__bar" style="border:0;padding:0;margin:0 0 var(--sp-2);">
+          <span class="panel__title">二楼阅览区 · 14:00–16:00</span>
+          <span class="panel__title" style="color:var(--text-3);font-weight:400;font-family:var(--font-num);" id="clock">—</span>
+        </div>
+
+        <div id="demoMap" aria-live="polite">
+          <!-- 由脚本渲染 -->
+        </div>
+
+        <div class="legend" aria-label="座位状态图例">
+          <span class="legend__item"><i class="legend__swatch legend__swatch--free"></i>空闲</span>
+          <span class="legend__item"><i class="legend__swatch legend__swatch--booked"></i>已预约（单点标记）</span>
+          <span class="legend__item"><i class="legend__swatch legend__swatch--busy"></i>使用中（双点标记）</span>
+          <span class="legend__item"><i class="legend__swatch legend__swatch--off"></i>维护中（斜纹）</span>
+        </div>
+
+        <div class="hintbar" id="hintbar" role="status">
+          <span>已选择 <strong id="pickedNo">—</strong>，点击右侧按钮完成预约</span>
+          <button class="btn btn--primary" type="button" id="confirmBtn" style="padding:7px 16px;font-size:.8125rem;">确认预约</button>
+        </div>
+      </div>
+
+      <div class="card glass reveal" data-delay="1">
+        <span class="card__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+          </svg>
+        </span>
+        <h3 class="card__title">三秒完成一次预约</h3>
+        <p class="card__text">
+          选楼层、点空位、确认——没有多余的步骤。系统会在提交瞬间校验时段冲突，
+          若座位刚被他人抢走，会立即告知并刷新平面图，不会再让你白跑一趟。
+        </p>
+        <ul class="split__list">
+          <li>同一座位同一时段仅允许一人预约</li>
+          <li>可提前预约今天起 7 天内的座位</li>
+          <li>单次最长 4 小时，支持 1–4 小时自选</li>
+        </ul>
+        <span class="card__tag">CONCURRENCY-SAFE</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 核心能力 ============ -->
+  <section class="section--tight wrap" id="features" aria-labelledby="featTitle">
+    <div class="section__head">
+      <span class="eyebrow reveal">核心能力</span>
+      <h2 class="h-sec reveal" id="featTitle" data-delay="1">为「找座」这件事减负</h2>
+    </div>
+
+    <div class="grid-3">
+      <article class="card glass reveal">
+        <span class="card__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
+            <rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
+          </svg>
+        </span>
+        <h3 class="card__title">实时座位平面图</h3>
+        <p class="card__text">按楼层还原真实行列布局，一眼看清哪些位置还空着。每 30 秒自动刷新，也可随时手动刷新。</p>
+        <span class="card__tag">REAL-TIME</span>
+      </article>
+
+      <article class="card glass reveal" data-delay="1">
+        <span class="card__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+          </svg>
+        </span>
+        <h3 class="card__title">一键预约与签到</h3>
+        <p class="card__text">选好座位即刻锁定，到场后在窗口期内一键签到。行程有变，开始前随时取消，不留下任何记录。</p>
+        <span class="card__tag">ONE-TAP</span>
+      </article>
+
+      <article class="card glass reveal" data-delay="2">
+        <span class="card__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>
+          </svg>
+        </span>
+        <h3 class="card__title">运营数据一目了然</h3>
+        <p class="card__text">馆员可查看各时段热度、楼层利用率与签到率，及时发现长期空置或长期紧张的区域。</p>
+        <span class="card__tag">ANALYTICS</span>
+      </article>
+    </div>
+  </section>
+
+  <!-- ============ 使用流程 ============ -->
+  <section class="section--tight wrap" id="flow" aria-labelledby="flowTitle">
+    <div class="section__head section__head--center">
+      <span class="eyebrow reveal">使用流程</span>
+      <h2 class="h-sec reveal" id="flowTitle" data-delay="1">四步之内，坐下开始</h2>
+    </div>
+
+    <ol class="steps">
+      <li class="step reveal">
+        <span class="step__no">01</span>
+        <h3 class="step__title">选择楼层</h3>
+        <p class="step__text">查看每层的空闲数与占用率，挑一个安静的角落。</p>
+      </li>
+      <li class="step reveal" data-delay="1">
+        <span class="step__no">02</span>
+        <h3 class="step__title">查看平面图</h3>
+        <p class="step__text">在真实行列布局中确认心仪座位此刻是否空闲。</p>
+      </li>
+      <li class="step reveal" data-delay="2">
+        <span class="step__no">03</span>
+        <h3 class="step__title">提交预约</h3>
+        <p class="step__text">选定日期、起始时段与时长，确认后即锁定座位。</p>
+      </li>
+      <li class="step reveal" data-delay="3">
+        <span class="step__no">04</span>
+        <h3 class="step__title">签到入座</h3>
+        <p class="step__text">到场后在窗口期内签到。未能到场，座位会自动释放给他人。</p>
+      </li>
+    </ol>
+  </section>
+
+  <!-- ============ 数据 ============ -->
+  <section class="section--tight wrap" aria-label="平台数据">
+    <div class="stats glass reveal" id="stats">
+      <div class="stat"><span class="stat__num" data-count="124">0</span><span class="stat__lbl">在管座位</span></div>
+      <div class="stat"><span class="stat__num" data-count="3">0</span><span class="stat__lbl">开放楼层</span></div>
+      <div class="stat"><span class="stat__num" data-count="14" data-suffix="h">0</span><span class="stat__lbl">每日开放时长</span></div>
+      <div class="stat"><span class="stat__num" data-count="7" data-suffix="天">0</span><span class="stat__lbl">可提前预约</span></div>
+    </div>
+  </section>
+
+  <!-- ============ 双端设计 ============ -->
+  <section class="section--tight wrap" id="roles" aria-labelledby="rolesTitle">
+    <div class="section__head">
+      <span class="eyebrow reveal">双端设计</span>
+      <h2 class="h-sec reveal" id="rolesTitle" data-delay="1">读者与馆员，各有清晰的界面</h2>
+    </div>
+
+    <div class="split">
+      <div class="split__col glass reveal">
+        <div class="split__head">
+          <span class="split__badge split__badge--blue">reader</span>
+          <h3 class="card__title">读者端</h3>
+        </div>
+        <ul class="split__list">
+          <li>楼层卡片一览，占用率进度条直观提示拥挤程度</li>
+          <li>座位平面图支持日期与时段切换，随时查看不同时段</li>
+          <li>「我的预约」按时段分组，可取消、可签到</li>
+        </ul>
+      </div>
+
+      <div class="split__col glass reveal" data-delay="1">
+        <div class="split__head">
+          <span class="split__badge">staff</span>
+          <h3 class="card__title">馆员端</h3>
+        </div>
+        <ul class="split__list">
+          <li>楼层与座位信息维护，支持按行列批量生成座位</li>
+          <li>查看任意时段的座位使用情况与占用读者</li>
+          <li>数据统计：预约趋势、时段热度、楼层利用率</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 收尾 CTA ============ -->
+  <section class="section--tight wrap" aria-labelledby="ctaTitle">
+    <div class="cta glass reveal">
+      <div class="cta__inner">
+        <h2 class="cta__title" id="ctaTitle">下一次入座，先看一眼空位</h2>
+        <p class="lede" style="text-align:center;">无需注册即可浏览实时平面图；登录后可预约并管理自己的座位。</p>
+        <div class="hero__cta" style="justify-content:center;">
+          <button class="btn btn--primary btn--lg" type="button" id="ctaBtn">立即开始</button>
+          <a class="btn btn--ghost btn--lg" href="#live">返回演示</a>
+        </div>
+        <p class="cta__note">
+          <span>演示账号</span>
+          <code>admin / admin123</code>
+          <code>student1 / 123456</code>
+        </p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ============ 页脚 ============ -->
+<footer class="footer">
+  <div class="wrap">
+    <div class="footer__grid">
+      <div>
+        <a class="brand" href="#top">
+          <span class="brand__glyph" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 19V6.5A2.5 2.5 0 0 1 6.5 4H19v15"/><path d="M4 19h15"/><path d="M8 8h7"/>
+            </svg>
+          </span>
+          <span class="brand__text">
+            <span class="brand__cn">静席</span>
+            <span class="brand__en">JingXi</span>
+          </span>
+        </a>
+        <p class="footer__desc">一个安静的座位预约系统。把「找座」这件事，压缩成三次点击。</p>
+      </div>
+
+      <div>
+        <h2 class="footer__title">读者</h2>
+        <ul class="footer__list">
+          <li><a href="#live">实时座位</a></li>
+          <li><a href="#flow">预约流程</a></li>
+          <li><a href="#features">常见问题</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <h2 class="footer__title">馆员</h2>
+        <ul class="footer__list">
+          <li><a href="#roles">座位管理</a></li>
+          <li><a href="#roles">使用统计</a></li>
+          <li><a href="#roles">运营报表</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <h2 class="footer__title">关于</h2>
+        <ul class="footer__list">
+          <li><a href="#top">项目说明</a></li>
+          <li><a href="#top">开放时间</a></li>
+          <li><a href="#top">联系我们</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer__bottom">
+      <span>© 2026 静席 JingXi · 图书馆座位预约系统</span>
+      <span>开放时间 08:00 – 22:00</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ==========================================================
+     1. 座位数据模型
+     ========================================================== */
+
+  // 状态：free 空闲 / booked 已预约 / busy 使用中 / off 维护中
+  var FLOORS = [
+    { name: '一楼自习区',     cols: 8, rows: 4, seed: [3, 7, 12, 18, 21, 26, 30] },
+    { name: '二楼阅览区',     cols: 8, rows: 4, seed: [1, 5, 9, 10, 16, 22, 25, 29] },
+    { name: '三楼研讨区',     cols: 6, rows: 4, seed: [2, 6, 11, 17] }
+  ];
+
+  /**
+   * 依据种子索引生成座位状态数组。
+   * 种子交替产出「已预约 / 使用中 / 维护中」，保证每次渲染结果稳定可预期。
+   * @param {Object} floor 楼层配置
+   * @returns {string[]} 与座位总数等长的状态数组
+   */
+  function buildStates(floor) {
+    var total = floor.cols * floor.rows;
+    var states = new Array(total);
+    for (var i = 0; i < total; i++) { states[i] = 'free'; }
+
+    floor.seed.forEach(function (idx, order) {
+      if (idx >= total) { return; }
+      var mod = order % 5;
+      states[idx] = mod === 4 ? 'off' : (mod % 2 === 0 ? 'booked' : 'busy');
+    });
+    return states;
+  }
+
+  /**
+   * 生成座位编号，如 A03。
+   * @param {number} index 座位序号（从 0 起）
+   * @param {number} cols 每行座位数
+   * @returns {string} 座位号
+   */
+  function seatNo(index, cols) {
+    var rowLetter = String.fromCharCode(65 + Math.floor(index / cols));
+    var colNum = (index % cols) + 1;
+    return rowLetter + String(colNum).padStart(2, '0');
+  }
+
+  /* ==========================================================
+     2. 座位网格渲染
+     ========================================================== */
+
+  var STATE_CLASS = {
+    free: 'seat--free',
+    booked: 'seat--booked',
+    busy: 'seat--busy',
+    off: 'seat--off'
+  };
+
+  var STATE_LABEL = {
+    free: '空闲，可预约',
+    booked: '已预约',
+    busy: '使用中',
+    off: '维护中'
+  };
+
+  /**
+   * 渲染一个楼层平面图。
+   * @param {HTMLElement} host 容器
+   * @param {Object} floor 楼层配置
+   * @param {Object} opts 选项：{ interactive: boolean, onPick: Function }
+   * @returns {string[]} 状态数组
+   */
+  function renderSeatMap(host, floor, opts) {
+    opts = opts || {};
+    var states = buildStates(floor);
+    var total = floor.cols * floor.rows;
+
+    host.textContent = '';
+
+    // 列号标尺
+    var ruler = document.createElement('div');
+    ruler.className = 'seatmap__ruler';
+    ruler.style.gridTemplateColumns = 'repeat(' + floor.cols + ',minmax(0,1fr))';
+    for (var c = 1; c <= floor.cols; c++) {
+      var tick = document.createElement('span');
+      tick.textContent = c;
+      ruler.appendChild(tick);
+    }
+    host.appendChild(ruler);
+
+    // 逐行渲染座位
+    for (var r = 0; r < floor.rows; r++) {
+      var row = document.createElement('div');
+      row.className = 'seatmap__row';
+
+      var rowNo = document.createElement('span');
+      rowNo.className = 'seatmap__rowno';
+      rowNo.textContent = String.fromCharCode(65 + r);
+      row.appendChild(rowNo);
+
+      var cells = document.createElement('div');
+      cells.className = 'seatmap__cells';
+      cells.style.gridTemplateColumns = 'repeat(' + floor.cols + ',minmax(0,1fr))';
+
+      for (var i = 0; i < floor.cols; i++) {
+        var index = r * floor.cols + i;
+        var state = states[index];
+        var no = seatNo(index, floor.cols);
+
+        var seat = document.createElement('button');
+        seat.type = 'button';
+        seat.className = 'seat ' + STATE_CLASS[state];
+        seat.dataset.index = String(index);
+        seat.dataset.state = state;
+        seat.setAttribute('aria-label', no + ' ' + STATE_LABEL[state]);
+
+        if (state === 'free' && opts.interactive) {
+          seat.dataset.pickable = 'true';
+        } else {
+          seat.disabled = true;
+        }
+
+        var label = document.createElement('span');
+        label.className = 'seat__no';
+        label.textContent = no;
+        seat.appendChild(label);
+
+        cells.appendChild(seat);
+      }
+
+      row.appendChild(cells);
+      host.appendChild(row);
+    }
+
+    return states;
+  }
+
+  /**
+   * 渲染骨架屏，模拟数据加载中的占位。
+   * @param {HTMLElement} host 容器
+   * @param {number} cols 列数
+   * @param {number} rows 行数
+   */
+  function renderSkeleton(host, cols, rows) {
+    host.textContent = '';
+    for (var r = 0; r < rows; r++) {
+      var row = document.createElement('div');
+      row.className = 'seatmap__row';
+      row.innerHTML = '<span class="seatmap__rowno"></span>';
+
+      var cells = document.createElement('div');
+      cells.className = 'seatmap__cells';
+      cells.style.gridTemplateColumns = 'repeat(' + cols + ',minmax(0,1fr))';
+
+      for (var i = 0; i < cols; i++) {
+        var seat = document.createElement('div');
+        seat.className = 'seat seat--skeleton';
+        cells.appendChild(seat);
+      }
+      row.appendChild(cells);
+      host.appendChild(row);
+    }
+  }
+
+  /* ==========================================================
+     3. 楼层切换（Hero 面板）
+     ========================================================== */
+
+  var seatmapEl = document.getElementById('seatmap');
+  var panelTitle = document.getElementById('panelTitle');
+  var floorButtons = document.querySelectorAll('.panel__floor button');
+  var statFree = document.getElementById('statFree');
+  var statBooked = document.getElementById('statBooked');
+  var statBusy = document.getElementById('statBusy');
+  var currentFloor = 0;
+
+  /**
+   * 切换楼层：先显示骨架屏，再渲染真实数据，模拟一次网络请求。
+   * @param {number} index 楼层索引
+   */
+  function switchFloor(index) {
+    currentFloor = index;
+    var floor = FLOORS[index];
+
+    floorButtons.forEach(function (btn) {
+      btn.setAttribute('aria-pressed', String(Number(btn.dataset.floor) === index));
+    });
+
+    // 加载态：骨架屏 + aria-busy
+    seatmapEl.setAttribute('aria-busy', 'true');
+    renderSkeleton(seatmapEl, floor.cols, floor.rows);
+
+    window.setTimeout(function () {
+      var states = renderSeatMap(seatmapEl, floor, { interactive: false });
+      seatmapEl.setAttribute('aria-busy', 'false');
+      panelTitle.textContent = floor.name;
+
+      var count = { free: 0, booked: 0, busy: 0, off: 0 };
+      states.forEach(function (s) { count[s] += 1; });
+      statFree.textContent = count.free;
+      statBooked.textContent = count.booked;
+      statBusy.textContent = count.busy;
+    }, 420);
+  }
+
+  floorButtons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      switchFloor(Number(btn.dataset.floor));
+    });
+  });
+
+  switchFloor(0);
+
+  /* ==========================================================
+     4. 交互式演示（二楼，可选座 + 确认）
+     ========================================================== */
+
+  var demoMapEl = document.getElementById('demoMap');
+  var hintbar = document.getElementById('hintbar');
+  var pickedNo = document.getElementById('pickedNo');
+  var confirmBtn = document.getElementById('confirmBtn');
+  var pickedEl = null;
+  var demoStates = null;
+
+  var DEMO_FLOOR = { name: '二楼阅览区', cols: 8, rows: 4, seed: [1, 5, 9, 10, 16, 22, 25, 29] };
+
+  function initDemo() {
+    demoStates = renderSeatMap(demoMapEl, DEMO_FLOOR, { interactive: true });
+
+    demoMapEl.addEventListener('click', function (event) {
+      var seat = event.target.closest('.seat[data-pickable="true"]');
+      if (!seat) { return; }
+
+      // 取消上一个选中
+      if (pickedEl) { pickedEl.classList.remove('is-picked'); }
+      pickedEl = seat;
+      seat.classList.add('is-picked');
+
+      pickedNo.textContent = seat.querySelector('.seat__no').textContent;
+      hintbar.classList.add('is-on');
+    });
+  }
+
+  // 演示区在首屏之外，进入视口时再初始化，避免无谓开销
+  if ('IntersectionObserver' in window) {
+    var demoTimer = null;
+    var demoObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          window.clearTimeout(demoTimer);
+          demoTimer = window.setTimeout(initDemo, 200);
+          demoObserver.disconnect();
+        }
+      });
+    }, { rootMargin: '160px' });
+    demoObserver.observe(demoMapEl);
+  } else {
+    initDemo();
+  }
+
+  // 确认预约：展示加载态 → 成功后把座位转为「已预约」，并重置选择
+  confirmBtn.addEventListener('click', function () {
+    if (!pickedEl) { return; }
+
+    confirmBtn.dataset.loading = 'true';
+
+    window.setTimeout(function () {
+      var seat = pickedEl;
+      seat.classList.remove('is-picked');
+      seat.classList.remove('seat--free');
+      seat.classList.add('seat--booked');
+      seat.dataset.state = 'booked';
+      seat.removeAttribute('data-pickable');
+      seat.disabled = true;
+      seat.setAttribute('aria-label', seat.querySelector('.seat__no').textContent + ' 已预约');
+
+      pickedEl = null;
+      hintbar.classList.remove('is-on');
+      confirmBtn.dataset.loading = 'false';
+
+      // 统计数字随预约结果联动
+      statBooked.textContent = Number(statBooked.textContent) + 1;
+      statFree.textContent = Number(statFree.textContent) - 1;
+      syncDemoStats();
+    }, 900);
+  });
+
+  /**
+   * 依据演示区当前状态刷新统计条，保证数字与平面图一致。
+   */
+  function syncDemoStats() {
+    if (!demoMapEl) { return; }
+    var seats = demoMapEl.querySelectorAll('.seat');
+    var free = 0, booked = 0, busy = 0;
+    seats.forEach(function (s) {
+      if (s.classList.contains('seat--free')) { free++; }
+      else if (s.classList.contains('seat--booked')) { booked++; }
+      else if (s.classList.contains('seat--busy')) { busy++; }
+    });
+    if (currentFloor === 1) {
+      statFree.textContent = free;
+      statBooked.textContent = booked;
+      statBusy.textContent = busy;
+    }
+  }
+
+  /* ==========================================================
+     5. 导航：滚动状态 / 移动端抽屉 / 阅读进度
+     ========================================================== */
+
+  var nav = document.getElementById('nav');
+  var navToggle = document.getElementById('navToggle');
+  var navLinks = document.getElementById('navLinks');
+  var progress = document.getElementById('progress');
+
+  /**
+   * 滚动时更新导航样式、进度条与当前高亮链接。
+   */
+  function onScroll() {
+    var y = window.scrollY || document.documentElement.scrollTop;
+    var max = document.documentElement.scrollHeight - window.innerHeight;
+
+    nav.classList.toggle('is-stuck', y > 12);
+    progress.style.width = (max > 0 ? (y / max) * 100 : 0) + '%';
+
+    // 依据滚动位置高亮对应区块
+    var links = navLinks.querySelectorAll('.nav__link');
+    var activeId = '';
+    links.forEach(function (link) {
+      var target = document.querySelector(link.getAttribute('href'));
+      if (target && target.getBoundingClientRect().top <= 140) {
+        activeId = link.getAttribute('href');
+      }
+    });
+    links.forEach(function (link) {
+      link.classList.toggle('is-active', link.getAttribute('href') === activeId);
+    });
+  }
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  // 移动端菜单开合
+  navToggle.addEventListener('click', function () {
+    var open = navToggle.getAttribute('aria-expanded') === 'true';
+    navToggle.setAttribute('aria-expanded', String(!open));
+    navLinks.classList.toggle('is-open', !open);
+  });
+
+  // 点击链接后自动收起
+  navLinks.addEventListener('click', function (event) {
+    if (event.target.closest('.nav__link')) {
+      navToggle.setAttribute('aria-expanded', 'false');
+      navLinks.classList.remove('is-open');
+    }
+  });
+
+  // 视口放大回桌面尺寸时复位抽屉状态
+  window.addEventListener('resize', function () {
+    if (window.innerWidth > 760) {
+      navToggle.setAttribute('aria-expanded', 'false');
+      navLinks.classList.remove('is-open');
+    }
+  });
+
+  /* ==========================================================
+     6. 滚动渐入
+     ========================================================== */
+
+  var revealEls = document.querySelectorAll('.reveal');
+  if ('IntersectionObserver' in window) {
+    var revealObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-in');
+          revealObserver.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+
+    revealEls.forEach(function (el) { revealObserver.observe(el); });
+  } else {
+    revealEls.forEach(function (el) { el.classList.add('is-in'); });
+  }
+
+  /* ==========================================================
+     7. 数字滚动
+     ========================================================== */
+
+  var statsEl = document.getElementById('stats');
+  if (statsEl && 'IntersectionObserver' in window) {
+    var statsObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) { return; }
+
+        statsEl.querySelectorAll('[data-count]').forEach(function (node) {
+          var target = Number(node.dataset.count);
+          var suffix = node.dataset.suffix || '';
+          var duration = 1100;
+          var start = null;
+
+          function tick(now) {
+            if (start === null) { start = now; }
+            var p = Math.min((now - start) / duration, 1);
+            // easeOutExpo，让收尾更利落
+            var eased = p === 1 ? 1 : 1 - Math.pow(2, -10 * p);
+            node.textContent = Math.round(eased * target) + suffix;
+            if (p < 1) { window.requestAnimationFrame(tick); }
+          }
+          window.requestAnimationFrame(tick);
+        });
+
+        statsObserver.disconnect();
+      });
+    }, { threshold: 0.4 });
+    statsObserver.observe(statsEl);
+  }
+
+  /* ==========================================================
+     8. 实时时钟（强化「数据是活的」感知）
+     ========================================================== */
+
+  var clock = document.getElementById('clock');
+  function tickClock() {
+    var d = new Date();
+    clock.textContent = String(d.getHours()).padStart(2, '0') + ':' +
+                        String(d.getMinutes()).padStart(2, '0') + ':' +
+                        String(d.getSeconds()).padStart(2, '0');
+  }
+  tickClock();
+  window.setInterval(tickClock, 1000);
+
+  /* ==========================================================
+     9. CTA 加载反馈
+     ========================================================== */
+
+  ['heroCta', 'ctaBtn'].forEach(function (id) {
+    var btn = document.getElementById(id);
+    if (!btn) { return; }
+    btn.addEventListener('click', function (event) {
+      event.preventDefault();
+      btn.dataset.loading = 'true';
+      window.setTimeout(function () { btn.dataset.loading = 'false'; }, 1100);
+    });
+  });
+
+  /* ==========================================================
+     10. 首屏加载遮罩淡出
+     ========================================================== */
+
+  window.addEventListener('load', function () {
+    var boot = document.getElementById('boot');
+    window.setTimeout(function () {
+      boot.classList.add('is-done');
+      boot.setAttribute('aria-hidden', 'true');
+    }, 260);
+  });
+
+  // 兜底：即使 load 事件因资源问题未触发，也在 1.6s 后强制淡出
+  window.setTimeout(function () {
+    var boot = document.getElementById('boot');
+    if (boot && !boot.classList.contains('is-done')) {
+      boot.classList.add('is-done');
+      boot.setAttribute('aria-hidden', 'true');
+    }
+  }, 1600);
+})();
+</script>
+</body>
+</html>

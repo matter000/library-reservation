@@ -1,0 +1,92 @@
+import React from 'react';
+import { Button, Layout, Menu, Typography } from 'antd';
+import {
+  AppstoreOutlined,
+  BarChartOutlined,
+  DatabaseOutlined,
+  LogoutOutlined,
+  ProfileOutlined,
+  TableOutlined,
+  TeamOutlined,
+} from '@ant-design/icons';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../store/AuthContext';
+
+const { Sider, Header, Content } = Layout;
+
+/**
+ * 管理员布局：左侧固定侧边栏 + 右侧内容区（纯 PC，最小宽度 1280px）。
+ *
+ * @returns {JSX.Element} 布局
+ */
+export default function AdminLayout() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { user, logout } = useAuth();
+
+  const menuItems = [
+    { key: '/admin/statistics', icon: <BarChartOutlined />, label: '数据统计' },
+    { key: '/admin/floors', icon: <DatabaseOutlined />, label: '楼层管理' },
+    { key: '/admin/usage', icon: <AppstoreOutlined />, label: '使用情况' },
+    { key: '/admin/reservations', icon: <ProfileOutlined />, label: '预约记录' },
+    { key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' },
+  ];
+
+  /** 座位管理挂在楼层管理下：/admin/floors/:id/seats */
+  const pathname = location.pathname;
+  let selectedKey = '/admin/statistics';
+  if (pathname.startsWith('/admin/floors')) {
+    selectedKey = '/admin/floors';
+  } else if (pathname.startsWith('/admin/usage')) {
+    selectedKey = '/admin/usage';
+  } else if (pathname.startsWith('/admin/reservations')) {
+    selectedKey = '/admin/reservations';
+  } else if (pathname.startsWith('/admin/users')) {
+    selectedKey = '/admin/users';
+  }
+
+  return (
+    <Layout className="admin-layout">
+      <Sider width={200} className="admin-sider" breakpoint="lg" collapsedWidth={64}>
+        <div className="admin-sider-title">管理后台</div>
+        <Menu
+          theme="dark"
+          mode="inline"
+          selectedKeys={[selectedKey]}
+          items={menuItems}
+          onClick={({ key }) => navigate(key)}
+        />
+      </Sider>
+      <Layout>
+        <Header className="admin-header">
+          <Typography.Text strong>图书馆座位预约系统 · 管理端</Typography.Text>
+          <span>
+            <Typography.Text type="secondary">
+              {user ? `${user.realName || user.username}（管理员）` : ''}
+            </Typography.Text>
+            <Button
+              type="text"
+              icon={<LogoutOutlined />}
+              onClick={() => {
+                logout();
+                navigate('/login');
+              }}
+            >
+              退出
+            </Button>
+            <Button
+              type="link"
+              icon={<TableOutlined />}
+              onClick={() => navigate('/floors')}
+            >
+              用户端
+            </Button>
+          </span>
+        </Header>
+        <Content className="admin-content">
+          <Outlet />
+        </Content>
+      </Layout>
+    </Layout>
+  );
+}

@@ -1,0 +1,19 @@
+# 构建产物
+frontend/node_modules/
+frontend/dist/
+backend/target/
+backend/src/main/resources/static/
+
+# 运行时数据（H2 文件库）
+backend/data/
+*.mv.db
+*.trace.db
+
+# 工作态与日志
+.workbuddy/
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.iml

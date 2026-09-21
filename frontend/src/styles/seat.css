@@ -1,0 +1,222 @@
+/* =========================================================
+   座位平面图样式（原生 CSS Grid，座位方块固定 56×56）
+   ========================================================= */
+
+.seat-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+}
+
+.seat-legend-title {
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.75);
+}
+
+.seat-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: default;
+}
+
+.seat-legend-text {
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.7);
+}
+
+.seat-swatch {
+  position: relative;
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.seat-swatch-marker {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  font-size: 10px;
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.75);
+}
+
+.seat-swatch-free {
+  background: #52c41a;
+}
+
+.seat-swatch-reserved {
+  background: #faad14;
+}
+
+.seat-swatch-in_use {
+  background: #f5222d;
+}
+
+.seat-swatch-unavailable {
+  background: #bfbfbf;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.85) 0,
+    rgba(255, 255, 255, 0.85) 3px,
+    rgba(0, 0, 0, 0.06) 3px,
+    rgba(0, 0, 0, 0.06) 6px
+  );
+}
+
+/* ---------- 网格容器（窄屏横向滚动，不缩放） ---------- */
+.seat-grid-scroll {
+  width: 100%;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.seat-grid {
+  display: grid;
+  gap: 6px;
+  justify-content: start;
+  align-content: start;
+  min-width: max-content;
+}
+
+.seat-ruler-corner {
+  background: transparent;
+}
+
+.seat-ruler-col,
+.seat-ruler-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+  background: #fafafa;
+  border-radius: 4px;
+}
+
+/* ---------- 座位方块 ---------- */
+.seat-cell {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font: inherit;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: not-allowed;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  overflow: visible;
+}
+
+.seat-cell-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.2;
+}
+
+.seat-cell-no {
+  letter-spacing: 0.2px;
+}
+
+/* 第二重标识：右上角 ● / ●● / 🔧 */
+.seat-cell-marker {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  font-size: 10px;
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.7);
+  text-shadow: 0 0 2px rgba(255, 255, 255, 0.9);
+}
+
+.seat-cell-free {
+  background: #52c41a;
+}
+
+.seat-cell-reserved {
+  background: #faad14;
+}
+
+.seat-cell-in_use {
+  background: #f5222d;
+}
+
+.seat-cell-unavailable {
+  background: #bfbfbf;
+  color: rgba(0, 0, 0, 0.6);
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.85) 0,
+    rgba(255, 255, 255, 0.85) 4px,
+    rgba(0, 0, 0, 0.08) 4px,
+    rgba(0, 0, 0, 0.08) 8px
+  );
+}
+
+.seat-cell-clickable {
+  cursor: pointer;
+}
+
+.seat-cell:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+  z-index: 2;
+}
+
+.seat-cell-selected {
+  outline: 3px solid #1677ff;
+  outline-offset: 1px;
+  z-index: 3;
+}
+
+.seat-cell:focus-visible {
+  outline: 3px solid #1677ff;
+  outline-offset: 1px;
+}
+
+/* ---------- 平面图统计条 ---------- */
+.seat-map-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: #fafcff;
+  border: 1px solid #e6f4ff;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.seat-map-stats .stat-item b {
+  margin-left: 4px;
+  font-size: 15px;
+}
+
+.seat-map-tip {
+  margin-top: 14px;
+  color: rgba(0, 0, 0, 0.55);
+  font-size: 13px;
+}
+
+/* 响应式：<1024px 时容器横向滚动（座位尺寸不变，保证热区 ≥44px） */
+@media (max-width: 1023px) {
+  .seat-grid-scroll {
+    overflow-x: auto;
+  }
+}

@@ -1,0 +1,241 @@
+package com.libseat.api;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.libseat.repository.ReservationRepository;
+import com.libseat.repository.ReservationSlotRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+
+/**
+ * 接口集成测试基类：独立 H2（in-memory）+ 真实拦截器 + MockMvc。
+ *
+ * <p>种子数据由 {@code DataInitializer} 写入：3 楼层 / 124 座位 / 若干历史预约。
+ */
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+abstract class ApiTestBase {
+
+    @Autowired
+    protected MockMvc mvc;
+
+    @Autowired
+    protected ObjectMapper om;
+
+    @Autowired
+    protected JdbcTemplate jdbc;
+
+    @Autowired
+    protected ReservationRepository reservationRepository;
+
+    @Autowired
+    protected ReservationSlotRepository reservationSlotRepository;
+
+    /** 管理员 Token。 */
+    protected String admin;
+
+    /** 学生 Token：student1 / student2 / student3。 */
+    protected String u1;
+    protected String u2;
+    protected String u3;
+
+    /** 三个楼层的 ID（按 sortOrder 升序）。 */
+    protected Long floor1;
+    protected Long floor2;
+    protected Long floor3;
+
+    /** 种子数据里处在 MAINTENANCE 的座位编号。 */
+    protected static final String MAINT_1F = "A15";
+    protected static final String MAINT_2F = "B08";
+    protected static final String MAINT_3F = "C03";
+
+    @BeforeEach
+    void baseSetUp() throws Exception {
+        admin = login("admin", "admin123");
+        u1 = login("student1", "123456");
+        u2 = login("student2", "123456");
+        u3 = login("student3", "123456");
+
+        JsonNode floors = data(exec(get("/api/floors").header("Authorization", bearer(u1))));
+        assertTrue(floors.size() >= 3, "种子数据应至少有 3 个楼层，实际 " + floors.size());
+        floor1 = floors.get(0).path("floorId").asLong();
+        floor2 = floors.get(1).path("floorId").asLong();
+        floor3 = floors.get(2).path("floorId").asLong();
+    }
+
+    // ==================== 基础工具 ====================
+
+    protected static String bearer(String token) {
+        return "Bearer " + token;
+    }
+
+    protected String json(Object obj) throws Exception {
+        return om.writeValueAsString(obj);
+    }
+
+    protected MvcResult exec(org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder builder)
+            throws Exception {
+        return mvc.perform(builder).andReturn();
+    }
+
+    protected JsonNode body(MvcResult result) throws Exception {
+        return om.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8));
+    }
+
+    protected int code(MvcResult result) throws Exception {
+        return body(result).path("code").asInt();
+    }
+
+    protected String msg(MvcResult result) throws Exception {
+        return body(result).path("message").asText();
+    }
+
+    protected JsonNode data(MvcResult result) throws Exception {
+        return body(result).path("data");
+    }
+
+    protected String login(String username, String password) throws Exception {
+        Map<String, String> req = new HashMap<>();
+        req.put("username", username);
+        req.put("password", password);
+        MvcResult result = exec(post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(req)));
+        assertEquals(0, code(result), "登录失败：" + body(result).toString());
+        return data(result).path("token").asText();
+    }
+
+    /**
+     * 注册一个全新的普通用户并返回其 Token。
+     *
+     * <p>用于隔离用例：避免「同一用户时段重叠 4092」在用例之间相互干扰。
+     */
+    protected String newUser() throws Exception {
+        // 后端限制：3~20 位字母/数字/下划线（UUID 里的 '-' 必须去掉）
+        String username = "qa" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
+        Map<String, Object> req = new HashMap<>();
+        req.put("username", username);
+        req.put("password", "123456");
+        req.put("confirmPassword", "123456");
+        req.put("realName", "QA" + username);
+        MvcResult result = exec(post("/api/auth/register")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(req)));
+        if (code(result) != 0) {
+            throw new AssertionError("注册测试用户失败：" + result.getResponse().getContentAsString());
+        }
+        return login(username, "123456");
+    }
+
+    protected Long seatId(long floorId, String seatNo) throws Exception {
+        MvcResult result = exec(get("/api/seats/map")
+                .param("floorId", String.valueOf(floorId))
+                .param("date", LocalDate.now().plusDays(3).toString())
+                .param("slot", "14")
+                .header("Authorization", bearer(u1)));
+        assertEquals(0, code(result), "平面图查询失败");
+        for (JsonNode seat : data(result).path("seats")) {
+            if (seatNo.equals(seat.path("seatNo").asText())) {
+                return seat.path("seatId").asLong();
+            }
+        }
+        throw new AssertionError("未找到座位 " + seatNo);
+    }
+
+    /** 提交预约，返回原始 MvcResult（由调用方断言 code）。 */
+    protected MvcResult reserveRaw(String token, long seatId, String date, int startSlot, Integer duration)
+            throws Exception {
+        Map<String, Object> req = new HashMap<>();
+        req.put("seatId", seatId);
+        req.put("date", date);
+        req.put("startSlot", startSlot);
+        if (duration != null) {
+            req.put("duration", duration);
+        }
+        return exec(post("/api/reservations")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(req))
+                .header("Authorization", bearer(token)));
+    }
+
+    protected JsonNode reserveOk(String token, long seatId, String date, int startSlot, Integer duration)
+            throws Exception {
+        MvcResult result = reserveRaw(token, seatId, date, startSlot, duration);
+        assertEquals(0, code(result), "预约应成功，实际：" + body(result).toString());
+        return data(result);
+    }
+
+    /** 管理员：切换楼层状态。 */
+    protected MvcResult setFloorStatus(long floorId, String status) throws Exception {
+        return exec(put("/api/admin/floors/" + floorId + "/status")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(Map.of("status", status)))
+                .header("Authorization", bearer(admin)));
+    }
+
+    /** 管理员：切换座位状态。 */
+    protected MvcResult setSeatStatus(long seatId, String status) throws Exception {
+        return exec(put("/api/admin/seats/" + seatId + "/status")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(Map.of("status", status)))
+                .header("Authorization", bearer(admin)));
+    }
+
+    /** 管理员：强制释放。 */
+    protected MvcResult release(long reservationId, String reason) throws Exception {
+        return exec(post("/api/admin/reservations/" + reservationId + "/release")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(Map.of("reason", reason)))
+                .header("Authorization", bearer(admin)));
+    }
+
+    /** 管理员：删除座位。 */
+    protected MvcResult deleteSeat(long seatId) throws Exception {
+        return exec(delete("/api/admin/seats/" + seatId).header("Authorization", bearer(admin)));
+    }
+
+    /** 管理员：删除楼层。 */
+    protected MvcResult deleteFloor(long floorId) throws Exception {
+        return exec(delete("/api/admin/floors/" + floorId).header("Authorization", bearer(admin)));
+    }
+
+    protected static String d(int offset) {
+        return LocalDate.now().plusDays(offset).toString();
+    }
+
+    protected String displayStatus(long floorId, long seatId, String date, int slot) throws Exception {
+        MvcResult result = exec(get("/api/seats/map")
+                .param("floorId", String.valueOf(floorId))
+                .param("date", date)
+                .param("slot", String.valueOf(slot))
+                .header("Authorization", bearer(u1)));
+        assertEquals(0, code(result));
+        for (JsonNode seat : data(result).path("seats")) {
+            if (seat.path("seatId").asLong() == seatId) {
+                return seat.path("displayStatus").asText();
+            }
+        }
+        throw new AssertionError("平面图里找不到座位 " + seatId);
+    }
+}

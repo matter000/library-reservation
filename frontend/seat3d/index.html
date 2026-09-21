@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#f5f7fa">
+<meta name="description" content="图书馆座位占位管理 · 3D 立体视图">
+<title>3D 座位占位视图 · 静席</title>
+<style>
+/* ============================================================
+   一、设计令牌
+   —— 分两组：浅色外壳对齐系统 AntD；深色沙盘用于 3D 沉浸视窗
+   ============================================================ */
+:root{
+  /* 系统外壳（与现有前端 AntD 主题一致：主色 #1677ff / 圆角 8） */
+  --sys-primary:#1677ff;
+  --sys-primary-weak:#e8f1ff;
+  --sys-bg:#f5f7fa;
+  --sys-surface:#ffffff;
+  --sys-text:#1f2329;
+  --sys-text-2:#646a73;
+  --sys-text-3:#8f959e;
+  --sys-border:#e5e6eb;
+  --sys-border-strong:#d0d3d9;
+  --sys-shadow:0 2px 8px rgba(0,0,0,.06);
+  --sys-shadow-lg:0 8px 28px rgba(0,0,0,.10);
+  --sys-radius:8px;
+  --sys-radius-lg:12px;
+
+  /* 3D 沙盘（深色，仅用于视窗内部） */
+  --stage-0:#070B14;
+  --stage-1:#101827;
+  --stage-grid:rgba(255,255,255,.05);
+  --stage-stroke:rgba(255,255,255,.10);
+  --stage-text:#E8EDF5;
+  --stage-text-2:rgba(232,237,245,.62);
+
+  /* 座位状态色（与系统语义色一致：空闲绿 / 已约黄 / 使用红 / 停用灰；暂离为新增蓝） */
+  --st-free:#34D399;
+  --st-reserved:#FBBF24;
+  --st-inuse:#F87171;
+  --st-leave:#60A5FA;
+  --st-off:#64748B;
+
+  /* 座位几何 */
+  --seat-w:46px;
+  --seat-gap:10px;
+
+  /* 视角（由 JS 驱动） */
+  --rx:60deg;
+  --rz:-45deg;
+  --scale:1;
+
+  --font-sans:"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei","Noto Sans SC",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-num:"SF Mono",ui-monospace,"JetBrains Mono",Consolas,monospace;
+  --ease:cubic-bezier(.22,.68,.36,1);
+}
+
+*,*::before,*::after{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0;
+  background:var(--sys-bg);
+  color:var(--sys-text);
+  font-family:var(--font-sans);
+  font-size:14px;
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;}
+:focus-visible{outline:2px solid var(--sys-primary);outline-offset:2px;border-radius:6px;}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;transition-duration:.01ms !important;}
+}
+
+/* ============================================================
+   二、页面外壳（浅色 AntD 风格）
+   ============================================================ */
+.app{
+  min-height:100%;
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+  padding:20px clamp(16px,3vw,32px) 28px;
+  max-width:1440px;
+  margin-inline:auto;
+}
+
+.page-head{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;}
+.page-head__title{display:flex;align-items:baseline;gap:10px;margin:0;font-size:20px;font-weight:600;letter-spacing:-.01em;}
+.page-head__crumb{font-size:12px;color:var(--sys-text-3);font-weight:400;}
+.page-head__spacer{flex:1 1 auto;}
+
+.toolbar{
+  display:flex;flex-wrap:wrap;align-items:center;gap:8px;
+  padding:10px 14px;
+  background:var(--sys-surface);
+  border:1px solid var(--sys-border);
+  border-radius:var(--sys-radius-lg);
+  box-shadow:var(--sys-shadow);
+}
+.toolbar__label{font-size:13px;color:var(--sys-text-2);}
+.toolbar__sep{width:1px;height:18px;background:var(--sys-border);margin-inline:4px;}
+
+.seg{display:inline-flex;padding:2px;border-radius:var(--sys-radius);background:#f2f3f5;}
+.seg button{
+  padding:5px 14px;border-radius:6px;font-size:13px;color:var(--sys-text-2);
+  transition:background .18s var(--ease),color .18s var(--ease);
+}
+.seg button:hover{color:var(--sys-text);}
+.seg button[aria-pressed="true"]{background:var(--sys-surface);color:var(--sys-primary);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.08);}
+
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:6px 14px;border-radius:var(--sys-radius);
+  border:1px solid var(--sys-border-strong);background:var(--sys-surface);
+  font-size:13px;color:var(--sys-text);
+  transition:border-color .18s var(--ease),color .18s var(--ease),background .18s var(--ease);
+}
+.btn:hover{border-color:var(--sys-primary);color:var(--sys-primary);}
+.btn--primary{background:var(--sys-primary);border-color:var(--sys-primary);color:#fff;}
+.btn--primary:hover{background:#0e5fd8;border-color:#0e5fd8;color:#fff;}
+.btn--ghost{border-color:transparent;background:transparent;color:var(--sys-text-2);}
+.btn--ghost:hover{background:#f2f3f5;color:var(--sys-text);}
+
+/* 实时统计条 */
+.stats{display:flex;flex-wrap:wrap;gap:8px;}
+.stat{
+  flex:1 1 130px;
+  padding:10px 14px;
+  background:var(--sys-surface);
+  border:1px solid var(--sys-border);
+  border-radius:var(--sys-radius-lg);
+  box-shadow:var(--sys-shadow);
+}
+.stat__num{font-family:var(--font-num);font-size:20px;font-weight:600;line-height:1.2;}
+.stat__lbl{font-size:12px;color:var(--sys-text-3);}
+.stat--free .stat__num{color:#12a86c;}
+.stat--reserved .stat__num{color:#d48806;}
+.stat--inuse .stat__num{color:#d94a4a;}
+.stat--leave .stat__num{color:#2b7fd4;}
+
+/* ============================================================
+   三、3D 沙盘（深色沉浸视窗）
+   ============================================================ */
+.stage{
+  position:relative;
+  flex:1 1 auto;
+  min-height:clamp(360px,52vh,620px);
+  border-radius:16px;
+  overflow:hidden;
+  background:
+    radial-gradient(900px 520px at 62% 8%,rgba(22,119,255,.16),transparent 62%),
+    radial-gradient(700px 460px at 18% 92%,rgba(245,180,97,.08),transparent 60%),
+    linear-gradient(160deg,var(--stage-0),var(--stage-1) 62%,var(--stage-0));
+  border:1px solid rgba(255,255,255,.06);
+  box-shadow:var(--sys-shadow-lg);
+  cursor:grab;
+  touch-action:none;
+}
+.stage.is-dragging{cursor:grabbing;}
+
+/* 视窗角标与提示 */
+.stage__badge{
+  position:absolute;top:14px;left:16px;z-index:3;
+  display:flex;align-items:center;gap:8px;
+  padding:6px 12px;border-radius:999px;
+  background:rgba(255,255,255,.07);
+  border:1px solid var(--stage-stroke);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  color:var(--stage-text);font-size:12px;
+}
+.stage__dot{width:6px;height:6px;border-radius:50%;background:var(--st-free);box-shadow:0 0 0 3px rgba(52,211,153,.2);animation:livePulse 2s var(--ease) infinite;}
+@keyframes livePulse{0%,100%{opacity:1;}50%{opacity:.42;}}
+
+.stage__hint{
+  position:absolute;bottom:14px;left:50%;translate:-50% 0;z-index:3;
+  padding:6px 14px;border-radius:999px;
+  background:rgba(255,255,255,.06);
+  border:1px solid var(--stage-stroke);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  color:var(--stage-text-2);font-size:12px;white-space:nowrap;
+}
+
+/* 视角控制 */
+.viewctl{
+  position:absolute;top:14px;right:16px;z-index:3;
+  display:flex;gap:6px;
+}
+.viewctl button{
+  width:34px;height:34px;border-radius:10px;
+  display:grid;place-items:center;
+  background:rgba(255,255,255,.07);
+  border:1px solid var(--stage-stroke);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  color:var(--stage-text);
+  transition:background .18s var(--ease),transform .18s var(--ease);
+}
+.viewctl button:hover{background:rgba(255,255,255,.14);transform:translateY(-1px);}
+.viewctl button:active{transform:translateY(0) scale(.96);}
+.viewctl svg{width:16px;height:16px;}
+
+/* 3D 世界 */
+.world{
+  position:absolute;left:50%;top:52%;
+  transform-style:preserve-3d;
+  transform:translate(-50%,-50%) rotateX(var(--rx)) rotateZ(var(--rz)) scale(var(--scale));
+  transition:transform .12s linear;
+}
+.stage:not(.is-dragging) .world{transition:transform .5s var(--ease);}
+
+/* 地板 */
+.floor{
+  position:relative;
+  transform-style:preserve-3d;
+  padding:34px 40px 44px;
+  border-radius:20px;
+  background:
+    linear-gradient(rgba(255,255,255,.012),rgba(255,255,255,0)),
+    repeating-linear-gradient(0deg,var(--stage-grid) 0 1px,transparent 1px 46px),
+    repeating-linear-gradient(90deg,var(--stage-grid) 0 1px,transparent 1px 46px),
+    rgba(255,255,255,.028);
+  border:1px solid var(--stage-stroke);
+  box-shadow:0 42px 90px rgba(0,0,0,.5);
+}
+/* 讲台 / 入口等固定物：不参与交互 */
+.floor__fixture{
+  position:absolute;left:50%;translate:-50% 0;top:12px;
+  width:190px;height:16px;border-radius:6px;
+  background:rgba(255,255,255,.06);
+  border:1px solid var(--stage-stroke);
+}
+.floor__fixture span{
+  position:absolute;left:50%;top:50%;translate:-50% -50%;
+  font-size:10px;letter-spacing:.24em;color:var(--stage-text-2);
+}
+
+/* 座位网格 */
+.grid{
+  display:grid;
+  grid-template-columns:repeat(var(--cols,8),var(--seat-w));
+  gap:var(--seat-gap);
+  transform-style:preserve-3d;
+}
+
+/* ============================================================
+   四、座位元素：真 CSS 3D 立方体（顶面 + 4 侧面）
+   —— 高度承载「占用强度」：越被占用越高，形成颜色之外的第二重编码
+   ============================================================ */
+.seat{
+  position:relative;
+  width:var(--seat-w);
+  height:var(--seat-w);
+  transform-style:preserve-3d;
+  padding:0;
+  /* 入场：从地面升起 */
+  animation:rise .52s var(--ease) backwards;
+}
+@keyframes rise{
+  from{opacity:0;transform:translateZ(-60px) scale(.86);}
+  to{opacity:1;transform:translateZ(0) scale(1);}
+}
+
+.seat__top{
+  position:absolute;inset:0;
+  display:grid;place-items:center;
+  border-radius:7px;
+  font-family:var(--font-num);font-size:10px;font-weight:600;
+  letter-spacing:.02em;
+  color:rgba(6,10,18,.72);
+  background:var(--c);
+  transform:translateZ(var(--h));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.5),
+    inset 0 -1px 0 rgba(0,0,0,.12),
+    0 0 22px var(--glow);
+  transition:transform .22s var(--ease),box-shadow .22s var(--ease),filter .22s var(--ease);
+}
+
+/* 四个侧面：颜色为顶面压暗，模拟受光差异 */
+.seat__side{
+  position:absolute;
+  background:color-mix(in srgb,var(--c) 55%,#050810);
+  transition:background .22s var(--ease);
+}
+.seat__side--s{left:0;top:100%;width:100%;height:var(--h);transform-origin:50% 0;transform:rotateX(90deg);}
+.seat__side--n{left:0;bottom:100%;width:100%;height:var(--h);transform-origin:50% 100%;transform:rotateX(-90deg);}
+.seat__side--w{right:100%;top:0;width:var(--h);height:100%;transform-origin:100% 50%;transform:rotateY(90deg);}
+.seat__side--e{left:100%;top:0;width:var(--h);height:100%;transform-origin:0 50%;transform:rotateY(-90deg);}
+
+/* —— 状态定义：颜色 + 高度 + 光晕，三重编码 —— */
+.seat[data-state="free"]{--c:var(--st-free);--h:7px;--glow:rgba(52,211,153,.22);}
+.seat[data-state="reserved"]{--c:var(--st-reserved);--h:15px;--glow:rgba(251,191,36,.24);}
+.seat[data-state="inuse"]{--c:var(--st-inuse);--h:26px;--glow:rgba(248,113,113,.30);}
+.seat[data-state="leave"]{--c:var(--st-leave);--h:20px;--glow:rgba(96,165,250,.34);}
+.seat[data-state="off"]{--c:var(--st-off);--h:3px;--glow:rgba(100,116,139,.10);}
+
+/* 可交互（仅空闲） */
+.seat[data-state="free"]{cursor:pointer;}
+.seat[data-state="free"]:hover{--h:16px;z-index:5;}
+.seat[data-state="free"]:hover .seat__top{filter:brightness(1.12);}
+.seat[data-state="free"]:hover::after{
+  content:"";position:absolute;inset:-14px;border-radius:50%;
+  background:radial-gradient(circle,rgba(52,211,153,.22),transparent 68%);
+  transform:translateZ(1px);pointer-events:none;
+}
+/* 非空闲：不可点击的视觉语言 */
+.seat:not([data-state="free"]):not([data-state="off"]) .seat__top{opacity:.94;}
+.seat[data-state="off"] .seat__top{
+  background:repeating-linear-gradient(45deg,var(--c) 0 5px,color-mix(in srgb,var(--c) 70%,#000) 5px 10px);
+  cursor:not-allowed;
+}
+
+/* 选中：座位持续浮动 + 地面光圈 */
+.seat.is-picked{z-index:6;}
+.seat.is-picked .seat__top{
+  filter:brightness(1.2);
+  animation:float 1.9s var(--ease) infinite;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.6),
+    0 0 0 2px rgba(255,255,255,.55),
+    0 0 30px var(--glow);
+}
+@keyframes float{
+  0%,100%{transform:translateZ(var(--h));}
+  50%{transform:translateZ(calc(var(--h) + 10px));}
+}
+.seat.is-picked::after{
+  content:"";position:absolute;inset:-10px;border-radius:50%;
+  background:radial-gradient(circle,rgba(22,119,255,.4),transparent 66%);
+  transform:translateZ(-1px);
+  animation:pickRing 1.9s var(--ease) infinite;
+  pointer-events:none;
+}
+@keyframes pickRing{
+  0%,100%{opacity:.55;scale:1;}
+  50%{opacity:.95;scale:1.16;}
+}
+
+/* ============================================================
+   五、暂离气泡：3D 空间中的 billboard，永远正对观察者
+   ============================================================ */
+.leave-tag{
+  position:absolute;left:50%;top:0;
+  /* 反向旋转抵消世界旋转，保证文字可读 */
+  transform:
+    translate(-50%,-100%)
+    translateZ(calc(var(--h) + 26px))
+    rotateZ(calc(-1 * var(--rz)))
+    rotateX(calc(-1 * var(--rx)))
+    scale(calc(1 / var(--scale)));
+  transform-origin:50% 100%;
+  padding:3px 9px;border-radius:999px;
+  background:rgba(96,165,250,.20);
+  border:1px solid rgba(96,165,250,.55);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  color:#BFDBFE;font-size:10px;font-family:var(--font-num);white-space:nowrap;
+  pointer-events:none;
+  box-shadow:0 6px 18px rgba(0,0,0,.35);
+  animation:tagBob 2.4s var(--ease) infinite;
+}
+@keyframes tagBob{
+  0%,100%{opacity:.86;}
+  50%{opacity:1;}
+}
+
+/* ============================================================
+   六、3D 图例（与座位同构的小立方体）
+   ============================================================ */
+.legend{
+  display:flex;flex-wrap:wrap;align-items:center;gap:10px 22px;
+  padding:12px 18px;
+  border-radius:var(--sys-radius-lg);
+  background:var(--stage-0);
+  border:1px solid rgba(255,255,255,.06);
+}
+.legend__cap{font-size:12px;color:var(--stage-text-2);letter-spacing:.04em;margin-right:2px;}
+.legend__item{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--stage-text);}
+.legend__cube{
+  position:relative;width:20px;height:20px;flex:0 0 20px;
+  transform-style:preserve-3d;
+  transform:rotateX(58deg) rotateZ(-45deg);
+}
+.legend__cube i{position:absolute;inset:0;background:var(--c);}
+.legend__cube i:nth-child(1){transform:translateZ(var(--h));border-radius:3px;box-shadow:0 0 10px var(--glow);}
+.legend__cube i:nth-child(2){left:0;top:100%;width:100%;height:var(--h);transform-origin:50% 0;transform:rotateX(90deg);background:color-mix(in srgb,var(--c) 55%,#050810);}
+.legend__cube i:nth-child(3){left:100%;top:0;width:var(--h);height:100%;transform-origin:0 50%;transform:rotateY(-90deg);background:color-mix(in srgb,var(--c) 44%,#050810);}
+.legend__cube[data-s="free"]{--c:var(--st-free);--h:5px;--glow:rgba(52,211,153,.3);}
+.legend__cube[data-s="reserved"]{--c:var(--st-reserved);--h:9px;--glow:rgba(251,191,36,.3);}
+.legend__cube[data-s="inuse"]{--c:var(--st-inuse);--h:14px;--glow:rgba(248,113,113,.34);}
+.legend__cube[data-s="leave"]{--c:var(--st-leave);--h:11px;--glow:rgba(96,165,250,.4);}
+.legend__cube[data-s="off"]{--c:var(--st-off);--h:2px;--glow:transparent;}
+.legend__note{font-size:11.5px;color:var(--stage-text-2);margin-left:auto;}
+
+/* ============================================================
+   七、右侧预约面板（浅色，回到系统风格）
+   ============================================================ */
+.drawer{
+  position:fixed;top:0;right:0;bottom:0;z-index:40;
+  width:min(380px,92vw);
+  display:flex;flex-direction:column;
+  background:var(--sys-surface);
+  border-left:1px solid var(--sys-border);
+  box-shadow:-12px 0 40px rgba(0,0,0,.12);
+  transform:translateX(102%);
+  transition:transform .38s var(--ease);
+}
+.drawer.is-open{transform:translateX(0);}
+.drawer__head{
+  display:flex;align-items:center;gap:10px;
+  padding:16px 18px;border-bottom:1px solid var(--sys-border);
+}
+.drawer__title{margin:0;font-size:15px;font-weight:600;}
+.drawer__close{margin-left:auto;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:var(--sys-text-3);}
+.drawer__close:hover{background:#f2f3f5;color:var(--sys-text);}
+.drawer__body{padding:18px;display:flex;flex-direction:column;gap:16px;overflow:auto;}
+.drawer__foot{margin-top:auto;padding:14px 18px;border-top:1px solid var(--sys-border);display:flex;gap:10px;}
+
+.kv{display:grid;grid-template-columns:76px 1fr;gap:8px 12px;font-size:13px;}
+.kv dt{color:var(--sys-text-3);}
+.kv dd{margin:0;font-weight:500;}
+
+.field{display:flex;flex-direction:column;gap:7px;}
+.field__label{font-size:13px;color:var(--sys-text-2);}
+.tags{display:flex;flex-wrap:wrap;gap:8px;}
+.tag{
+  padding:5px 14px;border-radius:999px;font-size:13px;
+  border:1px solid var(--sys-border-strong);background:var(--sys-surface);color:var(--sys-text-2);
+  transition:all .18s var(--ease);
+}
+.tag:hover{border-color:var(--sys-primary);color:var(--sys-primary);}
+.tag[aria-pressed="true"]{background:var(--sys-primary-weak);border-color:var(--sys-primary);color:var(--sys-primary);font-weight:600;}
+
+.notice{
+  padding:11px 14px;border-radius:var(--sys-radius);
+  background:var(--sys-primary-weak);
+  border:1px solid #bcd9ff;
+  font-size:12.5px;color:#0e4d94;
+}
+.notice--warn{background:#fff7e6;border-color:#ffd591;color:#874d00;}
+
+/* 状态徽标（面板内） */
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;}
+.pill--free{background:#e6faf2;color:#0d8a5c;}
+.pill--reserved{background:#fff5e0;color:#a86a00;}
+.pill--inuse{background:#fdeaea;color:#b93b3b;}
+.pill--leave{background:#e7f0fd;color:#215fa8;}
+.pill i{width:7px;height:7px;border-radius:2px;background:currentColor;}
+
+/* ============================================================
+   八、响应式
+   ============================================================ */
+@media (max-width:880px){
+  :root{--seat-w:40px;--seat-gap:8px;}
+  .floor{padding:26px 24px 34px;}
+  .legend__note{display:none;}
+  .stage{min-height:58vh;}
+}
+@media (max-width:620px){
+  :root{--seat-w:34px;--seat-gap:7px;}
+  .app{padding:14px 12px 22px;}
+  .page-head__title{font-size:17px;}
+  .toolbar{padding:8px 10px;gap:6px;}
+  .stats{gap:6px;}
+  .stat{flex:1 1 46%;padding:8px 12px;}
+  .stat__num{font-size:17px;}
+  .legend{gap:8px 14px;padding:10px 12px;}
+  .stage__hint{font-size:11px;padding:5px 10px;}
+  .stage__badge{top:10px;left:12px;font-size:11px;}
+  .viewctl{top:10px;right:12px;}
+  .viewctl button{width:30px;height:30px;}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ========== 页面头（浅色系统风） ========== -->
+  <header class="page-head">
+    <h1 class="page-head__title">
+      座位占位视图
+      <span class="page-head__crumb">图书馆 · 三楼研讨区 · 3D 立体模式</span>
+    </h1>
+    <span class="page-head__spacer"></span>
+    <button class="btn btn--ghost" type="button">返回平面模式</button>
+  </header>
+
+  <!-- ========== 工具栏 ========== -->
+  <div class="toolbar">
+    <span class="toolbar__label">楼层</span>
+    <div class="seg" role="group" aria-label="切换楼层">
+      <button type="button" aria-pressed="false">1F 自习区</button>
+      <button type="button" aria-pressed="false">2F 阅览区</button>
+      <button type="button" aria-pressed="true">3F 研讨区</button>
+    </div>
+    <span class="toolbar__sep"></span>
+    <span class="toolbar__label">时段</span>
+    <div class="seg" role="group" aria-label="切换时段">
+      <button type="button" aria-pressed="false">13:00</button>
+      <button type="button" aria-pressed="true">14:00</button>
+      <button type="button" aria-pressed="false">15:00</button>
+    </div>
+    <span class="toolbar__sep"></span>
+    <button class="btn" type="button" id="resetView">复位视角</button>
+    <button class="btn" type="button" id="toggleSpin">自动旋转</button>
+  </div>
+
+  <!-- ========== 实时统计（浅色卡片） ========== -->
+  <div class="stats">
+    <div class="stat stat--free"><div class="stat__num" id="statFree">—</div><div class="stat__lbl">空闲座位</div></div>
+    <div class="stat stat--reserved"><div class="stat__num" id="statReserved">—</div><div class="stat__lbl">已预约未到</div></div>
+    <div class="stat stat--inuse"><div class="stat__num" id="statInuse">—</div><div class="stat__lbl">使用中</div></div>
+    <div class="stat stat--leave"><div class="stat__num" id="statLeave">—</div><div class="stat__lbl">暂离保留</div></div>
+  </div>
+
+  <!-- ========== 3D 沙盘 ========== -->
+  <div class="stage" id="stage">
+    <div class="stage__badge"><span class="stage__dot" aria-hidden="true"></span>实时同步 · <span id="clock">--:--:--</span></div>
+
+    <div class="viewctl">
+      <button type="button" id="zoomIn" aria-label="放大"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button type="button" id="zoomOut" aria-label="缩小"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+      <button type="button" id="resetView2" aria-label="复位视角"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg></button>
+    </div>
+
+    <div class="world" id="world">
+      <div class="floor">
+        <div class="floor__fixture" aria-hidden="true"><span>SERVICE DESK</span></div>
+        <div class="grid" id="grid" role="group" aria-label="座位占位图"></div>
+      </div>
+    </div>
+
+    <div class="stage__hint">拖拽旋转 · 滚轮缩放 · 点击绿色空位预约</div>
+  </div>
+
+  <!-- ========== 3D 图例 ========== -->
+  <div class="legend">
+    <span class="legend__cap">占位状态</span>
+    <span class="legend__item"><span class="legend__cube" data-s="free"><i></i><i></i><i></i></span>空闲 · 可预约</span>
+    <span class="legend__item"><span class="legend__cube" data-s="reserved"><i></i><i></i><i></i></span>已预约 · 人未到</span>
+    <span class="legend__item"><span class="legend__cube" data-s="inuse"><i></i><i></i><i></i></span>使用中 · 已签到</span>
+    <span class="legend__item"><span class="legend__cube" data-s="leave"><i></i><i></i><i></i></span>暂离 · 座位保留</span>
+    <span class="legend__item"><span class="legend__cube" data-s="off"><i></i><i></i><i></i></span>维护中</span>
+    <span class="legend__note">高度 = 占用强度：越被占用，方块越高</span>
+  </div>
+</div>
+
+<!-- ========== 预约抽屉（浅色系统风） ========== -->
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <div class="drawer__head">
+    <h2 class="drawer__title" id="drawerTitle">预约座位</h2>
+    <button class="drawer__close" type="button" id="drawerClose" aria-label="关闭">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+
+  <div class="drawer__body">
+    <dl class="kv">
+      <dt>座位编号</dt><dd id="dSeatNo">—</dd>
+      <dt>所在分区</dt><dd>三楼研讨协作区</dd>
+      <dt>当前状态</dt><dd><span class="pill pill--free" id="dState"><i></i>空闲</span></dd>
+    </dl>
+
+    <div class="field">
+      <span class="field__label">使用时长</span>
+      <div class="tags" role="group" aria-label="选择时长">
+        <button class="tag" type="button" data-dur="1">1 小时</button>
+        <button class="tag" type="button" data-dur="2" aria-pressed="true">2 小时</button>
+        <button class="tag" type="button" data-dur="3">3 小时</button>
+        <button class="tag" type="button" data-dur="4">4 小时</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <span class="field__label">成员</span>
+      <div class="tags" role="group" aria-label="选择人数">
+        <button class="tag" type="button" data-size="1" aria-pressed="true">仅我一人</button>
+        <button class="tag" type="button" data-size="2">2 人</button>
+        <button class="tag" type="button" data-size="4">4 人</button>
+      </div>
+    </div>
+
+    <div class="notice" id="dNotice">预约时段 <strong id="dRange">14:00 – 16:00</strong>；开始前 15 分钟开放签到。</div>
+    <div class="notice notice--warn">研讨区需整组预约，同行成员须在开始前 30 分钟内确认加入。</div>
+  </div>
+
+  <div class="drawer__foot">
+    <button class="btn" type="button" id="cancelPick" style="flex:1">取消</button>
+    <button class="btn btn--primary" type="button" id="confirmPick" style="flex:2">确认预约</button>
+  </div>
+</aside>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ==========================================================
+     1. 座位数据
+     —— 状态：free 空闲 / reserved 已预约未到 / inuse 使用中 /
+              leave 暂离保留 / off 维护中
+     ========================================================== */
+  var COLS = 8;
+  var ROWS = 6;
+
+  // 预置占位场景：贴近真实——靠窗一侧更抢手，靠门已坐满
+  var PRESET = {
+    reserved: [2, 9, 10, 17, 26, 33, 34, 41],
+    inuse:    [4, 5, 11, 12, 13, 20, 21, 28, 29, 36, 37, 44, 45],
+    leave:    [6, 22],
+    off:      [30, 46]
+  };
+
+  /** 生成座位状态数组。 */
+  function buildSeats() {
+    var total = COLS * ROWS;
+    var states = [];
+    for (var i = 0; i < total; i++) { states.push('free'); }
+    Object.keys(PRESET).forEach(function (state) {
+      PRESET[state].forEach(function (idx) {
+        if (idx < total) { states[idx] = state; }
+      });
+    });
+    return states;
+  }
+
+  var STATE_TEXT = {
+    free: '空闲，可预约',
+    reserved: '已预约，人未到',
+    inuse: '使用中',
+    leave: '暂离中，座位保留',
+    off: '维护中'
+  };
+
+  /** 座位编号：A01 起，行优先。 */
+  function seatNo(index) {
+    var row = String.fromCharCode(65 + Math.floor(index / COLS));
+    return row + String(index % COLS + 1).padStart(2, '0');
+  }
+
+  /* ==========================================================
+     2. 渲染 3D 座位
+     ========================================================== */
+  var grid = document.getElementById('grid');
+  var seats = buildSeats();
+
+  /** 造一个座位立方体（顶面 + 4 侧面，必要时加暂离气泡）。 */
+  function createSeat(index, state, no) {
+    var el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'seat';
+    el.dataset.state = state;
+    el.dataset.no = no;
+    el.dataset.index = String(index);
+    el.style.animationDelay = (index * 12) + 'ms';
+    el.setAttribute('aria-label', no + ' ' + STATE_TEXT[state]);
+    if (state !== 'free') { el.disabled = true; }
+
+    var top = document.createElement('span');
+    top.className = 'seat__top';
+    top.textContent = no;
+    el.appendChild(top);
+
+    ['n', 's', 'w', 'e'].forEach(function (dir) {
+      var side = document.createElement('i');
+      side.className = 'seat__side seat__side--' + dir;
+      el.appendChild(side);
+    });
+
+    // 暂离：3D 空间中的 billboard 气泡
+    if (state === 'leave') {
+      var tag = document.createElement('span');
+      tag.className = 'leave-tag';
+      tag.textContent = '⌛ ' + leaveReturnTime(index);
+      el.appendChild(tag);
+    }
+    return el;
+  }
+
+  /** 暂离预计返回时间：给两个座位各一个不同的时间，便于观察。 */
+  function leaveReturnTime(index) {
+    var base = new Date();
+    base.setMinutes(base.getMinutes() + (index === 6 ? 24 : 41));
+    return String(base.getHours()).padStart(2, '0') + ':' + String(base.getMinutes()).padStart(2, '0');
+  }
+
+  function renderSeats() {
+    grid.style.setProperty('--cols', COLS);
+    grid.textContent = '';
+    seats.forEach(function (state, i) {
+      grid.appendChild(createSeat(i, state, seatNo(i)));
+    });
+  }
+
+  renderSeats();
+
+  /** 刷新统计条。 */
+  function refreshStats() {
+    var count = { free: 0, reserved: 0, inuse: 0, leave: 0, off: 0 };
+    seats.forEach(function (s) { count[s] += 1; });
+    document.getElementById('statFree').textContent = count.free;
+    document.getElementById('statReserved').textContent = count.reserved;
+    document.getElementById('statInuse').textContent = count.inuse;
+    document.getElementById('statLeave').textContent = count.leave;
+  }
+  refreshStats();
+
+  /* ==========================================================
+     3. 视角控制：拖拽旋转 / 滚轮缩放 / 复位 / 自动旋转
+     ========================================================== */
+  var stage = document.getElementById('stage');
+  var root = document.documentElement;
+
+  var view = { rx: 60, rz: -45, scale: 1 };
+  var DEFAULT_VIEW = { rx: 60, rz: -45, scale: 1 };
+
+  /** 把视角写回 CSS 变量（座位气泡与图例都依赖它们做反向变换）。 */
+  function applyView() {
+    root.style.setProperty('--rx', view.rx.toFixed(2) + 'deg');
+    root.style.setProperty('--rz', view.rz.toFixed(2) + 'deg');
+    root.style.setProperty('--scale', view.scale.toFixed(3));
+  }
+  applyView();
+
+  var dragging = false, lastX = 0, lastY = 0;
+
+  stage.addEventListener('pointerdown', function (e) {
+    if (e.target.closest('.seat[data-state="free"]')) { return; } // 让点击座位优先
+    if (e.target.closest('.viewctl')) { return; }
+    dragging = true;
+    stage.classList.add('is-dragging');
+    lastX = e.clientX; lastY = e.clientY;
+    stage.setPointerCapture(e.pointerId);
+    stopSpin();
+  });
+
+  stage.addEventListener('pointermove', function (e) {
+    if (!dragging) { return; }
+    var dx = e.clientX - lastX;
+    var dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+
+    view.rz = clamp(view.rz + dx * 0.32, -180, 180);
+    view.rx = clamp(view.rx - dy * 0.28, 18, 86);
+    applyView();
+  });
+
+  ['pointerup', 'pointercancel'].forEach(function (evt) {
+    stage.addEventListener(evt, function () {
+      dragging = false;
+      stage.classList.remove('is-dragging');
+    });
+  });
+
+  // 滚轮缩放：以视窗中心为基准
+  stage.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    view.scale = clamp(view.scale * (e.deltaY > 0 ? 0.92 : 1.08), 0.5, 2.2);
+    applyView();
+  }, { passive: false });
+
+  function clamp(v, min, max) { return Math.min(Math.max(v, min), max); }
+
+  // 复位
+  function resetView() {
+    view = { rx: DEFAULT_VIEW.rx, rz: DEFAULT_VIEW.rz, scale: DEFAULT_VIEW.scale };
+    applyView();
+  }
+  document.getElementById('resetView').addEventListener('click', resetView);
+  document.getElementById('resetView2').addEventListener('click', resetView);
+
+  document.getElementById('zoomIn').addEventListener('click', function () {
+    view.scale = clamp(view.scale * 1.14, 0.5, 2.2); applyView();
+  });
+  document.getElementById('zoomOut').addEventListener('click', function () {
+    view.scale = clamp(view.scale * 0.88, 0.5, 2.2); applyView();
+  });
+
+  // 自动旋转（用于演示与巡览）
+  var spinTimer = null;
+  function stopSpin() {
+    if (spinTimer) { clearInterval(spinTimer); spinTimer = null; }
+    var btn = document.getElementById('toggleSpin');
+    btn.setAttribute('aria-pressed', 'false');
+    btn.textContent = '自动旋转';
+  }
+  document.getElementById('toggleSpin').addEventListener('click', function (e) {
+    var btn = e.currentTarget;
+    if (spinTimer) { stopSpin(); return; }
+    btn.setAttribute('aria-pressed', 'true');
+    btn.textContent = '停止旋转';
+    spinTimer = setInterval(function () {
+      view.rz = view.rz + 0.4;
+      if (view.rz > 180) { view.rz -= 360; }
+      applyView();
+    }, 40);
+  });
+
+  /* ==========================================================
+     4. 选中与预约抽屉
+     ========================================================== */
+  var drawer = document.getElementById('drawer');
+  var pickedEl = null;
+  var pickedIndex = -1;
+  var duration = 2;
+  var partySize = 1;
+
+  grid.addEventListener('click', function (e) {
+    var seat = e.target.closest('.seat[data-state="free"]');
+    if (!seat) { return; }
+
+    if (pickedEl) { pickedEl.classList.remove('is-picked'); }
+    pickedEl = seat;
+    pickedIndex = Number(seat.dataset.index);
+    seat.classList.add('is-picked');
+
+    document.getElementById('dSeatNo').textContent = seat.dataset.no;
+    updateRange();
+    drawer.classList.add('is-open');
+    drawer.setAttribute('aria-hidden', 'false');
+  });
+
+  function closeDrawer() {
+    drawer.classList.remove('is-open');
+    drawer.setAttribute('aria-hidden', 'true');
+    if (pickedEl) { pickedEl.classList.remove('is-picked'); pickedEl = null; pickedIndex = -1; }
+  }
+  document.getElementById('drawerClose').addEventListener('click', closeDrawer);
+  document.getElementById('cancelPick').addEventListener('click', closeDrawer);
+
+  // 时长选择
+  document.querySelectorAll('.tags [data-dur]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      duration = Number(btn.dataset.dur);
+      document.querySelectorAll('.tags [data-dur]').forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
+      updateRange();
+    });
+  });
+
+  // 人数选择
+  document.querySelectorAll('.tags [data-size]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      partySize = Number(btn.dataset.size);
+      document.querySelectorAll('.tags [data-size]').forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
+      var notice = document.getElementById('dNotice');
+      if (partySize > 1) {
+        notice.innerHTML = '已按 <strong>' + partySize + ' 人</strong> 组队预约，' +
+          '预约时段 <strong>' + currentRange() + '</strong>；生成邀请码后请同行同学在 10 分钟内确认。';
+      } else {
+        notice.innerHTML = '预约时段 <strong>' + currentRange() + '</strong>；开始前 15 分钟开放签到。';
+      }
+    });
+  });
+
+  /** 当前时段范围文本（基于 14:00 起始）。 */
+  function currentRange() {
+    var start = 14;
+    return String(start).padStart(2, '0') + ':00 – ' +
+           String(start + duration).padStart(2, '0') + ':00';
+  }
+  function updateRange() {
+    document.getElementById('dRange').textContent = currentRange();
+  }
+
+  // 确认预约：把座位从「空闲」升为「已预约」，并让它"长高"
+  document.getElementById('confirmPick').addEventListener('click', function () {
+    if (pickedIndex < 0 || !pickedEl) { return; }
+
+    var el = pickedEl;
+    var idx = pickedIndex;
+
+    el.dataset.state = 'reserved';
+    el.disabled = true;
+    el.classList.remove('is-picked');
+    el.setAttribute('aria-label', el.dataset.no + ' ' + STATE_TEXT.reserved);
+
+    seats[idx] = 'reserved';
+    refreshStats();
+
+    closeDrawer();
+
+    // 视觉反馈：闪烁一次，提示状态已变更
+    el.animate(
+      [{ filter: 'brightness(1)' }, { filter: 'brightness(1.85)' }, { filter: 'brightness(1)' }],
+      { duration: 620, easing: 'ease-out' }
+    );
+  });
+
+  // 点击空白处取消选中
+  stage.addEventListener('click', function (e) {
+    if (e.target.closest('.seat')) { return; }
+    if (e.target.closest('.viewctl')) { return; }
+    closeDrawer();
+  });
+
+  /* ==========================================================
+     5. 实时时钟
+     ========================================================== */
+  var clock = document.getElementById('clock');
+  function tick() {
+    var d = new Date();
+    clock.textContent = [d.getHours(), d.getMinutes(), d.getSeconds()]
+      .map(function (n) { return String(n).padStart(2, '0'); }).join(':');
+  }
+  tick();
+  setInterval(tick, 1000);
+
+  /* ==========================================================
+     6. 工具栏分段控件
+     ========================================================== */
+  document.querySelectorAll('.seg').forEach(function (group) {
+    group.addEventListener('click', function (e) {
+      var btn = e.target.closest('button');
+      if (!btn) { return; }
+      group.querySelectorAll('button').forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
+    });
+  });
+
+  /* ==========================================================
+     7. 键盘可达性：方向键旋转视角
+     ========================================================== */
+  stage.setAttribute('tabindex', '0');
+  stage.addEventListener('keydown', function (e) {
+    var step = 5;
+    var handled = true;
+    if (e.key === 'ArrowLeft') { view.rz = clamp(view.rz - step, -180, 180); }
+    else if (e.key === 'ArrowRight') { view.rz = clamp(view.rz + step, -180, 180); }
+    else if (e.key === 'ArrowUp') { view.rx = clamp(view.rx + step, 18, 86); }
+    else if (e.key === 'ArrowDown') { view.rx = clamp(view.rx - step, 18, 86); }
+    else if (e.key === 'Escape') { closeDrawer(); }
+    else { handled = false; }
+    if (handled) { e.preventDefault(); applyView(); }
+  });
+})();
+</script>
+</body>
+</html>
