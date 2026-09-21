@@ -21,16 +21,6 @@ export function fetchMyReservations(params) {
 }
 
 /**
- * 预约详情。
- *
- * @param {number|string} id 预约 ID
- * @returns {Promise<object>} 预约 VO
- */
-export function fetchReservation(id) {
-  return request.get(`/reservations/${id}`);
-}
-
-/**
  * 取消预约。
  *
  * @param {number|string} id 预约 ID

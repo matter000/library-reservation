@@ -6,7 +6,6 @@ import React, {
   useMemo,
   useState,
 } from 'react';
-import { message } from 'antd';
 import { STORAGE_KEYS } from '../constants';
 import { fetchMe, login as loginApi } from '../api/auth';
 import { clearAuth, setToken } from '../api/request';
@@ -110,9 +109,4 @@ export function useAuth() {
     throw new Error('useAuth 必须在 AuthProvider 内使用');
   }
   return ctx;
-}
-
-/** 全局提示（避免多处重复 import antd message）。 */
-export function toastError(text) {
-  message.error(text);
 }

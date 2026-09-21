@@ -14,6 +14,14 @@ import { useAuth } from '../store/AuthContext';
 
 const { Sider, Header, Content } = Layout;
 
+const MENU_ITEMS = [
+  { key: '/admin/statistics', icon: <BarChartOutlined />, label: '数据统计' },
+  { key: '/admin/floors', icon: <DatabaseOutlined />, label: '楼层管理' },
+  { key: '/admin/usage', icon: <AppstoreOutlined />, label: '使用情况' },
+  { key: '/admin/reservations', icon: <ProfileOutlined />, label: '预约记录' },
+  { key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' },
+];
+
 /**
  * 管理员布局：左侧固定侧边栏 + 右侧内容区（纯 PC，最小宽度 1280px）。
  *
@@ -24,26 +32,11 @@ export default function AdminLayout() {
   const location = useLocation();
   const { user, logout } = useAuth();
 
-  const menuItems = [
-    { key: '/admin/statistics', icon: <BarChartOutlined />, label: '数据统计' },
-    { key: '/admin/floors', icon: <DatabaseOutlined />, label: '楼层管理' },
-    { key: '/admin/usage', icon: <AppstoreOutlined />, label: '使用情况' },
-    { key: '/admin/reservations', icon: <ProfileOutlined />, label: '预约记录' },
-    { key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' },
-  ];
-
   /** 座位管理挂在楼层管理下：/admin/floors/:id/seats */
   const pathname = location.pathname;
-  let selectedKey = '/admin/statistics';
-  if (pathname.startsWith('/admin/floors')) {
-    selectedKey = '/admin/floors';
-  } else if (pathname.startsWith('/admin/usage')) {
-    selectedKey = '/admin/usage';
-  } else if (pathname.startsWith('/admin/reservations')) {
-    selectedKey = '/admin/reservations';
-  } else if (pathname.startsWith('/admin/users')) {
-    selectedKey = '/admin/users';
-  }
+  const selectedKey =
+    MENU_ITEMS.map((item) => item.key).find((key) => pathname.startsWith(key)) ||
+    '/admin/statistics';
 
   return (
     <Layout className="admin-layout">
@@ -53,7 +46,7 @@ export default function AdminLayout() {
           theme="dark"
           mode="inline"
           selectedKeys={[selectedKey]}
-          items={menuItems}
+          items={MENU_ITEMS}
           onClick={({ key }) => navigate(key)}
         />
       </Sider>

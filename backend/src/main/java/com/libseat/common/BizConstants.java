@@ -13,9 +13,6 @@ import java.util.List;
  */
 public final class BizConstants {
 
-    /** 开放起始小时。 */
-    public static final int OPEN_HOUR_START = 8;
-
     /** 开放结束小时（开区间）。 */
     public static final int OPEN_HOUR_END = 22;
 
@@ -28,13 +25,10 @@ public final class BizConstants {
     /** slot_index 最大值（21:00-22:00）。 */
     public static final int SLOT_INDEX_MAX = 21;
 
-    /** 单次最长小时数。 */
-    public static final int MAX_DURATION = 4;
-
     /** 默认时长。 */
     public static final int DEFAULT_DURATION = 2;
 
-    /** 可选时长。 */
+    /** 可选时长；上限即本列表最大值 4 小时。 */
     public static final List<Integer> ALLOWED_DURATIONS = List.of(1, 2, 3, 4);
 
     /** 可预约窗口天数（今天 ~ 今天+6）。 */
@@ -51,9 +45,6 @@ public final class BizConstants {
 
     /** 日期时间格式。 */
     public static final String DATETIME_PATTERN = "yyyy-MM-dd HH:mm:ss";
-
-    /** 时间格式。 */
-    public static final String TIME_PATTERN = "HH:mm";
 
     /** 手机号脱敏保留的前缀长度。 */
     public static final int PHONE_MASK_PREFIX = 3;

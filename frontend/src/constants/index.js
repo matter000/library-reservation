@@ -66,7 +66,6 @@ export const SEAT_BASE_STATUS_META = {
 /** 开放时间与时段（后端 BizConstants：08:00-22:00，粒度 1 小时，slot_index 8~21）。 */
 export const SLOT_INDEX_MIN = 8;
 export const SLOT_INDEX_MAX = 21;
-export const SLOT_COUNT = 14;
 
 /** 可选时长。 */
 export const DURATION_OPTIONS = [

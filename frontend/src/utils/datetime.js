@@ -8,9 +8,6 @@ import {
 /** 日期格式。 */
 export const DATE_FORMAT = 'YYYY-MM-DD';
 
-/** 日期时间格式。 */
-export const DATETIME_FORMAT = 'YYYY-MM-DD HH:mm:ss';
-
 /**
  * 取可预约日期列表：今天 ~ 今天+6（后端 ADVANCE_DAYS=7）。
  *
@@ -26,30 +23,13 @@ export function getBookableDates() {
 }
 
 /**
- * 判断日期是否在可预约窗口内。
- *
- * @param {string} date yyyy-MM-dd
- * @returns {boolean} 是否可预约
- */
-export function isBookableDate(date) {
-  if (!date) {
-    return false;
-  }
-  const target = dayjs(date);
-  return target.isAfter(dayjs().startOf('day').subtract(1, 'second'))
-    && target.isBefore(dayjs().add(ADVANCE_DAYS, 'day').startOf('day'));
-}
-
-/**
  * 时段标签，如 14:00-15:00。
  *
  * @param {number} slotIndex 时段序号
  * @returns {string} 标签
  */
 export function slotLabel(slotIndex) {
-  const start = String(slotIndex).padStart(2, '0');
-  const end = String(slotIndex + 1).padStart(2, '0');
-  return `${start}:00-${end}:00`;
+  return buildTimeRange(slotIndex, 1);
 }
 
 /**
