@@ -1,4 +1,4 @@
-# =====================================================================
+﻿# =====================================================================
 # 图书馆座位预约系统 —— 后端接口冒烟脚本（T-BE-10）
 # 用法（先启动后端 http://localhost:8080）：
 #   powershell -ExecutionPolicy Bypass -File docs\api-smoke.ps1 [-Base http://localhost:8081]
@@ -83,12 +83,14 @@ Show '9. 时段选项条数/首项' @{
     first = (Invoke-Api GET '/api/config/slots' $null $stuToken).data[0]
 }
 
-# ---------- 10. 预约（选一个 FREE 座位，未来时段） ----------
+# ---------- 10. 预约（用本次新注册用户，避免与种子用户已有预约时段重叠） ----------
 $tomorrow = (Get-Date).AddDays(1).ToString('yyyy-MM-dd')
 $freeSeat = ($map.data.seats | Where-Object { $_.displayStatus -eq 'FREE' } | Select-Object -First 1)
+$smokeLogin = Invoke-Api POST '/api/auth/login' @{ username = "smoke$stamp"; password = '123456' }
+$smokeToken = $smokeLogin.data.token
 Show '10. 提交预约' (Invoke-Api POST '/api/reservations' @{
     seatId = $freeSeat.seatId; date = $tomorrow; startSlot = 14; duration = 2
-} $null $stuToken)
+} $smokeToken)
 
 # ---------- 11. 我的预约 ----------
 Show '11. 我的预约（upcoming）' (Invoke-Api GET '/api/reservations/my?tab=upcoming' $null $stuToken)
@@ -107,13 +109,14 @@ Show '13. 使用情况（1F 今天）' (Invoke-Api GET "/api/admin/usage?floorId
 # ---------- 14. 管理员：预约记录 ----------
 Show '14. 预约记录' (Invoke-Api GET '/api/admin/reservations?page=1&size=5' $null $admToken).data.total
 
-# ---------- 15. 管理员：批量生成（重复执行应全跳过） ----------
-Show '15a. 批量生成 1x3（前缀 Z）' (Invoke-Api POST '/api/admin/seats/batch' @{
-    floorId = $floorId; rows = 1; cols = 3; prefix = 'Z'; startNo = 1; zone = 'Z区'
-} $null $admToken).data
+# ---------- 15. 管理员：批量生成（重复执行应全跳过；起始号随运行随机，保证脚本可重复执行） ----------
+$batchStart = Get-Random -Minimum 100 -Maximum 900
+Show "15a. 批量生成 1x3（Z$batchStart 起）" (Invoke-Api POST '/api/admin/seats/batch' @{
+    floorId = $floorId; rows = 1; cols = 3; prefix = 'Z'; startNo = $batchStart; zone = 'Z区'
+} $admToken).data
 Show '15b. 再执行一次（期望 created=0, skipped=3）' (Invoke-Api POST '/api/admin/seats/batch' @{
-    floorId = $floorId; rows = 1; cols = 3; prefix = 'Z'; startNo = 1; zone = 'Z区'
-} $null $admToken).data
+    floorId = $floorId; rows = 1; cols = 3; prefix = 'Z'; startNo = $batchStart; zone = 'Z区'
+} $admToken).data
 
 # ---------- 16. 管理员：用户列表（手机号脱敏） ----------
 Show '16. 用户列表' (Invoke-Api GET '/api/admin/users?page=1&size=5' $null $admToken).data.list
