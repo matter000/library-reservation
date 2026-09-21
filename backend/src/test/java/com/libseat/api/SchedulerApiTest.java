@@ -58,7 +58,8 @@ class SchedulerApiTest extends ApiTestBase {
     @Test
     @DisplayName("【P0-5】CONFIRMED 且超过开始+15min → NO_SHOW，slot 物理删除，no_show_count +1")
     void scanNoShow() throws Exception {
-        long userId = uid(u1);
+        // 用全新用户隔离：scanNoShow 扫描全库，其他用例残留的「今天已过期的 CONFIRMED」会干扰计数断言
+        long userId = uid(newUser());
         LocalDate today = LocalDate.now();
         int hour = LocalDateTime.now().getHour();
         if (hour < 10) {
@@ -122,7 +123,8 @@ class SchedulerApiTest extends ApiTestBase {
     @Test
     @DisplayName("【P0-5】未到时间的 CONFIRMED / CHECKED_IN 不应被定时任务误伤")
     void notYetExpiredShouldKeep() throws Exception {
-        long userId = uid(u2);
+        // 同样用全新用户隔离，避免其他用例残留的过期数据被扫描后干扰计数断言
+        long userId = uid(newUser());
         LocalDate future = LocalDate.now().plusDays(3);
         long seat = seatId(floor1, "A52");
 
