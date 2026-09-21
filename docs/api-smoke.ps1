@@ -1,10 +1,11 @@
 # =====================================================================
 # 图书馆座位预约系统 —— 后端接口冒烟脚本（T-BE-10）
 # 用法（先启动后端 http://localhost:8080）：
-#   powershell -ExecutionPolicy Bypass -File docs\api-smoke.ps1
+#   powershell -ExecutionPolicy Bypass -File docs\api-smoke.ps1 [-Base http://localhost:8081]
 # =====================================================================
+param([string]$Base = 'http://localhost:8080')
+
 $ErrorActionPreference = 'Continue'
-$Base = 'http://localhost:8080'
 
 function Invoke-Api {
     param(
