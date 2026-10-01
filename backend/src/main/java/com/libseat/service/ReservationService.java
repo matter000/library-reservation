@@ -537,7 +537,8 @@ public class ReservationService {
         String key = (tab == null || tab.isBlank()) ? "upcoming" : tab.trim().toLowerCase();
         return switch (key) {
             case "inprogress", "in_progress" -> List.of(ReservationStatus.CHECKED_IN);
-            case "finished" -> List.of(ReservationStatus.COMPLETED, ReservationStatus.NO_SHOW);
+            case "finished" -> List.of(ReservationStatus.COMPLETED, ReservationStatus.NO_SHOW,
+                    ReservationStatus.VIOLATED);
             case "cancelled" -> List.of(ReservationStatus.CANCELLED, ReservationStatus.ADMIN_CANCELLED);
             default -> List.of(ReservationStatus.CONFIRMED);
         };

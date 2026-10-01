@@ -483,7 +483,9 @@ class ReservationServiceUnitTest {
         assertEquals(List.of(ReservationStatus.CONFIRMED), service.statusesOfTab(null));
         assertEquals(List.of(ReservationStatus.CHECKED_IN), service.statusesOfTab("inProgress"));
         assertEquals(List.of(ReservationStatus.CHECKED_IN), service.statusesOfTab("in_progress"));
-        assertEquals(List.of(ReservationStatus.COMPLETED, ReservationStatus.NO_SHOW),
+        // 「已结束」收所有已归档且非人为取消的终态：VIOLATED（暂离未归）在这里，
+        // 放「已取消」会把风控结果与用户主动取消混为一谈
+        assertEquals(List.of(ReservationStatus.COMPLETED, ReservationStatus.NO_SHOW, ReservationStatus.VIOLATED),
                 service.statusesOfTab("finished"));
         assertEquals(List.of(ReservationStatus.CANCELLED, ReservationStatus.ADMIN_CANCELLED),
                 service.statusesOfTab("cancelled"));

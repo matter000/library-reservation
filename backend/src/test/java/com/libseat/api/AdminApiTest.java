@@ -431,13 +431,13 @@ class AdminApiTest extends ApiTestBase {
 
         JsonNode distribution = data(exec(get("/api/admin/statistics/status-distribution")
                 .header("Authorization", bearer(admin))));
-        assertEquals(6, distribution.size(), "状态分布应包含 6 种状态");
+        assertEquals(7, distribution.size(), "状态分布应包含全部 7 种状态（V2 起含 VIOLATED 暂离未归）");
         java.util.Set<String> statuses = new java.util.HashSet<>();
         for (JsonNode node : distribution) {
             statuses.add(node.path("status").asText());
         }
         assertEquals(java.util.Set.of("CONFIRMED", "CHECKED_IN", "COMPLETED", "CANCELLED", "NO_SHOW",
-                "ADMIN_CANCELLED"), statuses, "状态分布应覆盖全部 6 种状态");
+                "VIOLATED", "ADMIN_CANCELLED"), statuses, "状态分布应覆盖全部状态枚举");
     }
 
     @Test

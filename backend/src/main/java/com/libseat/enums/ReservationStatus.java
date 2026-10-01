@@ -6,7 +6,7 @@ import lombok.Getter;
  * 预约状态。
  *
  * <p>只有 {@code CONFIRMED} 与 {@code CHECKED_IN} 占用座位；
- * {@code COMPLETED / CANCELLED / NO_SHOW / ADMIN_CANCELLED} 均视为已释放（slot 行已物理删除）。
+ * {@code COMPLETED / CANCELLED / NO_SHOW / VIOLATED / ADMIN_CANCELLED} 均视为已释放（slot 行已物理删除）。
  */
 @Getter
 public enum ReservationStatus {
@@ -25,6 +25,9 @@ public enum ReservationStatus {
 
     /** 超时未签到。 */
     NO_SHOW("NO_SHOW", "未签到"),
+
+    /** 暂离超时未归（V2 §5.3；与 NO_SHOW 一样已释放座位，但成因与处罚不同）。 */
+    VIOLATED("VIOLATED", "暂离未归"),
 
     /** 已被管理员取消（强制释放）。 */
     ADMIN_CANCELLED("ADMIN_CANCELLED", "已被管理员取消");

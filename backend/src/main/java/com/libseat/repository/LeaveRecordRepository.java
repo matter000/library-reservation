@@ -1,6 +1,7 @@
 package com.libseat.repository;
 
 import com.libseat.entity.LeaveRecord;
+import com.libseat.enums.LeaveStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -64,4 +65,18 @@ public interface LeaveRecordRepository extends JpaRepository<LeaveRecord, Long> 
      * @return OPEN 暂离列表
      */
     List<LeaveRecord> findByReservationIdInAndOpenFlag(Collection<Long> reservationIds, Integer openFlag);
+
+    /**
+     * 超时未归的暂离（DESIGN §5.3 扫描入口）。
+     *
+     * <p>只挑 {@code open_flag=1} 的行：处理完会把 open_flag 置回 NULL，
+     * 因此同一轮之后不会再被选中，重复扫描天然幂等。
+     *
+     * @param status   OPEN
+     * @param openFlag 固定传 1
+     * @param before   应归时刻早于此值即算超时
+     * @return 超时记录
+     */
+    List<LeaveRecord> findByStatusAndOpenFlagAndPlannedEndTimeBefore(
+            LeaveStatus status, Integer openFlag, LocalDateTime before);
 }
