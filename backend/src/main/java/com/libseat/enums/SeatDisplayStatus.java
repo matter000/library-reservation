@@ -19,6 +19,14 @@ public enum SeatDisplayStatus {
     /** 使用中（红）。 */
     IN_USE("IN_USE", "使用中"),
 
+    /**
+     * 暂离中（蓝色系，S2 / T-V2-10 才产出该态）。
+     *
+     * <p>此处预留仅为把「座位仍属该预约，但人不在」与 {@link #IN_USE} 区分开：
+     * 派生入口、前端图例与占用统计口径在暂离片一并接通，本片不会产生该值。
+     */
+    ON_LEAVE("ON_LEAVE", "暂离中"),
+
     /** 不可用（灰）。 */
     UNAVAILABLE("UNAVAILABLE", "不可用");
 

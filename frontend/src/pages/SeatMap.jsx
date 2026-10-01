@@ -17,6 +17,7 @@ import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { fetchFloor, fetchSeatMap, fetchSlots } from '../api/floor';
+import { fetchUserZones } from '../api/space';
 import { createReservation } from '../api/reservation';
 import SeatGrid from '../components/SeatGrid';
 import SeatLegend from '../components/SeatLegend';
@@ -46,6 +47,7 @@ export default function SeatMap() {
 
   const date = searchParams.get('date') || dayjs().format('YYYY-MM-DD');
   const slot = Number(searchParams.get('slot') || nowSlot());
+  const zoneId = searchParams.get('zoneId') ? Number(searchParams.get('zoneId')) : null;
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -53,6 +55,7 @@ export default function SeatMap() {
   const [floorInfo, setFloorInfo] = useState(null);
   const [slots, setSlots] = useState(buildFallbackSlots());
   const [lastUpdated, setLastUpdated] = useState('');
+  const [zones, setZones] = useState([]);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedSeat, setSelectedSeat] = useState(null);
@@ -86,7 +89,9 @@ export default function SeatMap() {
       setError('');
     }
     try {
-      const data = await fetchSeatMap({ floorId, date, slot });
+      const data = await fetchSeatMap({
+        floorId, date, slot, zoneId: zoneId || undefined,
+      });
       setMapData(data);
       setLastUpdated(nowTimeText());
       setError('');
@@ -99,6 +104,16 @@ export default function SeatMap() {
         setLoading(false);
       }
     }
+  }, [floorId, date, slot, zoneId]);
+
+  /** 本楼层的分区列表（整层视图下作为可选项）。 */
+  useEffect(() => {
+    if (!floorId) {
+      return;
+    }
+    fetchUserZones({ floorId, date, slot })
+      .then((list) => setZones(list || []))
+      .catch(() => setZones([]));
   }, [floorId, date, slot]);
 
   /** 拉取楼层信息与时段选项（仅日期/楼层变化时）。 */
@@ -176,6 +191,14 @@ export default function SeatMap() {
 
   /** 当前选中的时段选项（用于判断是否可预约）。 */
   const currentSlotOption = slots.find((item) => item.slotIndex === slot);
+
+  /** 分区有效规则：全部由服务端算好，这里只做展示与置灰。 */
+  const zoneRules = (mapData && mapData.zoneRules) || null;
+
+  /** 时长选项再按分区上限裁一刀（后端仍会二次校验）。 */
+  const selectableDurations = zoneRules && zoneRules.maxDurationMin
+    ? durationOptions.filter((option) => option.value * 60 <= zoneRules.maxDurationMin)
+    : durationOptions;
 
   /** 点击空闲座位 → 打开 Drawer。 */
   const handleSelectSeat = (seat) => {
@@ -255,12 +278,56 @@ export default function SeatMap() {
         <Button icon={<ReloadOutlined />} onClick={() => loadMap()} loading={loading}>
           刷新
         </Button>
+        {zones.length > 0 ? (
+          <>
+            <span>分区：</span>
+            <Select
+              value={zoneId ?? 0}
+              style={{ width: 190 }}
+              onChange={(next) => {
+                const params = { date, slot };
+                if (next) {
+                  params.zoneId = next;
+                }
+                setSearchParams(params);
+              }}
+              options={[
+                { value: 0, label: '全部楼层' },
+                ...zones.map((z) => ({
+                  value: z.zoneId,
+                  // 空闲数直接取分区卡片的同一份派生结果，避免前端再算一次
+                  label: `${z.name} ${z.freeSeats}/${z.totalSeats}`,
+                })),
+              ]}
+            />
+          </>
+        ) : null}
         <span className="spacer" />
         <Typography.Text type="secondary">上次更新 {lastUpdated || '--:--:--'}</Typography.Text>
       </div>
 
       {floorClosed ? (
         <Alert type="warning" showIcon message="该楼层已关闭，暂不开放预约" style={{ marginBottom: 12 }} />
+      ) : null}
+      {zoneRules && zoneRules.eligible === false ? (
+        <Alert
+          type="error"
+          showIcon
+          message={zoneRules.ineligibleReason || '当前角色不可预约该分区'}
+          style={{ marginBottom: 12 }}
+        />
+      ) : null}
+      {zoneRules && zoneRules.eligible !== false ? (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={`${zoneRules.zoneName}（${zoneRules.zoneTypeText}）：`
+            + `单次最长 ${zoneRules.maxDurationMin} 分钟 · 提前 ${zoneRules.advanceDays} 天`
+            + ` · ${zoneRules.leaveAllowed ? `可暂离 ${zoneRules.leaveMaxMin} 分钟` : '不支持暂离'}`
+            + (zoneRules.groupRequired ? ' · 仅整组预约' : '')
+            + (zoneRules.peakFlag ? ' · 当前时段为高峰' : '')}
+        />
       ) : null}
       {currentSlotOption && currentSlotOption.bookable === false ? (
         <Alert type="info" showIcon message="当前所选时段已过期，仅可查看，不可预约" style={{ marginBottom: 12 }} />
@@ -370,7 +437,7 @@ export default function SeatMap() {
               onChange={(e) => setDuration(e.target.value)}
               optionType="button"
               buttonStyle="solid"
-              options={durationOptions}
+              options={selectableDurations}
               style={{ marginBottom: 16 }}
             />
 

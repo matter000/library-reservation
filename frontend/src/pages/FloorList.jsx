@@ -17,6 +17,7 @@ import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { fetchFloors, fetchSlots } from '../api/floor';
 import { FLOOR_STATUS, FLOOR_STATUS_META } from '../constants';
+import { fetchUserZones } from '../api/space';
 import useBookingConfig from '../hooks/useBookingConfig';
 import { buildFallbackSlots, getBookableDates, nowSlot, slotLabel } from '../utils/datetime';
 
@@ -49,9 +50,18 @@ export default function FloorList() {
   const [slots, setSlots] = useState(buildFallbackSlots());
   const [date, setDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [slot, setSlot] = useState(nowSlot());
+  /** 分区余量：一次取全部，按楼层分组挂到楼层卡上（避免每层各发一次请求）。 */
+  const [zones, setZones] = useState([]);
 
   const { advanceDays } = useBookingConfig();
   const bookableDates = getBookableDates(advanceDays);
+
+  /** 加载分区余量卡片。 */
+  useEffect(() => {
+    fetchUserZones({ date, slot })
+      .then((list) => setZones(Array.isArray(list) ? list : []))
+      .catch(() => setZones([]));
+  }, [date, slot]);
 
   /** 加载时段选项。 */
   const loadSlots = useCallback(async (targetDate) => {
@@ -208,6 +218,22 @@ export default function FloorList() {
                     size="small"
                     format={(p) => `占用率 ${p}%`}
                   />
+
+                  <div style={{ marginTop: 10 }}>
+                    {zones.filter((z) => z.floorId === floor.floorId).map((z) => (
+                      <div
+                        key={z.zoneId}
+                        style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, lineHeight: '20px' }}
+                      >
+                        <Typography.Text type="secondary" ellipsis style={{ maxWidth: 130 }}>
+                          {z.name}
+                        </Typography.Text>
+                        <Typography.Text style={{ color: z.freeSeats > 0 ? '#52c41a' : '#ff4d4f' }}>
+                          {z.freeSeats}/{z.totalSeats} 空
+                        </Typography.Text>
+                      </div>
+                    ))}
+                  </div>
 
                   <div style={{ marginTop: 10, textAlign: 'right' }}>
                     <Button type="primary" size="small" disabled={closed} onClick={(e) => {
