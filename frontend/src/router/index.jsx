@@ -16,6 +16,8 @@ import ReservationList from '../pages/admin/ReservationList';
 import Statistics from '../pages/admin/Statistics';
 import UserList from '../pages/admin/UserList';
 import RuleManage from '../pages/admin/RuleManage';
+import ZoneManage from '../pages/admin/ZoneManage';
+import TableManage from '../pages/admin/TableManage';
 import StaffHome from '../pages/staff/StaffHome';
 import { useAuth } from '../store/AuthContext';
 import { USER_ROLE, roleHomePath } from '../constants';
@@ -83,6 +85,8 @@ export default function AppRoutes() {
         <Route path="reservations" element={<ReservationList />} />
         <Route path="users" element={<UserList />} />
         <Route path="rules" element={<RuleManage />} />
+        <Route path="zones" element={<ZoneManage />} />
+        <Route path="tables" element={<TableManage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -25,6 +25,7 @@ import {
   updateSeatStatus,
 } from '../../api/admin';
 import { ERROR_CODE, SEAT_BASE_STATUS_META, SEAT_STATUS, SEAT_STATUS_META } from '../../constants';
+import { fetchZones } from '../../api/space';
 import SeatBatchModal from './SeatBatchModal';
 
 /**
@@ -49,7 +50,14 @@ export default function SeatManage() {
   const [editing, setEditing] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
+  const [zones, setZones] = useState([]);
   const [form] = Form.useForm();
+
+  useEffect(() => {
+    if (floorId) {
+      fetchZones(floorId).then((list) => setZones(list || [])).catch(() => setZones([]));
+    }
+  }, [floorId]);
 
   const load = useCallback(async () => {
     if (!floorId) {
@@ -308,6 +316,7 @@ export default function SeatManage() {
       <SeatBatchModal
         open={batchOpen}
         floorId={Number(floorId)}
+        zones={zones}
         onOk={() => load()}
         onCancel={() => setBatchOpen(false)}
       />

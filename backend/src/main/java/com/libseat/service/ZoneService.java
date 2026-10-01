@@ -261,6 +261,17 @@ public class ZoneService {
         zone.setRemark(StringUtils.hasText(request.getRemark()) ? request.getRemark().trim() : null);
     }
 
+    /** 角色 CSV → 列表（管理页回填用）。 */
+    private static List<String> csvToList(String csv) {
+        if (!StringUtils.hasText(csv)) {
+            return List.of();
+        }
+        return Arrays.stream(csv.split(","))
+                .map(String::trim)
+                .filter(StringUtils::hasText)
+                .toList();
+    }
+
     private Zone requireZone(Long zoneId) {
         if (zoneId == null) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "分区 ID 不能为空");
@@ -321,7 +332,10 @@ public class ZoneService {
                 .leaveAllowed(zone.getAllowLeave())
                 .leaveMaxMin(zone.getLeaveMaxMin())
                 .leaveDailyLimit(zone.getLeaveDailyLimit())
+                .allowDiscuss(zone.getAllowDiscuss().name())
                 .discussText(zone.getAllowDiscuss().getText())
+                .visibleRoles(csvToList(zone.getVisibleRoles()))
+                .eligibleRoles(csvToList(zone.getEligibleRoles()))
                 .allowGroup(zone.getAllowGroup())
                 .groupRequired(zone.getGroupRequired())
                 .build();

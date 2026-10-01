@@ -64,6 +64,11 @@ export function batchCreateSeats(data) {
   return request.post('/admin/seats/batch', data);
 }
 
+/** 批量生成冲突预览（不落库）。 */
+export function previewBatchSeats(data) {
+  return request.post('/admin/seats/batch-preview', data);
+}
+
 /* ---------------- 使用情况 / 预约记录 ---------------- */
 
 /**

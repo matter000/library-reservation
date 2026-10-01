@@ -5,6 +5,7 @@ import {
   BarChartOutlined,
   DatabaseOutlined,
   LogoutOutlined,
+  PartitionOutlined,
   ProfileOutlined,
   SettingOutlined,
   TableOutlined,
@@ -18,6 +19,8 @@ const { Sider, Header, Content } = Layout;
 const MENU_ITEMS = [
   { key: '/admin/statistics', icon: <BarChartOutlined />, label: '数据统计' },
   { key: '/admin/floors', icon: <DatabaseOutlined />, label: '楼层管理' },
+  { key: '/admin/zones', icon: <PartitionOutlined />, label: '分区管理' },
+  { key: '/admin/tables', icon: <TableOutlined />, label: '桌位管理' },
   { key: '/admin/usage', icon: <AppstoreOutlined />, label: '使用情况' },
   { key: '/admin/reservations', icon: <ProfileOutlined />, label: '预约记录' },
   { key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' },

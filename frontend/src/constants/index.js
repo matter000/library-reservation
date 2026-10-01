@@ -87,6 +87,27 @@ export const CHECK_IN_BEFORE_MIN = 15;
 /** 签到窗口：开始后多少分钟（兜底）。 */
 export const CHECK_IN_AFTER_MIN = 15;
 
+/** 分区类型（与后端 ZoneType 对齐）。 */
+export const ZONE_TYPE_META = {
+  SILENT: { text: '静音自习', color: 'blue' },
+  SEMINAR: { text: '研讨协作', color: 'purple' },
+  E_READING: { text: '电子阅览', color: 'cyan' },
+  LOUNGE: { text: '休闲阅览', color: 'orange' },
+  EXAM_PREP: { text: '考研专座', color: 'red' },
+  TEACHER_ONLY: { text: '教师专区', color: 'gold' },
+};
+
+/** 分区类型下拉项。 */
+export const ZONE_TYPE_OPTIONS = Object.entries(ZONE_TYPE_META)
+  .map(([value, meta]) => ({ value, label: meta.text }));
+
+/** 讨论音量等级（与后端 DiscussLevel 对齐）。 */
+export const DISCUSS_OPTIONS = [
+  { value: 'NO', label: '禁止交谈' },
+  { value: 'LOW', label: '低声交流' },
+  { value: 'YES', label: '允许讨论' },
+];
+
 /** localStorage key。 */
 export const STORAGE_KEYS = {
   token: 'lsr_token',

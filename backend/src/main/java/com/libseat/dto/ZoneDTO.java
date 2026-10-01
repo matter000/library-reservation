@@ -93,8 +93,17 @@ public class ZoneDTO {
         /** 每日暂离次数上限。 */
         private Integer leaveDailyLimit;
 
+        /** 讨论音量等级枚举名。 */
+        private String allowDiscuss;
+
         /** 讨论音量等级文案。 */
         private String discussText;
+
+        /** 可见角色列表（管理页回填用；学生面另有 eligible 字段表达当前用户能否预约）。 */
+        private List<String> visibleRoles;
+
+        /** 可预约角色列表。 */
+        private List<String> eligibleRoles;
 
         /** 是否支持组队预约。 */
         private Boolean allowGroup;
