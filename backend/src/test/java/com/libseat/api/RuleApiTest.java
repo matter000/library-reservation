@@ -99,4 +99,24 @@ class RuleApiTest extends ApiTestBase {
         }
         assertEquals(0, code(reserveRaw(newUser(), seatA07, beyond, 14, 1)), "恢复默认后应重新可预约");
     }
+
+    @Test
+    @DisplayName("【用户端】/api/config/booking 任何登录角色可读，且值随规则变化")
+    void bookingConfigExposedToUsers() throws Exception {
+        MvcResult anonymous = exec(get("/api/config/booking"));
+        assertEquals(4010, code(anonymous), "未登录不得读取配置");
+
+        JsonNode asStudent = data(exec(get("/api/config/booking").header("Authorization", bearer(u1))));
+        assertEquals(7, asStudent.path("advanceDays").asInt(), "默认窗口应为 7 天");
+        assertEquals(4, asStudent.path("allowedDurations").size(), "默认可选时长 4 项");
+
+        try {
+            assertEquals(0, code(updateRule(admin, "book.advance-days", "2")), "修改规则应成功");
+            JsonNode again = data(exec(get("/api/config/booking").header("Authorization", bearer(u1))));
+            assertEquals(2, again.path("advanceDays").asInt(),
+                    "★ 用户端表单必须看到收窄后的窗口，否则日期选择器会与后端校验打架");
+        } finally {
+            updateRule(admin, "book.advance-days", "7");
+        }
+    }
 }

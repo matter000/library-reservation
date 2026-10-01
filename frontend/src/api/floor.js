@@ -40,3 +40,12 @@ export function fetchSeatMap(params) {
 export function fetchSlots(date) {
   return request.get('/config/slots', { params: { date } });
 }
+
+/**
+ * 预约表单配置（可约天数 / 可选时长 / 签到窗口），取自后端规则中心。
+ *
+ * @returns {Promise<object>} {advanceDays, allowedDurations, defaultDuration, checkInBeforeMin, checkInAfterMin}
+ */
+export function fetchBookingConfig() {
+  return request.get('/config/booking');
+}

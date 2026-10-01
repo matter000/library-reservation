@@ -9,14 +9,16 @@ import {
 export const DATE_FORMAT = 'YYYY-MM-DD';
 
 /**
- * 取可预约日期列表：今天 ~ 今天+6（后端 ADVANCE_DAYS=7）。
+ * 取可预约日期列表：今天 ~ 今天+(advanceDays-1)。
  *
+ * @param {number} advanceDays 可提前预约天数，来自规则中心；缺省回退本地常量
  * @returns {string[]} yyyy-MM-dd 数组
  */
-export function getBookableDates() {
+export function getBookableDates(advanceDays = ADVANCE_DAYS) {
+  const days = Number.isInteger(advanceDays) && advanceDays > 0 ? advanceDays : ADVANCE_DAYS;
   const today = dayjs();
   const dates = [];
-  for (let i = 0; i < ADVANCE_DAYS; i += 1) {
+  for (let i = 0; i < days; i += 1) {
     dates.push(today.add(i, 'day').format(DATE_FORMAT));
   }
   return dates;

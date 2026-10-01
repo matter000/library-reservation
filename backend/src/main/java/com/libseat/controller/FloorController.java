@@ -4,6 +4,7 @@ import com.libseat.common.Result;
 import com.libseat.dto.FloorDTO;
 import com.libseat.dto.SeatDTO;
 import com.libseat.service.FloorService;
+import com.libseat.service.RuleConfigService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,6 +25,8 @@ import java.util.List;
 public class FloorController {
 
     private final FloorService floorService;
+
+    private final RuleConfigService ruleConfigService;
 
     /**
      * 楼层列表（含空闲数与占用率）。
@@ -81,5 +84,21 @@ public class FloorController {
     public Result<List<FloorDTO.SlotOptionVO>> slots(
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate date) {
         return Result.ok(floorService.getSlotOptions(date));
+    }
+
+    /**
+     * 预约表单配置（可约天数 / 可选时长 / 签到窗口），取自规则中心。
+     *
+     * @return 配置
+     */
+    @GetMapping("/config/booking")
+    public Result<FloorDTO.BookingConfigVO> bookingConfig() {
+        return Result.ok(FloorDTO.BookingConfigVO.builder()
+                .advanceDays(ruleConfigService.advanceDays())
+                .allowedDurations(ruleConfigService.allowedDurations())
+                .defaultDuration(ruleConfigService.defaultDuration())
+                .checkInBeforeMin(ruleConfigService.checkInBeforeMin())
+                .checkInAfterMin(ruleConfigService.checkInAfterMin())
+                .build());
     }
 }

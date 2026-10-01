@@ -17,6 +17,7 @@ import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { fetchFloors, fetchSlots } from '../api/floor';
 import { FLOOR_STATUS, FLOOR_STATUS_META } from '../constants';
+import useBookingConfig from '../hooks/useBookingConfig';
 import { buildFallbackSlots, getBookableDates, nowSlot, slotLabel } from '../utils/datetime';
 
 /**
@@ -49,7 +50,8 @@ export default function FloorList() {
   const [date, setDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [slot, setSlot] = useState(nowSlot());
 
-  const bookableDates = getBookableDates();
+  const { advanceDays } = useBookingConfig();
+  const bookableDates = getBookableDates(advanceDays);
 
   /** 加载时段选项。 */
   const loadSlots = useCallback(async (targetDate) => {

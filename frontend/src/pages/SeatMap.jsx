@@ -22,13 +22,13 @@ import SeatGrid from '../components/SeatGrid';
 import SeatLegend from '../components/SeatLegend';
 import {
   DEFAULT_DURATION,
-  DURATION_OPTIONS,
   ERROR_CODE,
   FLOOR_STATUS,
   FLOOR_STATUS_META,
   SEAT_STATUS_META,
   SEAT_MAP_POLL_INTERVAL,
 } from '../constants';
+import useBookingConfig from '../hooks/useBookingConfig';
 import { buildFallbackSlots, buildTimeRange, getBookableDates, nowSlot, nowTimeText, slotLabel } from '../utils/datetime';
 
 /**
@@ -61,7 +61,15 @@ export default function SeatMap() {
 
   const timerRef = useRef(null);
   const pollInFlightRef = useRef(false);
-  const bookableDates = useMemo(() => getBookableDates(), []);
+  const {
+    advanceDays, allowedDurations, durationOptions, defaultDuration, checkInBeforeMin, checkInAfterMin,
+  } = useBookingConfig();
+  const bookableDates = useMemo(() => getBookableDates(advanceDays), [advanceDays]);
+
+  // 规则收紧后把已选时长收敛回合法集合
+  useEffect(() => {
+    setDuration((cur) => (allowedDurations.includes(cur) ? cur : defaultDuration));
+  }, [allowedDurations, defaultDuration]);
 
   /**
    * 拉取平面图。
@@ -172,7 +180,7 @@ export default function SeatMap() {
   /** 点击空闲座位 → 打开 Drawer。 */
   const handleSelectSeat = (seat) => {
     setSelectedSeat(seat);
-    setDuration(DEFAULT_DURATION);
+    setDuration(defaultDuration);
     setDrawerOpen(true);
   };
 
@@ -362,7 +370,7 @@ export default function SeatMap() {
               onChange={(e) => setDuration(e.target.value)}
               optionType="button"
               buttonStyle="solid"
-              options={DURATION_OPTIONS}
+              options={durationOptions}
               style={{ marginBottom: 16 }}
             />
 
@@ -372,7 +380,7 @@ export default function SeatMap() {
               message={`预约时段：${buildTimeRange(slot, duration)}`}
               description={
                 <span>
-                  签到窗口为开始前 15 分钟至开始后 15 分钟，逾期将记为未签到。当前状态：
+                  {`签到窗口为开始前 ${checkInBeforeMin} 分钟至开始后 ${checkInAfterMin} 分钟，逾期将记为未签到。当前状态：`}
                   {SEAT_STATUS_META[selectedSeat.displayStatus]?.text || '-'}
                 </span>
               }

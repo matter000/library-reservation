@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 /**
  * 楼层与时段相关 DTO。
  */
@@ -88,6 +90,31 @@ public class FloorDTO {
 
         /** 是否为当前所处时段。 */
         private Boolean isCurrent;
+    }
+
+    /**
+     * 用户端预约表单配置（来自规则中心，管理员改后立即生效，无需重启）。
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class BookingConfigVO {
+
+        /** 可提前预约天数（含当天）。 */
+        private Integer advanceDays;
+
+        /** 可选时长列表（小时）。 */
+        private List<Integer> allowedDurations;
+
+        /** 默认时长（小时）。 */
+        private Integer defaultDuration;
+
+        /** 签到窗口：开始前多少分钟。 */
+        private Integer checkInBeforeMin;
+
+        /** 签到窗口：开始后多少分钟。 */
+        private Integer checkInAfterMin;
     }
 
     /**

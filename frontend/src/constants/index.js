@@ -67,7 +67,7 @@ export const SEAT_BASE_STATUS_META = {
 export const SLOT_INDEX_MIN = 8;
 export const SLOT_INDEX_MAX = 21;
 
-/** 可选时长。 */
+/** 可选时长（★ 仅作为规则中心不可用时的兜底，真实值取自 /api/config/booking）。 */
 export const DURATION_OPTIONS = [
   { label: '1 小时', value: 1 },
   { label: '2 小时', value: 2 },
@@ -75,11 +75,17 @@ export const DURATION_OPTIONS = [
   { label: '4 小时', value: 4 },
 ];
 
-/** 默认时长。 */
+/** 默认时长（兜底）。 */
 export const DEFAULT_DURATION = 2;
 
-/** 可预约窗口天数（今天 ~ 今天+6）。 */
+/** 可预约窗口天数（今天 ~ 今天+6）。★ 仅作为规则中心不可用时的兜底，真实值取自 /api/config/booking。 */
 export const ADVANCE_DAYS = 7;
+
+/** 签到窗口：开始前多少分钟（兜底）。 */
+export const CHECK_IN_BEFORE_MIN = 15;
+
+/** 签到窗口：开始后多少分钟（兜底）。 */
+export const CHECK_IN_AFTER_MIN = 15;
 
 /** localStorage key。 */
 export const STORAGE_KEYS = {
