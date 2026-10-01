@@ -2,7 +2,7 @@
 -- 图书馆座位预约系统 —— MySQL 8 建表脚本
 -- 与 H2 版的差异仅 3 处：自增列方言 / DATETIME / 表尾 ENGINE+CHARSET+COMMENT
 -- 说明：MySQL 不支持 CREATE INDEX IF NOT EXISTS，故索引为普通 CREATE INDEX；
---       首次建库执行一次即可（重复执行会报 Duplicate key name，属预期）。
+--       由 Flyway 保证只执行一次（V1 基线）；已有 V1 库走 baseline-on-migrate，不会重跑本脚本。
 -- =====================================================================
 
 -- ============ 用户表（普通用户 + 管理员共用） ============

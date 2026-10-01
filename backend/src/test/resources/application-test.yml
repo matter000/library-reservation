@@ -10,12 +10,10 @@ spring:
       ddl-auto: none
     open-in-view: false
     show-sql: false
-  sql:
-    init:
-      mode: always
-      continue-on-error: false
-      schema-locations: classpath:sql/schema-h2.sql
-      data-locations:
+  flyway:
+    enabled: true
+    locations: classpath:db/migration/h2
+    clean-disabled: true
 
 server:
   port: 0

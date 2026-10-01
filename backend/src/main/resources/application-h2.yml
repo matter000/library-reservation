@@ -6,11 +6,8 @@ spring:
     password: ""
   jpa:
     database-platform: org.hibernate.dialect.H2Dialect
-  sql:
-    init:
-      mode: always
-      schema-locations: classpath:sql/schema-h2.sql
-      data-locations:
+  flyway:
+    locations: classpath:db/migration/h2
   h2:
     console:
       enabled: true
