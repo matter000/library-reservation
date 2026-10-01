@@ -56,13 +56,13 @@ public class FloorService {
     public List<FloorDTO.FloorVO> listFloors(LocalDate date, Integer slot) {
         LocalDate targetDate = (date == null) ? LocalDate.now() : date;
         int targetSlot = (slot == null) ? currentSlot() : BizConstants.clampToSlotRange(slot);
-        Map<Long, ReservationStatus> occupiedMap = occupancyService.getOccupiedMap(targetDate, targetSlot);
+        Map<Long, OccupancyService.SeatOccupancy> occupiedMap = occupancyService.getOccupancy(targetDate, targetSlot);
 
         List<Floor> floors = floorRepository.findAllByOrderBySortOrderAscIdAsc();
         List<FloorDTO.FloorVO> result = new ArrayList<>(floors.size());
         for (Floor floor : floors) {
             List<Seat> seats = seatRepository.findByFloorIdOrderByRowNoAscColNoAsc(floor.getId());
-            result.add(buildFloorVO(floor, seats, occupiedMap, targetDate));
+            result.add(buildFloorVO(floor, seats, occupiedMap, targetDate, targetSlot));
         }
         return result;
     }
@@ -80,9 +80,9 @@ public class FloorService {
         Floor floor = requireFloor(floorId);
         LocalDate targetDate = (date == null) ? LocalDate.now() : date;
         int targetSlot = (slot == null) ? currentSlot() : BizConstants.clampToSlotRange(slot);
-        Map<Long, ReservationStatus> occupiedMap = occupancyService.getOccupiedMap(targetDate, targetSlot);
+        Map<Long, OccupancyService.SeatOccupancy> occupiedMap = occupancyService.getOccupancy(targetDate, targetSlot);
         List<Seat> seats = seatRepository.findByFloorIdOrderByRowNoAscColNoAsc(floorId);
-        return buildFloorVO(floor, seats, occupiedMap, targetDate);
+        return buildFloorVO(floor, seats, occupiedMap, targetDate, targetSlot);
     }
 
     /**
@@ -116,25 +116,28 @@ public class FloorService {
                 floorClosed = true;
             }
         }
-        Map<Long, ReservationStatus> occupiedMap = occupancyService.getOccupiedMap(targetDate, targetSlot);
+        Map<Long, OccupancyService.SeatOccupancy> occupiedMap =
+                occupancyService.getOccupancy(targetDate, targetSlot);
 
         int maxRow = 0;
         int maxCol = 0;
         long free = 0;
         long reserved = 0;
         long inUse = 0;
+        long onLeave = 0;
         long unavailable = 0;
 
         List<SeatDTO.SeatItemVO> items = new ArrayList<>(seats.size());
         for (Seat seat : seats) {
-            SeatDisplayStatus display = occupancyService.derive(seat, floorClosed, occupiedMap);
+            SeatDisplayStatus display = occupancyService.derive(seat, floorClosed, occupiedMap, targetSlot);
             switch (display) {
                 case FREE -> free++;
                 case RESERVED -> reserved++;
                 case IN_USE -> inUse++;
+                case ON_LEAVE -> onLeave++;
                 case UNAVAILABLE -> unavailable++;
-                default -> free++;
             }
+            OccupancyService.SeatOccupancy occupancy = occupiedMap.get(seat.getId());
             maxRow = Math.max(maxRow, seat.getRowNo() == null ? 0 : seat.getRowNo());
             maxCol = Math.max(maxCol, seat.getColNo() == null ? 0 : seat.getColNo());
             items.add(SeatDTO.SeatItemVO.builder()
@@ -147,17 +150,21 @@ public class FloorService {
                     .tableId(seat.getTableId())
                     .baseStatus(seat.getStatus() == null ? SeatStatus.AVAILABLE.name() : seat.getStatus().name())
                     .displayStatus(display.name())
+                    // 「暂离中 · 预计 14:35 返回」的文案由数据支撑；只给时刻，不含任何占用人身份
+                    .expectedReturnAt(display == SeatDisplayStatus.ON_LEAVE && occupancy != null
+                            ? BizConstants.formatTime(occupancy.leaveUntil()) : null)
                     .build());
         }
 
         long total = seats.size();
-        long occupied = reserved + inUse;
+        long occupied = reserved + inUse + onLeave;
         long usable = total - unavailable;
         SeatDTO.SeatMapStatsVO stats = SeatDTO.SeatMapStatsVO.builder()
                 .total(total)
                 .free(free)
                 .reserved(reserved)
                 .inUse(inUse)
+                .onLeave(onLeave)
                 .unavailable(unavailable)
                 .usageRate(BizConstants.rate(occupied, usable))
                 .build();
@@ -274,16 +281,17 @@ public class FloorService {
     }
 
     private FloorDTO.FloorVO buildFloorVO(Floor floor, List<Seat> seats,
-                                          Map<Long, ReservationStatus> occupiedMap, LocalDate date) {
+                                          Map<Long, OccupancyService.SeatOccupancy> occupiedMap,
+                                          LocalDate date, int slot) {
         boolean floorClosed = floor.getStatus() == FloorStatus.CLOSED || openRuleService.isClosed(date);
         long total = seats.size();
         long occupied = 0;
         long unavailable = 0;
         for (Seat seat : seats) {
-            SeatDisplayStatus display = occupancyService.derive(seat, floorClosed, occupiedMap);
+            SeatDisplayStatus display = occupancyService.derive(seat, floorClosed, occupiedMap, slot);
             if (display == SeatDisplayStatus.UNAVAILABLE) {
                 unavailable++;
-            } else if (display == SeatDisplayStatus.RESERVED || display == SeatDisplayStatus.IN_USE) {
+            } else if (display.occupying()) {
                 occupied++;
             }
         }

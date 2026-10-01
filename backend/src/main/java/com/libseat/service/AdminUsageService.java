@@ -71,7 +71,7 @@ public class AdminUsageService {
         int targetSlot = (slot == null) ? floorService.currentSlot() : BizConstants.clampToSlotRange(slot);
 
         List<Seat> seats = seatRepository.findByFloorIdOrderByRowNoAscColNoAsc(floorId);
-        Map<Long, ReservationStatus> occupiedMap = occupancyService.getOccupiedMap(targetDate, targetSlot);
+        Map<Long, OccupancyService.SeatOccupancy> occupiedMap = occupancyService.getOccupancy(targetDate, targetSlot);
         Map<Long, Reservation> reservationMap = loadActiveReservations(targetDate, targetSlot);
         Map<Long, AdminDTO.OccupantVO> occupantMap = loadOccupants(reservationMap);
 
@@ -84,14 +84,15 @@ public class AdminUsageService {
         List<AdminDTO.UsageRowVO> rows = new ArrayList<>(seats.size());
         for (Seat seat : seats) {
             SeatDisplayStatus display = occupancyService.derive(
-                    seat, floor.getStatus() == com.libseat.enums.FloorStatus.CLOSED, occupiedMap);
-            switch (display) {
-                case RESERVED, IN_USE -> occupied++;
-                case UNAVAILABLE -> unavailable++;
-                default -> free++;
+                    seat, floor.getStatus() == com.libseat.enums.FloorStatus.CLOSED, occupiedMap, targetSlot);
+            if (display == SeatDisplayStatus.UNAVAILABLE) {
+                unavailable++;
+            } else if (display.occupying()) {
+                occupied++;
+            } else {
+                free++;
             }
-            if ("occupied".equals(mode) && display != SeatDisplayStatus.RESERVED
-                    && display != SeatDisplayStatus.IN_USE) {
+            if ("occupied".equals(mode) && !display.occupying()) {
                 continue;
             }
             if ("free".equals(mode) && display != SeatDisplayStatus.FREE) {

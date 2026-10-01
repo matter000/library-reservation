@@ -154,7 +154,7 @@ public class AdminStatisticsService {
     public List<StatsDTO.FloorUsageVO> floorUsage(LocalDate date, Integer slot) {
         LocalDate targetDate = (date == null) ? LocalDate.now() : date;
         int targetSlot = (slot == null) ? currentSlot() : BizConstants.clampToSlotRange(slot);
-        Map<Long, ReservationStatus> occupiedMap = occupancyService.getOccupiedMap(targetDate, targetSlot);
+        Map<Long, OccupancyService.SeatOccupancy> occupiedMap = occupancyService.getOccupancy(targetDate, targetSlot);
 
         List<Floor> floors = floorRepository.findAllByOrderBySortOrderAscIdAsc();
         List<StatsDTO.FloorUsageVO> list = new ArrayList<>(floors.size());
@@ -168,9 +168,9 @@ public class AdminStatisticsService {
             long occupied = 0;
             long usable = 0;
             for (Seat seat : seats) {
-                SeatDisplayStatus display = occupancyService.derive(seat, floorClosed, occupiedMap);
-                boolean occupiedSeat = display == SeatDisplayStatus.RESERVED || display == SeatDisplayStatus.IN_USE;
-                boolean usableSeat = display != SeatDisplayStatus.UNAVAILABLE;
+                SeatDisplayStatus display = occupancyService.derive(seat, floorClosed, occupiedMap, targetSlot);
+                boolean occupiedSeat = display.occupying();
+                boolean usableSeat = display.usable();
                 if (occupiedSeat) {
                     occupied++;
                 }
@@ -261,7 +261,7 @@ public class AdminStatisticsService {
     private long currentOccupiedCount() {
         LocalDate today = LocalDate.now();
         int slot = currentSlot();
-        Map<Long, ReservationStatus> occupiedMap = occupancyService.getOccupiedMap(today, slot);
+        Map<Long, OccupancyService.SeatOccupancy> occupiedMap = occupancyService.getOccupancy(today, slot);
         return occupiedMap.size();
     }
 

@@ -47,6 +47,14 @@ public class SeatDTO {
         /** 派生展示态：FREE / RESERVED / IN_USE / UNAVAILABLE。 */
         private String displayStatus;
 
+        /**
+         * 暂离时的应归时刻 {@code HH:mm}，非暂离为 null。
+         *
+         * <p>PRD §13.3 要求「暂离中 · 预计 14:35 返回」以文案优先于颜色呈现，
+         * 该字段就是文案的数据源；只含时刻，不含任何占用人身份。
+         */
+        private String expectedReturnAt;
+
         /** 所属分区 ID。 */
         private Long zoneId;
 
@@ -120,6 +128,9 @@ public class SeatDTO {
 
         /** 使用中的数。 */
         private Long inUse;
+
+        /** 暂离中的数（仍算占用，人不在座位上）。 */
+        private Long onLeave;
 
         /** 不可用数。 */
         private Long unavailable;

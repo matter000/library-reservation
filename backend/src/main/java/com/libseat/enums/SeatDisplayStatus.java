@@ -38,4 +38,25 @@ public enum SeatDisplayStatus {
         this.code = code;
         this.text = text;
     }
+
+    /**
+     * 该展示态是否仍算「占用中」（座位不可被他人预约）。
+     *
+     * <p>★ 暂离也算占用：这是「四处余量必须同源」最容易写错的一处 ——
+     * 任何按维度聚合占用的地方都要用本方法判定，不要再手写一次状态白名单。
+     *
+     * @return 是否占用
+     */
+    public boolean occupying() {
+        return this == RESERVED || this == IN_USE || this == ON_LEAVE;
+    }
+
+    /**
+     * 该展示态是否计入可用座位（分母）。
+     *
+     * @return 是否可用
+     */
+    public boolean usable() {
+        return this != UNAVAILABLE;
+    }
 }

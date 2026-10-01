@@ -64,6 +64,9 @@ public final class BizConstants {
     /** 日期时间格式。 */
     public static final String DATETIME_PATTERN = "yyyy-MM-dd HH:mm:ss";
 
+    /** 时刻格式（「预计 14:35 返回」这类文案的单点）。 */
+    public static final String TIME_PATTERN = "HH:mm";
+
     /** 手机号脱敏保留的前缀长度。 */
     public static final int PHONE_MASK_PREFIX = 3;
 
@@ -75,6 +78,9 @@ public final class BizConstants {
 
     /** 日期时间格式化器。 */
     public static final DateTimeFormatter DATETIME_FORMATTER = DateTimeFormatter.ofPattern(DATETIME_PATTERN);
+
+    /** 时刻格式化器。 */
+    public static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern(TIME_PATTERN);
 
     private BizConstants() {
         // 工具类禁止实例化
@@ -264,6 +270,16 @@ public final class BizConstants {
      */
     public static String formatDateTime(LocalDateTime time) {
         return time == null ? null : time.format(DATETIME_FORMATTER);
+    }
+
+    /**
+     * 格式化时刻为 {@code HH:mm}。
+     *
+     * @param time 时间，可为空
+     * @return 格式化字符串；空值返回 null
+     */
+    public static String formatTime(LocalDateTime time) {
+        return time == null ? null : time.format(TIME_FORMATTER);
     }
 
     /**

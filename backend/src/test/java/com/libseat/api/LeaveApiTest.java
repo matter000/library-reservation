@@ -30,6 +30,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -304,8 +305,8 @@ class LeaveApiTest extends ApiTestBase {
         long leaveId = started.path("leaveId").asLong();
         String endBefore = started.path("reservationEndTime").asText();
         assertEquals("暂离中", started.path("statusText").asText());
-        assertEquals("IN_USE", displayStatus(floor1, seat, today.toString(), nowSlot),
-                "暂离期间座位应仍算占用（T-V2-10 才改派生成 ON_LEAVE）");
+        assertEquals("ON_LEAVE", displayStatus(floor1, seat, today.toString(), nowSlot),
+                "T-V2-10 后暂离期间派生为 ON_LEAVE（仍算占用，见 mapDerivesOnLeave 的余量断言）");
 
         MvcResult returnResult = returnBack(me, leaveId);
         assertEquals(0, code(returnResult), "返回应成功：" + body(returnResult));
@@ -385,6 +386,182 @@ class LeaveApiTest extends ApiTestBase {
         returnOpenLeave(me, reservation.getId());
         startOk(me, reservation.getId(), "MEAL", null);
         assertEquals(1, openLeaveCount(reservation.getId()), "返回后重新占额，仍只有一条 OPEN");
+    }
+
+    @Test
+    @DisplayName("【T-V2-10 验收1】暂离期间平面图该座 ON_LEAVE 且带预计返回时刻，返回后回 IN_USE")
+    void mapDerivesOnLeave() throws Exception {
+        String me = newUser();
+        long uid = userId(me);
+        LocalDate today = LocalDate.now();
+        int nowSlot = BizConstants.slotOf(LocalTime.now());
+        long seat = freeSeatOfZone(floor1, "1F-SILENT", today, nowSlot, 6, 0);
+        Reservation reservation = checkedIn(uid, seat, floor1, today, nowSlot, 6);
+        String date = today.toString();
+
+        assertEquals("IN_USE", displayStatus(floor1, seat, date, nowSlot));
+        JsonNode before = seatRow(floor1, date, nowSlot, seat);
+        assertEquals(0, before.path("stats").path("onLeave").asInt(), "未暂离时 onLeave 计数应为 0");
+        int freeBefore = before.path("stats").path("free").asInt();
+
+        JsonNode started = startOk(me, reservation.getId(), "MEAL", null);
+        JsonNode after = seatRow(floor1, date, nowSlot, seat);
+        JsonNode row = findSeatRow(after.path("seats"), seat);
+        assertEquals("ON_LEAVE", row.path("displayStatus").asText(),
+                "暂离期间平面图必须是暂离态，而不是继续使用中");
+        assertEquals(started.path("plannedEndTime").asText(), row.path("expectedReturnAt").asText(),
+                "文案数据源：预计返回时刻由后端给出（PRD §13.3 文案优先于颜色）");
+        assertEquals(1, after.path("stats").path("onLeave").asInt(), "onLeave 计数要单独可见");
+        assertEquals(freeBefore, after.path("stats").path("free").asInt(),
+                "★ 暂离仍占座：空闲数不得因暂离而变多");
+        assertEquals(0, zoneFreeDelta(floor1, date, nowSlot), "分区卡也必须把暂离算作占用");
+
+        returnOpenLeave(me, reservation.getId());
+        JsonNode back = seatRow(floor1, date, nowSlot, seat);
+        assertEquals("IN_USE", findSeatRow(back.path("seats"), seat).path("displayStatus").asText(),
+                "返回后回到使用中");
+        assertEquals(0, back.path("stats").path("onLeave").asInt());
+    }
+
+    private JsonNode seatRow(long floorId, String date, int slot, long seatId) throws Exception {
+        JsonNode map = seatRow(floorId, date, slot);
+        findSeatRow(map.path("seats"), seatId);   // 顺带断言「该座确实出现在这一层的平面图里」
+        return map;
+    }
+
+    private JsonNode seatRow(long floorId, String date, int slot) throws Exception {
+        return data(exec(get("/api/seats/map")
+                .param("floorId", String.valueOf(floorId))
+                .param("date", date)
+                .param("slot", String.valueOf(slot))
+                .header("Authorization", bearer(u1))));
+    }
+
+    private JsonNode findSeatRow(JsonNode seats, long seatId) {
+        for (JsonNode node : seats) {
+            if (node.path("seatId").asLong() == seatId) {
+                return node;
+            }
+        }
+        throw new AssertionError("平面图响应里找不到座位 " + seatId);
+    }
+
+    /** 分区卡的「空闲之和」与整层平面图 free 的差值，必须恒为 0。 */
+    private long zoneFreeDelta(long floorId, String date, int slot) throws Exception {
+        JsonNode zones = data(exec(get("/api/zones")
+                .param("floorId", String.valueOf(floorId))
+                .param("date", date)
+                .param("slot", String.valueOf(slot))
+                .header("Authorization", bearer(u1))));
+        long sum = 0;
+        for (JsonNode zone : zones) {
+            sum += zone.path("freeSeats").asLong();
+        }
+        JsonNode whole = seatRow(floorId, date, slot);
+        return whole.path("stats").path("free").asLong() - sum;
+    }
+
+    @Test
+    @DisplayName("【T-V2-10 验收2】平面图响应不含任何占用人身份，暂离也只给时刻")
+    void mapLeaksNoOccupantIdentity() throws Exception {
+        String me = newUser();
+        long uid = userId(me);
+        int nowSlot = BizConstants.slotOf(LocalTime.now());
+        long seat = freeSeatOfZone(floor1, "1F-SILENT", LocalDate.now(), nowSlot, 6, 0);
+        Reservation reservation = checkedIn(uid, seat, floor1, LocalDate.now(), nowSlot, 6);
+        startOk(me, reservation.getId(), "MEAL", null);
+
+        JsonNode map = seatRow(floor1, LocalDate.now().toString(), nowSlot);
+        String raw = map.toString().toLowerCase();
+        for (String forbidden : List.of("username", "realname", "phonenumber", "\"phone\"", "studentno")) {
+            assertFalse(raw.contains(forbidden), "平面图不应出现字段 " + forbidden);
+        }
+        JsonNode row = findSeatRow(map.path("seats"), seat);
+        assertTrue(row.hasNonNull("expectedReturnAt"), "暂离行必须带预计返回时刻字段");
+        assertTrue(row.path("expectedReturnAt").asText().matches("\\d{2}:\\d{2}"),
+                "只给时刻：" + row.path("expectedReturnAt").asText());
+    }
+
+    @Test
+    @DisplayName("【T-V2-10 验收4】我的预约按钮可用性后端算，置灰必带原因")
+    void ownerActionFlags() throws Exception {
+        String me = newUser();
+        long uid = userId(me);
+        LocalDate today = LocalDate.now();
+        int nowSlot = BizConstants.slotOf(LocalTime.now());
+        long silent = freeSeatOfZone(floor1, "1F-SILENT", today, nowSlot, 6, 0);
+        Reservation reservation = checkedIn(uid, silent, floor1, today, nowSlot, 6);
+
+        JsonNode vo = myReservation(me, reservation.getId(), "inProgress");
+        assertEquals(true, vo.path("canLeave").asBoolean(), "使用中且未暂离 → 可暂离");
+        assertEquals(false, vo.path("canReturn").asBoolean(), "没在暂离 → 不可返回");
+        assertEquals(true, vo.path("canFinish").asBoolean(), "使用中且未暂离 → 可提前结束");
+        assertTrue(vo.path("leaveDisabledReason").isNull() || vo.path("leaveDisabledReason").asText().isEmpty(),
+                "可用时不应给原因");
+
+        JsonNode started = startOk(me, reservation.getId(), "MEAL", null);
+        JsonNode onLeave = myReservation(me, reservation.getId(), "inProgress");
+        assertEquals(false, onLeave.path("canLeave").asBoolean(), "已在暂离中不可再登记");
+        assertEquals(true, onLeave.path("canReturn").asBoolean());
+        assertEquals(false, onLeave.path("canFinish").asBoolean(), "暂离中不可提前结束");
+        assertEquals("当前已在暂离中，请先返回", onLeave.path("leaveDisabledReason").asText(),
+                "★ 置灰必须给出具体原因");
+        assertEquals(started.path("plannedEndTime").asText(), onLeave.path("expectedReturnAt").asText());
+        assertTrue(onLeave.path("leaveRemainMin").asInt() > 0, "剩余分钟应为正");
+        long activeLeaveId = onLeave.path("activeLeaveId").asLong();
+        assertTrue(activeLeaveId > 0, "★「我已返回」只需要 leaveId，必须由后端一并给出，不能让前端再查");
+        assertEquals(0, code(returnBack(me, activeLeaveId)), "用 VO 给的 activeLeaveId 应能直接返回");
+        JsonNode returned = myReservation(me, reservation.getId(), "inProgress");
+        assertEquals(true, returned.path("canLeave").asBoolean(), "返回后应重新可暂离");
+        assertEquals(false, returned.path("canReturn").asBoolean());
+
+        // 不支持暂离的分区：给分区名 + 明确文案
+        long eSeat = freeSeatOfZone(floor2, "2F-E_READING", today.plusDays(1), 16, 4, 0);
+        Reservation eReading = checkedIn(uid, eSeat, floor2, today.plusDays(1), 16, 4);
+        JsonNode notAllowed = myReservation(me, eReading.getId(), "inProgress");
+        assertEquals(false, notAllowed.path("canLeave").asBoolean());
+        assertTrue(notAllowed.path("leaveDisabledReason").asText().contains("不支持暂离"),
+                "应说明是分区策略，实际：" + notAllowed.path("leaveDisabledReason").asText());
+
+        // 未签到的预约：按钮不给亮，理由说清楚
+        Reservation confirmed = reservationRepository.saveAndFlush(Reservation.builder()
+                .userId(uid).seatId(silent).floorId(floor1).reserveDate(today.plusDays(2))
+                .startSlot(16).endSlot(20).status(ReservationStatus.CONFIRMED).build());
+        JsonNode notCheckedIn = myReservation(me, confirmed.getId(), "upcoming");
+        assertEquals(false, notCheckedIn.path("canLeave").asBoolean());
+        assertEquals("签到之后才能登记暂离", notCheckedIn.path("leaveDisabledReason").asText());
+        assertEquals(false, notCheckedIn.path("canFinish").asBoolean(), "未签到谈不上提前结束");
+
+        // 用完次数：静音区每日 3 次。本用例此前已用 1 次（上面那条 MEAL），再补 2 次即满额，
+        // 第 4 次的置灰理由要落到「次数」上。
+        // （造数放明天的 16/18 格：今天的格子可能被种子数据占掉，且 nowSlot 附近会越界）
+        for (int i = 0; i < 2; i++) {
+            int slot = 16 + i * 2;
+            long extra = freeSeatOfZone(floor1, "1F-SILENT", today.plusDays(1), slot, 2, 0);
+            Reservation r = checkedIn(uid, extra, floor1, today.plusDays(1), slot, 2);
+            startOk(me, r.getId(), "PHONE", null);
+            returnOpenLeave(me, r.getId());
+        }
+        long lastSeat = freeSeatOfZone(floor1, "1F-SILENT", today.plusDays(1), 22, 2, 0);
+        Reservation last = checkedIn(uid, lastSeat, floor1, today.plusDays(1), 22, 2);
+        JsonNode exhausted = myReservation(me, last.getId(), "inProgress");
+        assertEquals(false, exhausted.path("canLeave").asBoolean());
+        assertTrue(exhausted.path("leaveDisabledReason").asText().contains("今日暂离次数已用完"),
+                "实际：" + exhausted.path("leaveDisabledReason").asText());
+    }
+
+    /** 从「我的预约」某个分组里取一条 VO（分组是状态过滤，取错组就找不到）。 */
+    private JsonNode myReservation(String token, long reservationId, String tab) throws Exception {
+        JsonNode page = data(exec(get("/api/reservations/my")
+                .param("tab", tab)
+                .param("page", "1").param("size", "50")
+                .header("Authorization", bearer(token))));
+        for (JsonNode node : page.path("list")) {
+            if (node.path("reservationId").asLong() == reservationId) {
+                return node;
+            }
+        }
+        throw new AssertionError("我的预约 " + tab + " 分组里找不到 " + reservationId);
     }
 
     @Test

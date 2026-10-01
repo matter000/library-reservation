@@ -71,7 +71,8 @@ public class ZoneService {
     public List<ZoneDTO.ZoneVO> listForUser(Long floorId, LocalDate date, Integer slot, UserRole role) {
         LocalDate targetDate = (date == null) ? LocalDate.now() : date;
         int targetSlot = (slot == null) ? floorService.currentSlot() : BizConstants.clampToSlotRange(slot);
-        Map<Long, ReservationStatus> occupiedMap = occupancyService.getOccupiedMap(targetDate, targetSlot);
+        Map<Long, OccupancyService.SeatOccupancy> occupiedMap =
+                occupancyService.getOccupancy(targetDate, targetSlot);
 
         List<Floor> floors = (floorId == null)
                 ? floorRepository.findAllByOrderBySortOrderAscIdAsc()
@@ -84,7 +85,7 @@ public class ZoneService {
                 if (!containsRole(zone.getVisibleRoles(), role)) {
                     continue;
                 }
-                result.add(toVO(zone, floor, occupiedMap, role));
+                result.add(toVO(zone, floor, occupiedMap, role, targetSlot));
             }
         }
         return result;
@@ -99,10 +100,12 @@ public class ZoneService {
     @Transactional(readOnly = true)
     public List<ZoneDTO.ZoneVO> listForAdmin(Long floorId) {
         Floor floor = floorService.requireFloor(floorId);
-        Map<Long, ReservationStatus> occupiedMap =
-                occupancyService.getOccupiedMap(LocalDate.now(), floorService.currentSlot());
+        LocalDate targetDate = LocalDate.now();
+        int targetSlot = floorService.currentSlot();
+        Map<Long, OccupancyService.SeatOccupancy> occupiedMap =
+                occupancyService.getOccupancy(targetDate, targetSlot);
         return zoneRepository.findByFloorIdOrderBySortOrderAscIdAsc(floorId).stream()
-                .map(zone -> toVO(zone, floor, occupiedMap, UserRole.SYS_ADMIN))
+                .map(zone -> toVO(zone, floor, occupiedMap, UserRole.SYS_ADMIN, targetSlot))
                 .toList();
     }
 
@@ -125,7 +128,7 @@ public class ZoneService {
         Zone saved = zoneRepository.save(zone);
         auditService.record(AuditService.ACTION_ZONE_SAVE, "ZONE", saved.getId(),
                 Map.of("op", "CREATE", "floorId", saved.getFloorId(), "code", saved.getCode()));
-        return toVO(saved, floor, Map.of(), UserRole.SYS_ADMIN);
+        return toVOWithoutOccupancy(saved, floor);
     }
 
     /**
@@ -158,7 +161,7 @@ public class ZoneService {
         Zone saved = zoneRepository.save(zone);
         auditService.record(AuditService.ACTION_ZONE_SAVE, "ZONE", saved.getId(),
                 Map.of("op", "UPDATE", "floorId", saved.getFloorId(), "code", saved.getCode()));
-        return toVO(saved, floor, Map.of(), UserRole.SYS_ADMIN);
+        return toVOWithoutOccupancy(saved, floor);
     }
 
     /**
@@ -176,8 +179,7 @@ public class ZoneService {
         Zone saved = zoneRepository.save(zone);
         auditService.record(AuditService.ACTION_ZONE_SAVE, "ZONE", saved.getId(),
                 Map.of("op", "STATUS", "status", target.name()));
-        return toVO(saved, floorRepository.findById(saved.getFloorId()).orElseThrow(),
-                Map.of(), UserRole.SYS_ADMIN);
+        return toVOWithoutOccupancy(saved, floorRepository.findById(saved.getFloorId()).orElseThrow());
     }
 
     /**
@@ -295,17 +297,25 @@ public class ZoneService {
         }
     }
 
-    private ZoneDTO.ZoneVO toVO(Zone zone, Floor floor, Map<Long, ReservationStatus> occupiedMap, UserRole role) {
+    /**
+     * 写路径的响应只回显分区自身配置，不叠加实时占用（空快照即「本层无人在座」）。
+     */
+    private ZoneDTO.ZoneVO toVOWithoutOccupancy(Zone zone, Floor floor) {
+        return toVO(zone, floor, Map.of(), UserRole.SYS_ADMIN, floorService.currentSlot());
+    }
+
+    private ZoneDTO.ZoneVO toVO(Zone zone, Floor floor, Map<Long, OccupancyService.SeatOccupancy> occupiedMap,
+                                 UserRole role, int slot) {
         List<Seat> seats = seatRepository.findByZoneId(zone.getId());
         boolean closed = floor.getStatus() == FloorStatus.CLOSED || zone.getStatus() == FloorStatus.CLOSED;
         long total = seats.size();
         long occupied = 0;
         long unavailable = 0;
         for (Seat seat : seats) {
-            SeatDisplayStatus display = occupancyService.derive(seat, closed, occupiedMap);
+            SeatDisplayStatus display = occupancyService.derive(seat, closed, occupiedMap, slot);
             if (display == SeatDisplayStatus.UNAVAILABLE) {
                 unavailable++;
-            } else if (display == SeatDisplayStatus.RESERVED || display == SeatDisplayStatus.IN_USE) {
+            } else if (display.occupying()) {
                 occupied++;
             }
         }

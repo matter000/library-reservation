@@ -2,9 +2,14 @@ package com.libseat.repository;
 
 import com.libseat.entity.LeaveRecord;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -31,4 +36,32 @@ public interface LeaveRecordRepository extends JpaRepository<LeaveRecord, Long> 
      * @return 次数
      */
     long countByUserIdAndStartTimeGreaterThanEqualAndStartTimeLessThan(Long userId, LocalDateTime from, LocalDateTime to);
+
+    /**
+     * ★ 占用派生用：取「某日期某时段」上仍处于 OPEN 的暂离。
+     *
+     * <p>与 {@code findOccupiedByDateAndSlot} 同样一次查完，平面图整层只需两次查询；
+     * 不在座位循环里按预约逐条查暂离（那会把单点派生退化成 N+1）。
+     *
+     * @param date     日期
+     * @param slot     时段序号
+     * @param openFlag 固定传 1
+     * @return 每行 {@code [seatId, startTime, plannedEndTime]}
+     */
+    @Query("select l.seatId, l.startTime, l.plannedEndTime "
+            + "from LeaveRecord l, ReservationSlot s "
+            + "where s.reservation.id = l.reservationId "
+            + "and s.reserveDate = :date and s.slotIndex = :slot and l.openFlag = :openFlag")
+    List<Object[]> findOpenLeavesByDateAndSlot(@Param("date") LocalDate date,
+                                               @Param("slot") int slot,
+                                               @Param("openFlag") Integer openFlag);
+
+    /**
+     * 批量取若干预约的 OPEN 暂离（「我的预约」列表一次查完，不在循环里逐条查）。
+     *
+     * @param reservationIds 预约 ID 集合
+     * @param openFlag       固定传 1
+     * @return OPEN 暂离列表
+     */
+    List<LeaveRecord> findByReservationIdInAndOpenFlag(Collection<Long> reservationIds, Integer openFlag);
 }

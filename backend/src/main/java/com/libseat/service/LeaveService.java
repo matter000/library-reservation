@@ -4,6 +4,7 @@ import com.libseat.common.BizConstants;
 import com.libseat.common.BusinessException;
 import com.libseat.common.ErrorCode;
 import com.libseat.dto.LeaveDTO;
+import com.libseat.dto.ReservationDTO;
 import com.libseat.entity.LeaveReason;
 import com.libseat.entity.LeaveRecord;
 import com.libseat.entity.Reservation;
@@ -27,7 +28,11 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * 暂离服务（DESIGN §5.2 的七步校验链）。
@@ -54,8 +59,6 @@ public class LeaveService {
 
     private final ZoneRepository zoneRepository;
 
-    private final ReservationService reservationService;
-
     /**
      * 原因字典（前端选择器用，只返回启用项）。
      *
@@ -77,8 +80,10 @@ public class LeaveService {
      */
     @Transactional
     public LeaveDTO.LeaveVO start(Long userId, LeaveDTO.LeaveStartRequest request) {
-        // 1. 预约存在、是本人、且正在使用中
-        Reservation reservation = reservationService.requireOwnReservation(userId, request.getReservationId());
+        // 1. 预约存在、是本人、且正在使用中（非本人与不存在同样 4040，防水平越权）
+        Reservation reservation = reservationRepository.findById(request.getReservationId())
+                .filter(r -> r.getUserId().equals(userId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "预约不存在"));
         if (reservation.getStatus() != ReservationStatus.CHECKED_IN) {
             throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED, "仅使用中的预约可登记暂离");
         }
@@ -193,6 +198,93 @@ public class LeaveService {
         return leaveRecordRepository
                 .findByReservationIdAndOpenFlag(reservationId, LeaveStatus.OPEN_FLAG)
                 .orElse(null);
+    }
+
+    /**
+     * 给「我的预约」列表补齐暂离相关按钮的可用性（T-V2-10：可用性一律后端算）。
+     *
+     * <p>★ 判定条件与 {@link #start} 的校验链同源，避免「按钮亮着、提交被拒」的口径分裂；
+     * 每日次数在这里按分区上限判断（原因各自的上限仍在提交时校验），
+     * 因为列表此刻还不知道用户会选哪个原因。
+     *
+     * @param userId 当前用户
+     * @param vos    已组装好的预约 VO 列表（原地写入新增字段）
+     */
+    @Transactional(readOnly = true)
+    public void enrichOwnerActions(Long userId, List<ReservationDTO.ReservationVO> vos) {
+        if (vos.isEmpty()) {
+            return;
+        }
+        List<Long> reservationIds = vos.stream()
+                .map(ReservationDTO.ReservationVO::getReservationId)
+                .toList();
+        Map<Long, LeaveRecord> openByReservation = leaveRecordRepository
+                .findByReservationIdInAndOpenFlag(reservationIds, LeaveStatus.OPEN_FLAG).stream()
+                .collect(Collectors.toMap(LeaveRecord::getReservationId, r -> r, (a, b) -> a));
+
+        List<Long> seatIds = vos.stream()
+                .map(ReservationDTO.ReservationVO::getSeatId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, Zone> zoneBySeat = new HashMap<>();
+        if (!seatIds.isEmpty()) {
+            Map<Long, Long> zoneIdBySeat = new HashMap<>();
+            seatRepository.findAllById(seatIds).forEach(seat -> {
+                if (seat.getZoneId() != null) {
+                    zoneIdBySeat.put(seat.getId(), seat.getZoneId());
+                }
+            });
+            if (!zoneIdBySeat.isEmpty()) {
+                Map<Long, Zone> zones = zoneRepository.findAllById(zoneIdBySeat.values()).stream()
+                        .collect(Collectors.toMap(Zone::getId, z -> z, (a, b) -> a));
+                zoneIdBySeat.forEach((seatId, zoneId) -> {
+                    Zone zone = zones.get(zoneId);
+                    if (zone != null) {
+                        zoneBySeat.put(seatId, zone);
+                    }
+                });
+            }
+        }
+
+        LocalDateTime dayStart = LocalDate.now().atStartOfDay();
+        long usedToday = leaveRecordRepository
+                .countByUserIdAndStartTimeGreaterThanEqualAndStartTimeLessThan(userId, dayStart, dayStart.plusDays(1));
+        LocalDateTime now = LocalDateTime.now();
+
+        for (ReservationDTO.ReservationVO vo : vos) {
+            LeaveRecord open = openByReservation.get(vo.getReservationId());
+            Zone zone = zoneBySeat.get(vo.getSeatId());
+            boolean checkedIn = ReservationStatus.CHECKED_IN.name().equals(vo.getStatus());
+
+            vo.setCanReturn(open != null);
+            vo.setCanFinish(checkedIn && open == null);
+            if (!checkedIn) {
+                vo.setCanLeave(false);
+                vo.setCanFinish(false);
+                vo.setLeaveDisabledReason(ReservationStatus.CONFIRMED.name().equals(vo.getStatus())
+                        ? "签到之后才能登记暂离"
+                        : "预约已结束，不能再暂离");
+            } else if (open != null) {
+                vo.setCanLeave(false);
+                vo.setLeaveDisabledReason("当前已在暂离中，请先返回");
+            } else if (zone != null && !Boolean.TRUE.equals(zone.getAllowLeave())) {
+                vo.setCanLeave(false);
+                vo.setLeaveDisabledReason(zone.getName() + " 不支持暂离（离座即释放）");
+            } else if (zone != null && zone.getLeaveDailyLimit() != null && usedToday >= zone.getLeaveDailyLimit()) {
+                vo.setCanLeave(false);
+                vo.setLeaveDisabledReason("今日暂离次数已用完（上限 " + zone.getLeaveDailyLimit() + " 次）");
+            } else {
+                vo.setCanLeave(true);
+                vo.setLeaveDisabledReason(null);
+            }
+
+            if (open != null) {
+                vo.setActiveLeaveId(open.getId());
+                vo.setExpectedReturnAt(BizConstants.formatTime(open.getPlannedEndTime()));
+                vo.setLeaveRemainMin((int) Duration.between(now, open.getPlannedEndTime()).toMinutes());
+            }
+        }
     }
 
     private Zone zoneOfSeat(Long seatId) {

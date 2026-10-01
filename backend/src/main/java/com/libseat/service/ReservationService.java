@@ -62,6 +62,9 @@ public class ReservationService {
     /** 只用于「暂离未归不可结束使用」这一道闸；不反向依赖 {@code LeaveService}，避免循环注入。 */
     private final LeaveRecordRepository leaveRecordRepository;
 
+    /** 暂离按钮可用性由 LeaveService 单点判定（判定条件与登记暂离的校验链同源）。 */
+    private final LeaveService leaveService;
+
     /**
      * 提交预约（DESIGN §4.3-C1 七步校验）。
      *
@@ -250,6 +253,7 @@ public class ReservationService {
         List<ReservationDTO.ReservationVO> vos = reservations.stream()
                 .map(r -> toVO(r, usernameMap, null, null))
                 .collect(Collectors.toList());
+        leaveService.enrichOwnerActions(userId, vos);
         return PageResult.of(vos, page, size);
     }
 
@@ -263,7 +267,9 @@ public class ReservationService {
     @Transactional(readOnly = true)
     public ReservationDTO.ReservationVO detail(Long userId, Long reservationId) {
         Reservation reservation = requireOwnReservation(userId, reservationId);
-        return toVO(reservation, buildUsernameMap(userId), null, null);
+        ReservationDTO.ReservationVO vo = toVO(reservation, buildUsernameMap(userId), null, null);
+        leaveService.enrichOwnerActions(userId, List.of(vo));
+        return vo;
     }
 
     /**

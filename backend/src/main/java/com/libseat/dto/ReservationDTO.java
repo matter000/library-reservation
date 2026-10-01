@@ -145,6 +145,27 @@ public class ReservationDTO {
 
         /** 签到窗口提示文本（后端计算）。 */
         private String checkInWindowText;
+
+        /** 是否可登记暂离（后端算，前端只置灰）。 */
+        private Boolean canLeave;
+
+        /** 是否可「我已返回」（存在 OPEN 暂离时为真）。 */
+        private Boolean canReturn;
+
+        /** 是否可提前结束使用。 */
+        private Boolean canFinish;
+
+        /** 暂离按钮不可用时的具体原因（可用时为 null，杜绝「只置灰不给理由」）。 */
+        private String leaveDisabledReason;
+
+        /** 当前 OPEN 暂离的 ID（「我已返回」需要它，前端不必再查一次）。 */
+        private Long activeLeaveId;
+
+        /** 当前 OPEN 暂离的应归时刻 HH:mm。 */
+        private String expectedReturnAt;
+
+        /** 当前 OPEN 暂离距离应归还剩几分钟（已超时为负）。 */
+        private Integer leaveRemainMin;
     }
 
     /**
