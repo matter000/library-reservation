@@ -40,6 +40,12 @@ public enum ErrorCode {
     /** 存在关联数据，禁止删除。 */
     DELETE_FORBIDDEN(4094, "存在关联数据，禁止删除"),
 
+    /** 角色不符（细分于 4030，用于教师专区等分区级资格判定）。 */
+    ROLE_NOT_ELIGIBLE(4031, "当前角色不符合该区域的使用资格"),
+
+    /** 分区或桌位存在有效预约，禁止删除。 */
+    SPACE_IN_USE(4109, "存在有效预约，禁止删除"),
+
     /** 系统内部错误。 */
     SYSTEM_ERROR(5000, "系统内部错误");
 
@@ -55,6 +61,9 @@ public enum ErrorCode {
     /**
      * 根据错误码推断 HTTP 状态码。
      *
+     * <p>V2 起 41xx 段与 4090~4099 段同属业务冲突，集中在此判定；
+     * 新增错误码只要落在 4090~4109 区间就无需改动本方法。
+     *
      * @param code 业务错误码
      * @return HTTP 状态码
      */
@@ -62,13 +71,13 @@ public enum ErrorCode {
         if (code == UNAUTHORIZED.getCode()) {
             return 401;
         }
-        if (code == FORBIDDEN.getCode()) {
+        if (code == FORBIDDEN.getCode() || code == ROLE_NOT_ELIGIBLE.getCode()) {
             return 403;
         }
         if (code == NOT_FOUND.getCode()) {
             return 404;
         }
-        if (code >= 4090 && code <= 4099) {
+        if (code >= 4090 && code <= 4109) {
             return 409;
         }
         if (code == PARAM_ERROR.getCode()) {

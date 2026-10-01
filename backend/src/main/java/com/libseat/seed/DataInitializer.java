@@ -6,15 +6,19 @@ import com.libseat.entity.Reservation;
 import com.libseat.entity.ReservationSlot;
 import com.libseat.entity.Seat;
 import com.libseat.entity.User;
+import com.libseat.entity.Zone;
+import com.libseat.enums.DiscussLevel;
 import com.libseat.enums.FloorStatus;
 import com.libseat.enums.ReservationStatus;
 import com.libseat.enums.SeatStatus;
 import com.libseat.enums.UserRole;
+import com.libseat.enums.ZoneType;
 import com.libseat.repository.FloorRepository;
 import com.libseat.repository.ReservationRepository;
 import com.libseat.repository.ReservationSlotRepository;
 import com.libseat.repository.SeatRepository;
 import com.libseat.repository.UserRepository;
+import com.libseat.repository.ZoneRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
@@ -46,11 +50,27 @@ public class DataInitializer implements ApplicationRunner {
     /** 演示用固定随机种子，保证每次初始化分布一致。 */
     private static final long RANDOM_SEED = 20260211L;
 
+    /** 分区行段归属：楼层编码 + 起止行号 → 分区编码。与 seedZones 的布局一一对应。 */
+    private record ZoneRow(String floorCode, int rowFrom, int rowTo, String zoneCode) {
+    }
+
+    private static final List<ZoneRow> ZONE_ROW_MAP = List.of(
+            new ZoneRow("1F", 1, 4, "1F-SILENT"),
+            new ZoneRow("1F", 5, 5, "1F-SEMINAR"),
+            new ZoneRow("1F", 6, 6, "1F-LOUNGE"),
+            new ZoneRow("2F", 1, 3, "2F-E_READING"),
+            new ZoneRow("2F", 4, 4, "2F-SILENT"),
+            new ZoneRow("2F", 5, 5, "2F-TEACHER"),
+            new ZoneRow("3F", 1, 2, "3F-EXAM"),
+            new ZoneRow("3F", 3, 4, "3F-SILENT"));
+
     private final UserRepository userRepository;
 
     private final FloorRepository floorRepository;
 
     private final SeatRepository seatRepository;
+
+    private final ZoneRepository zoneRepository;
 
     private final ReservationRepository reservationRepository;
 
@@ -160,10 +180,13 @@ public class DataInitializer implements ApplicationRunner {
         for (Floor floor : floors) {
             floorByCode.put(floor.getCode(), floor);
         }
+        List<Zone> zones = seedZones(floorByCode);
+
+        // 分区按行划分：静音区占主要行列，研讨/教师专区等小而独立，便于演示可见性差异
         List<Seat> all = new ArrayList<>();
-        all.addAll(generateSeats(floorByCode.get("1F"), "A", 1, 6, 10, "A区"));
-        all.addAll(generateSeats(floorByCode.get("2F"), "B", 1, 5, 8, "B区"));
-        all.addAll(generateSeats(floorByCode.get("3F"), "C", 1, 4, 6, "C区"));
+        all.addAll(generateSeats(floorByCode.get("1F"), "A", 1, 6, 10, zones));
+        all.addAll(generateSeats(floorByCode.get("2F"), "B", 1, 5, 8, zones));
+        all.addAll(generateSeats(floorByCode.get("3F"), "C", 1, 4, 6, zones));
 
         // 3 个维护中座位，用于演示灰色 UNAVAILABLE
         markMaintenance(all, floorByCode.get("1F").getId(), "A15");
@@ -173,23 +196,94 @@ public class DataInitializer implements ApplicationRunner {
         return all;
     }
 
-    private List<Seat> generateSeats(Floor floor, String prefix, int startNo, int rows, int cols, String zone) {
+    private List<Zone> seedZones(Map<String, Floor> floorByCode) {
+        List<Zone> zones = new ArrayList<>();
+        Floor f1 = floorByCode.get("1F");
+        Floor f2 = floorByCode.get("2F");
+        Floor f3 = floorByCode.get("3F");
+
+        zones.add(Zone.builder().floorId(f1.getId()).name("静音自习区").code("1F-SILENT")
+                .zoneType(ZoneType.SILENT).maxDurationMin(240).advanceDays(3)
+                .allowDiscuss(DiscussLevel.NO).allowLeave(true).leaveMaxMin(60).leaveDailyLimit(3)
+                .allowGroup(false).groupRequired(false).sortOrder(1)
+                .remark("全程静音，暂离需打卡").build());
+        zones.add(Zone.builder().floorId(f1.getId()).name("研讨协作区").code("1F-SEMINAR")
+                .zoneType(ZoneType.SEMINAR).maxDurationMin(180).advanceDays(3)
+                .allowDiscuss(DiscussLevel.LOW).allowLeave(true).leaveMaxMin(60).leaveDailyLimit(3)
+                .allowGroup(true).groupRequired(true).sortOrder(2)
+                .remark("仅接受整组预约").build());
+        zones.add(Zone.builder().floorId(f1.getId()).name("休闲阅览区").code("1F-LOUNGE")
+                .zoneType(ZoneType.LOUNGE).maxDurationMin(60).advanceDays(1)
+                .allowDiscuss(DiscussLevel.LOW).allowLeave(false).leaveMaxMin(0).leaveDailyLimit(0)
+                .allowGroup(false).groupRequired(false).sortOrder(3)
+                .remark("沙发区，不设暂离").build());
+
+        zones.add(Zone.builder().floorId(f2.getId()).name("电子阅览区").code("2F-E_READING")
+                .zoneType(ZoneType.E_READING).maxDurationMin(120).advanceDays(1)
+                .allowDiscuss(DiscussLevel.NO).allowLeave(false).leaveMaxMin(0).leaveDailyLimit(0)
+                .allowGroup(false).groupRequired(false).sortOrder(1)
+                .remark("机房位，不支持暂离").build());
+        zones.add(Zone.builder().floorId(f2.getId()).name("静音自习区").code("2F-SILENT")
+                .zoneType(ZoneType.SILENT).maxDurationMin(240).advanceDays(3)
+                .allowDiscuss(DiscussLevel.NO).allowLeave(true).leaveMaxMin(60).leaveDailyLimit(3)
+                .allowGroup(false).groupRequired(false).sortOrder(2).build());
+        // ★ 教师专区：对学生不可见，用于验证可见性过滤（T-V2-05 验收 2）
+        zones.add(Zone.builder().floorId(f2.getId()).name("教师专区").code("2F-TEACHER")
+                .zoneType(ZoneType.TEACHER_ONLY).maxDurationMin(360).advanceDays(3)
+                .allowDiscuss(DiscussLevel.LOW).allowLeave(true).leaveMaxMin(60).leaveDailyLimit(3)
+                .allowGroup(false).groupRequired(false)
+                .visibleRoles("TEACHER,LIBRARIAN,SYS_ADMIN")
+                .eligibleRoles("TEACHER,LIBRARIAN,SYS_ADMIN")
+                .sortOrder(3).remark("学生面不可见").build());
+
+        zones.add(Zone.builder().floorId(f3.getId()).name("考研专座").code("3F-EXAM")
+                .zoneType(ZoneType.EXAM_PREP).maxDurationMin(480).advanceDays(7)
+                .allowDiscuss(DiscussLevel.NO).allowLeave(true).leaveMaxMin(120).leaveDailyLimit(5)
+                .allowGroup(false).groupRequired(false).sortOrder(1)
+                .remark("长时段，暂离上限放宽").build());
+        zones.add(Zone.builder().floorId(f3.getId()).name("静音自习区").code("3F-SILENT")
+                .zoneType(ZoneType.SILENT).maxDurationMin(240).advanceDays(3)
+                .allowDiscuss(DiscussLevel.NO).allowLeave(true).leaveMaxMin(60).leaveDailyLimit(3)
+                .allowGroup(false).groupRequired(false).sortOrder(2).build());
+
+        return zoneRepository.saveAll(zones);
+    }
+
+    private List<Seat> generateSeats(Floor floor, String prefix, int startNo, int rows, int cols,
+                                     List<Zone> zones) {
         int total = rows * cols;
         int lastNo = startNo + total - 1;
         int width = Math.max(2, String.valueOf(lastNo).length());
         String pattern = prefix + "%0" + width + "d";
+        Map<String, Zone> zoneByCode = new HashMap<>();
+        for (Zone zone : zones) {
+            zoneByCode.put(zone.getCode(), zone);
+        }
         List<Seat> seats = new ArrayList<>(total);
         for (int i = 0; i < total; i++) {
+            int rowNo = i / cols + 1;
+            Zone zone = resolveZone(floor.getCode(), rowNo, zoneByCode);
             seats.add(Seat.builder()
                     .floorId(floor.getId())
                     .seatNo(String.format(pattern, startNo + i))
-                    .rowNo(i / cols + 1)
+                    .rowNo(rowNo)
                     .colNo(i % cols + 1)
-                    .zone(zone)
+                    .zone(zone == null ? null : zone.getName())
+                    .zoneId(zone == null ? null : zone.getId())
                     .status(SeatStatus.AVAILABLE)
                     .build());
         }
         return new ArrayList<>(seatRepository.saveAll(seats));
+    }
+
+    private Zone resolveZone(String floorCode, int rowNo, Map<String, Zone> zoneByCode) {
+        for (ZoneRow mapping : ZONE_ROW_MAP) {
+            if (mapping.floorCode().equals(floorCode)
+                    && rowNo >= mapping.rowFrom() && rowNo <= mapping.rowTo()) {
+                return zoneByCode.get(mapping.zoneCode());
+            }
+        }
+        return null;
     }
 
     private void markMaintenance(List<Seat> seats, Long floorId, String seatNo) {

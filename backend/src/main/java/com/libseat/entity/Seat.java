@@ -62,6 +62,15 @@ public class Seat {
     @Column(name = "zone", length = 20)
     private String zone;
 
+    /**
+     * 所属分区（V2 起规则与归属的唯一来源）。
+     *
+     * <p>可为 null 只出现在遗留库未回填的中间态；迁移脚本与种子都保证回填，
+     * 因此查询侧按「无分区即不可约」处理，不做隐式兜底。
+     */
+    @Column(name = "zone_id")
+    private Long zoneId;
+
     /** 基础状态。 */
     @Builder.Default
     @Enumerated(EnumType.STRING)

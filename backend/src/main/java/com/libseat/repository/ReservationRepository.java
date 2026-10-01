@@ -132,6 +132,21 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long>,
                                   @Param("statuses") Collection<ReservationStatus> statuses);
 
     /**
+     * 统计某分区（按座位归属）从今天起的有效预约数 —— 删除分区前置校验。
+     *
+     * @param zoneId   分区 ID
+     * @param date     今天
+     * @param statuses 有效状态集合
+     * @return 预约数
+     */
+    @Query("select count(r) from Reservation r "
+            + "where r.seatId in (select s.id from Seat s where s.zoneId = :zoneId) "
+            + "and r.reserveDate >= :date and r.status in :statuses")
+    long countActiveFutureOfZone(@Param("zoneId") Long zoneId,
+                                 @Param("date") LocalDate date,
+                                 @Param("statuses") Collection<ReservationStatus> statuses);
+
+    /**
      * 查询某楼层的全部预约（删除楼层时级联清理）。
      *
      * @param floorId 楼层 ID

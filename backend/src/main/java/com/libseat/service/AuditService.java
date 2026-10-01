@@ -55,13 +55,21 @@ public class AuditService {
     /** 动作码：删除座位。 */
     public static final String ACTION_SEAT_DELETE = "SEAT_DELETE";
 
+    /** 动作码：新增或编辑分区（含状态切换）。 */
+    public static final String ACTION_ZONE_SAVE = "ZONE_SAVE";
+
+    /** 动作码：删除分区。 */
+    public static final String ACTION_ZONE_DELETE = "ZONE_DELETE";
+
     /** 动作码 → 中文文案（唯一来源，前端直接展示，不在两处写映射）。 */
     private static final Map<String, String> ACTION_TEXT = Map.of(
             ACTION_RULE_UPDATE, "修改规则配置",
             ACTION_RESERVATION_RELEASE, "强制释放预约",
             ACTION_PASSWORD_CHANGE, "修改密码",
             ACTION_FLOOR_DELETE, "删除楼层",
-            ACTION_SEAT_DELETE, "删除座位"
+            ACTION_SEAT_DELETE, "删除座位",
+            ACTION_ZONE_SAVE, "维护分区",
+            ACTION_ZONE_DELETE, "删除分区"
     );
 
     private final AuditLogRepository auditLogRepository;

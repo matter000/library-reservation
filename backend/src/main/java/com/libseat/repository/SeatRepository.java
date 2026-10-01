@@ -63,4 +63,35 @@ public interface SeatRepository extends JpaRepository<Seat, Long>, JpaSpecificat
      * @return 座位列表
      */
     List<Seat> findByFloorIdAndStatus(Long floorId, SeatStatus status);
+
+    /**
+     * 统计某分区的座位数。
+     *
+     * @param zoneId 分区 ID
+     * @return 座位数量
+     */
+    long countByZoneId(Long zoneId);
+
+    /**
+     * 查询某分区全部座位。
+     *
+     * @param zoneId 分区 ID
+     * @return 座位列表
+     */
+    List<Seat> findByZoneId(Long zoneId);
+
+    /**
+     * 查询某楼层全部座位（分区回填与按分区聚合用）。
+     *
+     * @param floorId 楼层 ID
+     * @return 座位列表
+     */
+    List<Seat> findByFloorId(Long floorId);
+
+    /**
+     * 统计尚未归属分区的座位数（「无孤儿」断言用）。
+     *
+     * @return zone_id 为空的座位数量
+     */
+    long countByZoneIdIsNull();
 }
