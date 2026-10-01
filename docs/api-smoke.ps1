@@ -95,12 +95,16 @@ Show '9. 时段选项条数/首项' @{
 }
 
 # ---------- 10. 预约（用本次新注册用户，避免与种子用户已有预约时段重叠） ----------
+# ★ 必须按「目标日期 + 目标时段」查平面图：第 8 步的 map 是「当前时段」的空闲态，
+#   拿它选出的座位去约明天 14 点，重复执行时必然撞 uk_slot_seat_date_idx → 4091。
 $tomorrow = (Get-Date).AddDays(1).ToString('yyyy-MM-dd')
-$freeSeat = ($map.data.seats | Where-Object { $_.displayStatus -eq 'FREE' } | Select-Object -First 1)
+$smokeStart = Get-Random -Minimum 8 -Maximum 20
+$targetMap = Invoke-Api GET "/api/seats/map?floorId=$floorId&date=$tomorrow&slot=$smokeStart" $null $stuToken
+$freeSeat = ($targetMap.data.seats | Where-Object { $_.displayStatus -eq 'FREE' } | Select-Object -First 1)
 $smokeLogin = Invoke-Api POST '/api/auth/login' @{ username = "smoke$stamp"; password = '123456' }
 $smokeToken = $smokeLogin.data.token
 Show '10. 提交预约' (Invoke-Api POST '/api/reservations' @{
-    seatId = $freeSeat.seatId; date = $tomorrow; startSlot = 14; duration = 2
+    seatId = $freeSeat.seatId; date = $tomorrow; startSlot = $smokeStart; duration = 1
 } $smokeToken)
 
 # ---------- 11. 我的预约 ----------
