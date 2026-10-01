@@ -32,6 +32,7 @@ export const RESERVATION_STATUS = {
   COMPLETED: 'COMPLETED',
   CANCELLED: 'CANCELLED',
   NO_SHOW: 'NO_SHOW',
+  VIOLATED: 'VIOLATED',
   ADMIN_CANCELLED: 'ADMIN_CANCELLED',
 };
 
@@ -42,6 +43,8 @@ export const RESERVATION_STATUS_META = {
   COMPLETED: { text: '已完成', color: 'green' },
   CANCELLED: { text: '已取消', color: 'default' },
   NO_SHOW: { text: '未签到', color: 'orange' },
+  // 暂离超时未归：文案要说清成因，与「未签到」区分（两者处罚不同）
+  VIOLATED: { text: '暂离未归', color: 'volcano' },
   ADMIN_CANCELLED: { text: '已被管理员取消', color: 'volcano' },
 };
 
