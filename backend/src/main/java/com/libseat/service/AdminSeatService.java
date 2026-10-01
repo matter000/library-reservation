@@ -48,6 +48,8 @@ public class AdminSeatService {
 
     private final AdminFloorService adminFloorService;
 
+    private final AuditService auditService;
+
     /**
      * 座位分页列表（楼层 + 编号模糊 + 状态筛选）。
      *
@@ -170,6 +172,13 @@ public class AdminSeatService {
         reservationSlotRepository.deleteBySeatId(seatId);
         reservationRepository.deleteAll(reservations);
         seatRepository.delete(seat);
+
+        Map<String, Object> detail = new java.util.LinkedHashMap<>();
+        detail.put("seatNo", seat.getSeatNo());
+        detail.put("floorId", seat.getFloorId());
+        detail.put("deletedReservations", reservations.size());
+        auditService.record(AuditService.ACTION_SEAT_DELETE, "SEAT", seatId, detail);
+
         return AdminDTO.DeleteSeatVO.builder()
                 .seatId(seatId)
                 .deletedReservations((long) reservations.size())

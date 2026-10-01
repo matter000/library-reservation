@@ -53,6 +53,8 @@ public class AdminUsageService {
 
     private final FloorService floorService;
 
+    private final AuditService auditService;
+
     /**
      * 座位使用情况查询。
      *
@@ -284,11 +286,19 @@ public class AdminUsageService {
             throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED, "该预约当前状态不可释放");
         }
         java.time.LocalDateTime now = java.time.LocalDateTime.now();
+        String previousStatus = reservation.getStatus().name();
         reservation.setStatus(ReservationStatus.ADMIN_CANCELLED);
         reservation.setCancelTime(now);
         reservation.setAdminCancelReason(reason.trim());
         reservationRepository.save(reservation);
         reservationSlotRepository.deleteByReservationId(reservation.getId());
+
+        Map<String, Object> detail = new java.util.LinkedHashMap<>();
+        detail.put("userId", reservation.getUserId());
+        detail.put("seatId", reservation.getSeatId());
+        detail.put("previousStatus", previousStatus);
+        detail.put("reason", reason.trim());
+        auditService.record(AuditService.ACTION_RESERVATION_RELEASE, "RESERVATION", reservation.getId(), detail);
 
         return AdminDTO.ReleaseVO.builder()
                 .reservationId(reservation.getId())

@@ -20,7 +20,9 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 管理员·楼层服务：楼层 CRUD + 开放/关闭切换（删除前校验未来预约）。
@@ -38,6 +40,8 @@ public class AdminFloorService {
     private final ReservationSlotRepository reservationSlotRepository;
 
     private final OccupancyService occupancyService;
+
+    private final AuditService auditService;
 
     /**
      * 楼层管理列表。
@@ -126,6 +130,13 @@ public class AdminFloorService {
         reservationRepository.deleteAll(reservations);
         seatRepository.deleteAll(seats);
         floorRepository.delete(floor);
+
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("floorCode", floor.getCode());
+        detail.put("floorName", floor.getName());
+        detail.put("deletedSeats", seats.size());
+        detail.put("deletedReservations", reservations.size());
+        auditService.record(AuditService.ACTION_FLOOR_DELETE, "FLOOR", floorId, detail);
 
         return AdminDTO.DeleteFloorVO.builder()
                 .deletedSeats((long) seats.size())

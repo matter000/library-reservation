@@ -37,6 +37,8 @@ public class RuleConfigService {
 
     private final RuleConfigRepository ruleConfigRepository;
 
+    private final AuditService auditService;
+
     /** scope|scopeId|rkey → rvalue 的原始字符串快照。 */
     private volatile Map<String, String> snapshot = Map.of();
 
@@ -221,10 +223,16 @@ public class RuleConfigService {
         String trimmed = value.trim();
         validate(rule.getValueType(), trimmed, rule.getRkey());
 
+        String oldValue = rule.getRvalue();
         rule.setRvalue(trimmed);
         rule.setUpdatedBy(actorId);
         RuleConfig saved = ruleConfigRepository.save(rule);
         refresh();
+        Map<String, Object> detail = new java.util.LinkedHashMap<>();
+        detail.put("rkey", saved.getRkey());
+        detail.put("oldValue", oldValue);
+        detail.put("newValue", saved.getRvalue());
+        auditService.record(AuditService.ACTION_RULE_UPDATE, "RULE", saved.getId(), detail);
         log.info("规则已更新：{}={}（操作人 userId={}）", saved.getRkey(), saved.getRvalue(), actorId);
         return saved;
     }

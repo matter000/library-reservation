@@ -33,6 +33,8 @@ public class AuthService {
 
     private final JwtUtil jwtUtil;
 
+    private final AuditService auditService;
+
     /**
      * 用户注册（★ 强制 role=USER）。
      *
@@ -134,6 +136,7 @@ public class AuthService {
 
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
+        auditService.record(AuditService.ACTION_PASSWORD_CHANGE, "USER", userId, null);
         log.info("用户修改密码成功：userId={}", userId);
     }
 

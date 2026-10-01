@@ -5,6 +5,7 @@ import com.libseat.common.BusinessException;
 import com.libseat.common.RuleKeys;
 import com.libseat.entity.RuleConfig;
 import com.libseat.repository.RuleConfigRepository;
+import com.libseat.service.AuditService;
 import com.libseat.service.RuleConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,6 +40,9 @@ class RuleConfigServiceTest {
     @Mock
     private RuleConfigRepository repository;
 
+    @Mock
+    private AuditService auditService;
+
     private RuleConfigService service;
 
     private RuleConfig rule(String key, String value, String type) {
@@ -50,7 +54,7 @@ class RuleConfigServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new RuleConfigService(repository);
+        service = new RuleConfigService(repository, auditService);
     }
 
     @Test
