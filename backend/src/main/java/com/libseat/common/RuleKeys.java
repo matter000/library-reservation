@@ -25,6 +25,36 @@ public final class RuleKeys {
     /** 可选时长列表（小时，逗号分隔）。 */
     public static final String BOOK_ALLOWED_DURATIONS = "book.allowed-durations";
 
+    /** 信用闸门总开关：false 时只记录不限制（演示逃生阀）。 */
+    public static final String CREDIT_ENFORCE_ENABLED = "credit.enforce_enabled";
+
+    /** 初始信用分。 */
+    public static final String CREDIT_INIT_SCORE = "credit.init-score";
+
+    /** 低于此分 → 高峰时段禁约。 */
+    public static final String CREDIT_PEAK_BAN_UNDER = "credit.peak-ban-under";
+
+    /** 低于此分 → 暂停预约 3 天。 */
+    public static final String CREDIT_BAN_3D_UNDER = "credit.ban-3d-under";
+
+    /** 低于此分 → 暂停预约 7 天。 */
+    public static final String CREDIT_BAN_7D_UNDER = "credit.ban-7d-under";
+
+    /** 低于此分（即 0 分）→ 暂停至学期末。 */
+    public static final String CREDIT_SEMESTER_UNDER = "credit.semester-under";
+
+    /** 暂停预约 3 天的天数。 */
+    public static final String CREDIT_BAN_3D_DAYS = "credit.ban-3d-days";
+
+    /** 暂停预约 7 天的天数。 */
+    public static final String CREDIT_BAN_7D_DAYS = "credit.ban-7d-days";
+
+    /** 连续主动结束满 N 次的恢复加分。 */
+    public static final String CREDIT_STREAK_BONUS = "credit.streak-bonus";
+
+    /** 多少次连续主动结束算一档。 */
+    public static final String CREDIT_STREAK_SIZE = "credit.streak-size";
+
     private RuleKeys() {
         // 常量类禁止实例化
     }

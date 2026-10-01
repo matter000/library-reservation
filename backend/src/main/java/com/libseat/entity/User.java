@@ -64,6 +64,16 @@ public class User {
     private Integer noShowCount = 0;
 
     /**
+     * 信用分（t_credit_log 的余额快照）。
+     *
+     * <p>★ 只允许 {@code CreditService} 改它，且每次改动必须同时写一笔流水，
+     * 否则「sum(delta) == credit_score」的对账不变式就破了。
+     */
+    @Builder.Default
+    @Column(name = "credit_score", nullable = false)
+    private Integer creditScore = 100;
+
+    /**
      * 连续「主动结束使用」次数（DESIGN §5.4）。
      *
      * <p>迁移 {@code V2__role.sql} 已建此列，S3 信用分上线前只累计不加分；
@@ -103,6 +113,9 @@ public class User {
         }
         if (activeFinishStreak == null) {
             activeFinishStreak = 0;
+        }
+        if (creditScore == null) {
+            creditScore = 100;
         }
         if (status == null) {
             status = "ACTIVE";

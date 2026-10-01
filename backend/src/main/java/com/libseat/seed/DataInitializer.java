@@ -78,6 +78,8 @@ public class DataInitializer implements ApplicationRunner {
 
     private final PasswordEncoder passwordEncoder;
 
+    private final com.libseat.service.CreditService creditService;
+
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
@@ -155,7 +157,10 @@ public class DataInitializer implements ApplicationRunner {
                 .noShowCount(0)
                 .status("ACTIVE")
                 .build());
-        return userRepository.saveAll(users);
+        List<User> saved = userRepository.saveAll(users);
+        // 种子账号同样要有 INIT 流水，否则「账本合计 == 信用分快照」的对账在演示库里恒不成立
+        saved.forEach(user -> creditService.initAccount(user.getId()));
+        return saved;
     }
 
     private List<Floor> seedFloors() {
@@ -203,10 +208,10 @@ public class DataInitializer implements ApplicationRunner {
         Floor f3 = floorByCode.get("3F");
 
         zones.add(Zone.builder().floorId(f1.getId()).name("静音自习区").code("1F-SILENT")
-                .zoneType(ZoneType.SILENT).maxDurationMin(240).advanceDays(3)
+                .zoneType(ZoneType.SILENT).maxDurationMin(240).advanceDays(3).dailyCapMin(360)
                 .allowDiscuss(DiscussLevel.NO).allowLeave(true).leaveMaxMin(60).leaveDailyLimit(3)
                 .allowGroup(false).groupRequired(false).sortOrder(1)
-                .remark("全程静音，暂离需打卡").build());
+                .remark("全程静音，暂离需打卡，单日累计 6 小时").build());
         zones.add(Zone.builder().floorId(f1.getId()).name("研讨协作区").code("1F-SEMINAR")
                 .zoneType(ZoneType.SEMINAR).maxDurationMin(180).advanceDays(3)
                 .allowDiscuss(DiscussLevel.LOW).allowLeave(true).leaveMaxMin(60).leaveDailyLimit(3)
@@ -237,7 +242,7 @@ public class DataInitializer implements ApplicationRunner {
                 .sortOrder(3).remark("学生面不可见").build());
 
         zones.add(Zone.builder().floorId(f3.getId()).name("考研专座").code("3F-EXAM")
-                .zoneType(ZoneType.EXAM_PREP).maxDurationMin(480).advanceDays(7)
+                .zoneType(ZoneType.EXAM_PREP).maxDurationMin(480).advanceDays(7).dailyCapMin(480)
                 .allowDiscuss(DiscussLevel.NO).allowLeave(true).leaveMaxMin(120).leaveDailyLimit(5)
                 .allowGroup(false).groupRequired(false).sortOrder(1)
                 .remark("长时段，暂离上限放宽").build());

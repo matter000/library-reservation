@@ -181,6 +181,56 @@ public class RuleConfigService {
         return getIntList(RuleKeys.BOOK_ALLOWED_DURATIONS, BizConstants.ALLOWED_DURATIONS);
     }
 
+    /** ★ 信用闸门总开关：false 时违规照记、分数照扣，但不阻断预约（演示逃生阀）。 */
+    public boolean creditEnforceEnabled() {
+        return getBool(RuleKeys.CREDIT_ENFORCE_ENABLED, true);
+    }
+
+    /** 初始信用分。 */
+    public int creditInitScore() {
+        return getInt(RuleKeys.CREDIT_INIT_SCORE, BizConstants.CREDIT_INIT_SCORE);
+    }
+
+    /** 触发「高峰禁约」的分数上界。 */
+    public int creditPeakBanUnder() {
+        return getInt(RuleKeys.CREDIT_PEAK_BAN_UNDER, BizConstants.CREDIT_PEAK_BAN_UNDER);
+    }
+
+    /** 触发「暂停 3 天」的分数上界。 */
+    public int creditBan3dUnder() {
+        return getInt(RuleKeys.CREDIT_BAN_3D_UNDER, BizConstants.CREDIT_BAN_3D_UNDER);
+    }
+
+    /** 触发「暂停 7 天」的分数上界。 */
+    public int creditBan7dUnder() {
+        return getInt(RuleKeys.CREDIT_BAN_7D_UNDER, BizConstants.CREDIT_BAN_7D_UNDER);
+    }
+
+    /** 触发「暂停至学期末」的分数上界（默认 1，即 0 分）。 */
+    public int creditSemesterUnder() {
+        return getInt(RuleKeys.CREDIT_SEMESTER_UNDER, BizConstants.CREDIT_SEMESTER_UNDER);
+    }
+
+    /** 「暂停 3 天」的天数。 */
+    public int creditBan3dDays() {
+        return getInt(RuleKeys.CREDIT_BAN_3D_DAYS, BizConstants.CREDIT_BAN_3D_DAYS);
+    }
+
+    /** 「暂停 7 天」的天数。 */
+    public int creditBan7dDays() {
+        return getInt(RuleKeys.CREDIT_BAN_7D_DAYS, BizConstants.CREDIT_BAN_7D_DAYS);
+    }
+
+    /** 连续主动结束的恢复加分。 */
+    public int creditStreakBonus() {
+        return getInt(RuleKeys.CREDIT_STREAK_BONUS, BizConstants.CREDIT_STREAK_BONUS);
+    }
+
+    /** 连续主动结束多少档算一次奖励。 */
+    public int creditStreakSize() {
+        return getInt(RuleKeys.CREDIT_STREAK_SIZE, BizConstants.CREDIT_STREAK_SIZE);
+    }
+
     // ==================== 管理端读写 ====================
 
     /**

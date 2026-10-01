@@ -65,6 +65,9 @@ public class ReservationService {
     /** 暂离按钮可用性由 LeaveService 单点判定（判定条件与登记暂离的校验链同源）。 */
     private final LeaveService leaveService;
 
+    /** 信用闸门与主动结束奖励的唯一入口。 */
+    private final CreditService creditService;
+
     /**
      * 提交预约（DESIGN §4.3-C1 七步校验）。
      *
@@ -168,6 +171,18 @@ public class ReservationService {
                                 + " 分钟，本次 " + duration + " 小时超限");
             }
         }
+
+        // ---------- 第 4c 步：信用闸门（ACTIVE 处罚 → 4100/4101；分区单日上限 → 4098）----------
+        // 顺序按 DESIGN §6.2：先看处罚，再看累计。单位注意：duration 是小时，
+        // 分区上限是分钟，这里显式 *60，不混用格号。
+        Integer dailyCapMin = seatZone == null ? null : seatZone.getDailyCapMin();
+        long usedTodayMin = 0L;
+        if (seatZone != null && dailyCapMin != null && dailyCapMin > 0) {
+            usedTodayMin = (long) reservationRepository.sumSlotsOfUserZone(
+                    userId, date, seatZone.getId(), OccupancyService.OCCUPYING_STATUSES)
+                    * BizConstants.SLOT_MINUTES;
+        }
+        creditService.checkBookingGate(userId, date, startSlot, duration * 60, dailyCapMin, usedTodayMin);
 
         // ---------- 第 5 步：今天时起始时段未过期 ----------
         LocalDateTime start = BizConstants.slotStart(date, startSlot);
@@ -367,14 +382,17 @@ public class ReservationService {
         int streak = (user.getActiveFinishStreak() == null ? 0 : user.getActiveFinishStreak()) + 1;
         user.setActiveFinishStreak(streak);
         userRepository.save(user);
-        // TODO S3 / T-V2-12：streak 每满 5 次由 CreditService 给 +5 并清零（PRD §6.3），
-        //  本片只累计计数 —— 信用账本与处罚评估在 S3 建。
+        // §5.4：每满 N 次给一次恢复加分并清零计数（加分与阶梯都在 CreditService 内完成）
+        boolean bonusAwarded = creditService.awardStreakIfNeeded(userId);
+        int score = creditService.scoreOf(userId);
 
         return ReservationDTO.ReservationActionVO.builder()
                 .reservationId(reservation.getId())
                 .status(ReservationStatus.COMPLETED.name())
                 .finishTime(BizConstants.formatDateTime(now))
-                .activeFinishStreak(streak)
+                .activeFinishStreak(user.getActiveFinishStreak())
+                .streakBonusAwarded(bonusAwarded)
+                .creditScore(score)
                 .build();
     }
 

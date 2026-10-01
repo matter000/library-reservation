@@ -192,7 +192,13 @@ public class ReservationDTO {
         /** 主动结束时刻（结束使用时返回）。 */
         private String finishTime;
 
-        /** 结束使用后累计的连续主动结束次数（S3 每满 5 次加分）。 */
+        /** 结束使用后累计的连续主动结束次数。 */
         private Integer activeFinishStreak;
+
+        /** 本次是否刚好触发一档连续主动结束奖励。 */
+        private Boolean streakBonusAwarded;
+
+        /** 操作后的信用分（让用户当场看到结果，而不是「回去刷新再猜」）。 */
+        private Integer creditScore;
     }
 }

@@ -35,6 +35,8 @@ public class AuthService {
 
     private final AuditService auditService;
 
+    private final CreditService creditService;
+
     /**
      * 用户注册（★ 强制 role=USER）。
      *
@@ -64,6 +66,8 @@ public class AuthService {
                 .status(ACCOUNT_STATUS_ACTIVE)
                 .build();
         User saved = userRepository.save(user);
+        // ★ 初始分必须同时落一笔 INIT 流水，否则对账不变式（sum(delta)==credit_score）从第一天起就不平
+        creditService.initAccount(saved.getId());
         log.info("新用户注册成功：username={}, userId={}", saved.getUsername(), saved.getId());
         return toUserInfo(saved);
     }

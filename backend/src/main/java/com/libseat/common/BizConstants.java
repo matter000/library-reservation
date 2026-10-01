@@ -58,6 +58,35 @@ public final class BizConstants {
     /** 开始后签到宽限分钟数。 */
     public static final int CHECK_IN_AFTER_MIN = 15;
 
+    // ===== 信用与处罚的兜底默认值（正常口径在 t_rule_config，这里只兜配置读不到时）=====
+
+    /** 初始信用分。 */
+    public static final int CREDIT_INIT_SCORE = 100;
+
+    /** 低于此分 → 高峰时段禁约。 */
+    public static final int CREDIT_PEAK_BAN_UNDER = 90;
+
+    /** 低于此分 → 暂停预约 3 天。 */
+    public static final int CREDIT_BAN_3D_UNDER = 70;
+
+    /** 低于此分 → 暂停预约 7 天。 */
+    public static final int CREDIT_BAN_7D_UNDER = 50;
+
+    /** 低于此分（即 0 分）→ 暂停至学期末。 */
+    public static final int CREDIT_SEMESTER_UNDER = 1;
+
+    /** 暂停预约 3 天。 */
+    public static final int CREDIT_BAN_3D_DAYS = 3;
+
+    /** 暂停预约 7 天。 */
+    public static final int CREDIT_BAN_7D_DAYS = 7;
+
+    /** 连续主动结束的恢复加分。 */
+    public static final int CREDIT_STREAK_BONUS = 5;
+
+    /** 连续主动结束多少档算一次奖励。 */
+    public static final int CREDIT_STREAK_SIZE = 5;
+
     /** 日期格式。 */
     public static final String DATE_PATTERN = "yyyy-MM-dd";
 

@@ -1,0 +1,279 @@
+package com.libseat.service;
+
+import com.libseat.common.BizConstants;
+import com.libseat.common.BusinessException;
+import com.libseat.common.ErrorCode;
+import com.libseat.entity.CreditLog;
+import com.libseat.entity.Penalty;
+import com.libseat.entity.User;
+import com.libseat.entity.Violation;
+import com.libseat.enums.CreditLogKind;
+import com.libseat.enums.PenaltyType;
+import com.libseat.enums.ViolationType;
+import com.libseat.repository.CreditLogRepository;
+import com.libseat.repository.UserRepository;
+import com.libseat.repository.ViolationRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * ★ 信用分写入的唯一入口（DESIGN §6.2）。
+ *
+ * <p>不变式：{@code sum(t_credit_log.delta) == t_user.credit_score}。
+ * 因此任何改分都必须走本类的 {@link #moveScore}，注册时要写一笔 {@code INIT} 起始分流水，
+ * 申诉回补走 {@code RESTORE} 反向记一笔 —— 一律不改写历史。
+ *
+ * <p>违规必须有证据 JSON：PRD §12-22「无证据不得裁定」，缺证据直接 4001，
+ * 而不是先扣分再等证据补交。
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class CreditService {
+
+    private final ViolationRepository violationRepository;
+
+    private final CreditLogRepository creditLogRepository;
+
+    private final UserRepository userRepository;
+
+    private final PenaltyService penaltyService;
+
+    private final RuleConfigService ruleConfigService;
+
+    private final OpenRuleService openRuleService;
+
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+
+    /**
+     * 记一笔违规：写违规 → 扣分 → 记流水 → 评估阶梯。四步同一事务。
+     *
+     * @param userId        违规人
+     * @param type          违规类型（决定默认扣分）
+     * @param scoreDelta    扣分（负数）；传 null 用类型的默认值
+     * @param evidenceJson  证据 JSON，必填
+     * @param reservationId 关联预约，可为 null
+     * @param operatorId    裁定人；null 表示系统自动
+     * @return 违规记录
+     */
+    @Transactional
+    public Violation applyViolation(Long userId, ViolationType type, Integer scoreDelta,
+                                    String evidenceJson, Long reservationId, Long operatorId) {
+        if (!StringUtils.hasText(evidenceJson)) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR,
+                    "缺少证据，不得裁定违规（" + type.getText() + "）");
+        }
+        int delta = scoreDelta == null ? type.getDefaultDelta() : scoreDelta;
+        if (delta >= 0) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "违规扣分必须为负数，实际 " + delta);
+        }
+        User user = requireUser(userId);
+
+        Violation violation = violationRepository.saveAndFlush(Violation.builder()
+                .userId(userId)
+                .reservationId(reservationId)
+                .type(type)
+                .scoreDelta(delta)
+                .evidence(evidenceJson)
+                .createdBy(operatorId == null ? "SYSTEM" : "LIBRARIAN")
+                .creatorId(operatorId)
+                .build());
+
+        int balance = moveScore(user, CreditLogKind.PENALTY, delta, "VIOLATION", violation.getId(),
+                type.getText() + " " + delta);
+        penaltyService.syncLadder(userId, balance, type.getText() + "后信用分 " + balance, LocalDateTime.now());
+        // TODO T-V2-20 通知中心：违规即时通知（含申诉入口 deeplink）随 t_notice 一起接
+        log.info("违规裁定：userId={}, type={}, delta={}, 余额={}", userId, type, delta, balance);
+        return violation;
+    }
+
+    /**
+     * 注册 / 种子建号时的初始分流水。
+     *
+     * <p>★ 缺了这一步，新用户 {@code sum(delta)=0} 而 {@code credit_score=100}，
+     * 对账接口永远不平 —— 初始分必须是账本上的一笔流水，而不是列的默认值。
+     *
+     * @param userId 新用户 ID
+     */
+    @Transactional
+    public void initAccount(Long userId) {
+        User user = requireUser(userId);
+        int score = user.getCreditScore() == null ? ruleConfigService.creditInitScore() : user.getCreditScore();
+        user.setCreditScore(score);
+        userRepository.save(user);
+        creditLogRepository.save(CreditLog.builder()
+                .userId(userId)
+                .kind(CreditLogKind.INIT)
+                .delta(score)
+                .balanceAfter(score)
+                .refType("ACCOUNT")
+                .refId(userId)
+                .reason("初始信用分")
+                .build());
+    }
+
+    /**
+     * 主动结束使用的连续奖励（§5.4：每满 N 次给一次加分）。
+     *
+     * @param userId 用户 ID
+     * @return 本次是否触发了加分
+     */
+    @Transactional
+    public boolean awardStreakIfNeeded(Long userId) {
+        User user = requireUser(userId);
+        int size = ruleConfigService.creditStreakSize();
+        int streak = user.getActiveFinishStreak() == null ? 0 : user.getActiveFinishStreak();
+        if (size <= 0 || streak < size || streak % size != 0) {
+            return false;
+        }
+        int bonus = ruleConfigService.creditStreakBonus();
+        moveScore(user, CreditLogKind.STREAK_BONUS, bonus, "STREAK", user.getId(),
+                "连续主动结束 " + streak + " 次");
+        user.setActiveFinishStreak(0);
+        userRepository.save(user);
+        int balance = user.getCreditScore();
+        penaltyService.syncLadder(userId, balance, "良好使用奖励后信用分 " + balance, LocalDateTime.now());
+        return true;
+    }
+
+    /**
+     * 预约闸门：处罚与单日累计（DESIGN §8.3 的两步）。
+     *
+     * <p>★ {@code credit.enforce_enabled=false} 时只记录不限制，是演示环境的逃生阀，
+     * 判断放在这一处而不是散到各个调用点。
+     *
+     * @param userId      预约人
+     * @param date        目标日期
+     * @param startSlot   起始时段
+     * @param durationMin 本次时长（分钟）
+     * @param dailyCapMin 分区给出的单日上限（null 表示不限制）
+     * @param usedToday   该分区当日已用分钟
+     */
+    @Transactional(readOnly = true)
+    public void checkBookingGate(Long userId, LocalDate date, int startSlot, int durationMin,
+                                 Integer dailyCapMin, long usedToday) {
+        if (!ruleConfigService.creditEnforceEnabled()) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        List<Penalty> active = penaltyService.activePenalties(userId, now);
+        for (Penalty penalty : active) {
+            if (penalty.getType() == PenaltyType.PEAK_BAN) {
+                if (openRuleService.resolve(date).peakOf(startSlot) != null) {
+                    throw new BusinessException(ErrorCode.PEAK_BANNED,
+                            "信用分受限期间不可预约高峰时段（本次恢复时间见「我的信用」）");
+                }
+                continue;
+            }
+            throw new BusinessException(ErrorCode.CREDIT_BANNED,
+                    penalty.getType().getText() + "中"
+                            + (penalty.getEndTime() == null ? "，需到馆处理或申诉后解除"
+                            : "，将于 " + BizConstants.formatDateTime(penalty.getEndTime()) + " 恢复"));
+        }
+        if (dailyCapMin != null && dailyCapMin > 0 && usedToday + durationMin > dailyCapMin) {
+            throw new BusinessException(ErrorCode.DAILY_CAP_EXCEEDED,
+                    "该分区单日累计上限 " + dailyCapMin + " 分钟，已用 " + usedToday
+                            + " 分钟，本次 " + durationMin + " 分钟超出");
+        }
+    }
+
+    /**
+     * ★ 对账：账本之和与快照不一致的用户（运维巡检用，正常应恒为空）。
+     *
+     * @return 差异说明列表
+     */
+    @Transactional(readOnly = true)
+    public List<String> consistencyReport() {
+        List<String> diffs = new ArrayList<>();
+        for (User user : userRepository.findAll()) {
+            int ledger = creditLogRepository.sumDelta(user.getId());
+            int snapshot = user.getCreditScore() == null ? 0 : user.getCreditScore();
+            if (ledger != snapshot) {
+                diffs.add("userId=" + user.getId() + " 账本合计=" + ledger + "，快照=" + snapshot);
+            }
+        }
+        return diffs;
+    }
+
+    /**
+     * 某人当前信用分。
+     *
+     * @param userId 用户 ID
+     * @return 分数
+     */
+    @Transactional(readOnly = true)
+    public int scoreOf(Long userId) {
+        Integer score = requireUser(userId).getCreditScore();
+        return score == null ? 0 : score;
+    }
+
+    /**
+     * 申诉成立时的反向回补（§6.3；不改写历史，只追加 RESTORE 流水）。
+     *
+     * @param userId     用户 ID
+     * @param amount     回补分值（正数）
+     * @param appealId   申诉 ID
+     * @param note       说明
+     */
+    @Transactional
+    public void restore(Long userId, int amount, Long appealId, String note) {
+        if (amount <= 0) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "回补分值必须为正数");
+        }
+        User user = requireUser(userId);
+        moveScore(user, CreditLogKind.RESTORE, amount, "APPEAL", appealId, note);
+        penaltyService.syncLadder(userId, user.getCreditScore(), "申诉回补后信用分 " + user.getCreditScore(),
+                LocalDateTime.now());
+    }
+
+    /**
+     * 改分的唯一落点：夹到 [0, 100] 并记一笔带余额快照的流水。
+     */
+    private int moveScore(User user, CreditLogKind kind, int delta,
+                          String refType, Long refId, String reason) {
+        int current = user.getCreditScore() == null ? ruleConfigService.creditInitScore() : user.getCreditScore();
+        int balance = Math.max(0, Math.min(100, current + delta));
+        user.setCreditScore(balance);
+        userRepository.save(user);
+        creditLogRepository.save(CreditLog.builder()
+                .userId(user.getId())
+                .kind(kind)
+                .delta(balance - current)
+                .balanceAfter(balance)
+                .refType(refType)
+                .refId(refId)
+                .reason(reason)
+                .build());
+        return balance;
+    }
+
+    private User requireUser(Long userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "用户不存在"));
+    }
+
+    /**
+     * 组装证据 JSON（违规的必要附件，也是申诉裁定页要渲染的内容）。
+     *
+     * <p>★ 单点提供是为了让「证据里有哪些字段」只有一份定义：手写字符串拼 JSON
+     * 迟早会在含引号的字段（如巡查备注）上炸开。
+     *
+     * @param fields 有序字段表
+     * @return JSON 文本
+     */
+    public String buildEvidence(java.util.LinkedHashMap<String, Object> fields) {
+        try {
+            return objectMapper.writeValueAsString(fields);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException("证据序列化失败", e);
+        }
+    }
+}

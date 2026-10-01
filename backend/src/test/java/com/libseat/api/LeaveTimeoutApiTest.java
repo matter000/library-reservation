@@ -53,18 +53,36 @@ class LeaveTimeoutApiTest extends ApiTestBase {
         return data(exec(get("/api/auth/me").header("Authorization", bearer(token)))).path("userId").asLong();
     }
 
-    private long freeSeat(long floorId, String date, int slot) throws Exception {
+    /**
+     * 取在 [startSlot, startSlot+slotCount) 全时段都空闲的座位。
+     *
+     * <p>★ 只看起始格会出错：下面的 {@code overdueLeave} 是直插 slot 明细行的，
+     * 起始格空闲但后面某格被占（种子数据或其他用例的预约）就会撞
+     * {@code uk_slot_seat_date_idx}，表现为与本用例无关的偶发失败。
+     */
+    private long freeSeat(long floorId, String date, int startSlot, int slotCount) throws Exception {
+        java.util.Set<Long> candidates = new java.util.LinkedHashSet<>(freeSeatsAt(floorId, date, startSlot));
+        for (int i = 1; i < slotCount; i++) {
+            candidates.retainAll(freeSeatsAt(floorId, date, startSlot + i));
+        }
+        assertTrue(!candidates.isEmpty(), date + " 时段 " + startSlot + ".." + (startSlot + slotCount)
+                + " 没有全时段空闲的座位");
+        return new java.util.ArrayList<>(candidates).get(0);
+    }
+
+    private java.util.Set<Long> freeSeatsAt(long floorId, String date, int slot) throws Exception {
         JsonNode map = data(exec(get("/api/seats/map")
                 .param("floorId", String.valueOf(floorId))
                 .param("date", date)
                 .param("slot", String.valueOf(slot))
                 .header("Authorization", bearer(u1))));
+        java.util.Set<Long> free = new java.util.LinkedHashSet<>();
         for (JsonNode seat : map.path("seats")) {
             if ("FREE".equals(seat.path("displayStatus").asText())) {
-                return seat.path("seatId").asLong();
+                free.add(seat.path("seatId").asLong());
             }
         }
-        throw new AssertionError(date + " 时段 " + slot + " 没有空闲座位");
+        return free;
     }
 
     /**
@@ -74,7 +92,7 @@ class LeaveTimeoutApiTest extends ApiTestBase {
      */
     private LeaveRecord overdueLeave(long uid, long floorId, LocalDate date,
                                      int startSlot, int slotCount, int overdueMin) throws Exception {
-        long seat = freeSeat(floorId, date.toString(), startSlot);
+        long seat = freeSeat(floorId, date.toString(), startSlot, slotCount);
         Reservation reservation = reservationRepository.saveAndFlush(Reservation.builder()
                 .userId(uid).seatId(seat).floorId(floorId).reserveDate(date)
                 .startSlot(startSlot).endSlot(startSlot + slotCount)

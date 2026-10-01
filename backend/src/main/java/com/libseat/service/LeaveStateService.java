@@ -1,9 +1,11 @@
 package com.libseat.service;
 
+import com.libseat.common.BizConstants;
 import com.libseat.entity.LeaveRecord;
 import com.libseat.entity.Reservation;
 import com.libseat.enums.LeaveStatus;
 import com.libseat.enums.ReservationStatus;
+import com.libseat.enums.ViolationType;
 import com.libseat.repository.LeaveRecordRepository;
 import com.libseat.repository.ReservationRepository;
 import com.libseat.repository.ReservationSlotRepository;
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 
 /**
  * 暂离超时的状态流转事务边界（DESIGN §5.3）。
@@ -37,6 +40,8 @@ public class LeaveStateService {
     private final UserRepository userRepository;
 
     private final WaitlistService waitlistService;
+
+    private final CreditService creditService;
 
     /**
      * 单条超时处理：预约归档 + 释放 slot + 暂离记时 + 违约计数 + 候补挂钩。
@@ -67,8 +72,16 @@ public class LeaveStateService {
         });
 
         waitlistService.onSeatReleased(reservation);
-        // TODO(S3) T-V2-12：CreditService.applyViolation(LEAVE_TIMEOUT, -10) + 处罚评估 + 通知。
-        //   本片按任务要求先写 t_user.no_show_count 这个 V1 兼容字段，避免 S2 提前依赖信用账本。
+        // ★ 证据由触发方组装：规则名 + 关键时间戳 + 涉及 ID，缺证据的违规在 CreditService 里就被拒
+        LinkedHashMap<String, Object> evidence = new LinkedHashMap<>();
+        evidence.put("rule", "zone.leave_max_min");
+        evidence.put("leaveId", record.getId());
+        evidence.put("seatId", reservation.getSeatId());
+        evidence.put("leaveStart", BizConstants.formatDateTime(record.getStartTime()));
+        evidence.put("leaveDeadline", BizConstants.formatDateTime(record.getPlannedEndTime()));
+        evidence.put("judgedAt", BizConstants.formatDateTime(now));
+        creditService.applyViolation(record.getUserId(), ViolationType.LEAVE_TIMEOUT, null,
+                creditService.buildEvidence(evidence), reservation.getId(), null);
         log.info("暂离超时：leaveId={}, reservationId={}, seatId={}, 应归={}",
                 record.getId(), reservation.getId(), reservation.getSeatId(), record.getPlannedEndTime());
         return 1;

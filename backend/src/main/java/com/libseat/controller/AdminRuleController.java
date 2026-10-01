@@ -27,6 +27,21 @@ public class AdminRuleController {
 
     private final RuleConfigService ruleConfigService;
 
+    private final com.libseat.service.CreditService creditService;
+
+    /**
+     * ★ 账本一致性巡检：{@code sum(t_credit_log.delta)} 与 {@code t_user.credit_score} 的差异清单。
+     *
+     * <p>正常应恒返回空列表；非空即说明有代码绕过了 {@code CreditService} 直接改分，
+     * 这是信用体系最致命的腐化方式，所以把它做成一个随时可打的接口而不是靠人查库。
+     *
+     * @return 差异说明（空表示一致）
+     */
+    @GetMapping("/consistency")
+    public Result<List<String>> consistency() {
+        return Result.ok(creditService.consistencyReport());
+    }
+
     /**
      * 规则列表。
      *

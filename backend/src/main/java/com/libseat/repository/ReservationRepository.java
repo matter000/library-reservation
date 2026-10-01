@@ -147,6 +147,27 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long>,
                                  @Param("statuses") Collection<ReservationStatus> statuses);
 
     /**
+     * 某人在某分区某日已占用的时段格数之和（单日累计上限判定用）。
+     *
+     * <p>返回的是「格数」不是分钟，调用方必须乘 {@code BizConstants.SLOT_MINUTES} 换算，
+     * 不要在这里顺手乘 —— 保持 Repository 只做取数、单位换算归 BizConstants 单点。
+     * 同一用户在同一分区同一日不会有时段重叠（创建时 4092 已拦），直接相加即累计值。
+     *
+     * @param userId   用户
+     * @param date     日期
+     * @param zoneId   分区
+     * @param statuses 有效占用状态集合
+     * @return 已占格数，无预约时为 0
+     */
+    @Query("select coalesce(sum(r.endSlot - r.startSlot), 0) from Reservation r "
+            + "where r.userId = :userId and r.reserveDate = :date and r.status in :statuses "
+            + "and r.seatId in (select s.id from Seat s where s.zoneId = :zoneId)")
+    int sumSlotsOfUserZone(@Param("userId") Long userId,
+                           @Param("date") LocalDate date,
+                           @Param("zoneId") Long zoneId,
+                           @Param("statuses") Collection<ReservationStatus> statuses);
+
+    /**
      * 查询某楼层的全部预约（删除楼层时级联清理）。
      *
      * @param floorId 楼层 ID
