@@ -76,6 +76,8 @@ class ReservationServiceUnitTest {
     private com.libseat.service.OpenRuleService openRuleService;
     @Mock
     private com.libseat.repository.ZoneRepository zoneRepository;
+    @Mock
+    private com.libseat.repository.LeaveRecordRepository leaveRecordRepository;
 
     private ReservationService service;
 
@@ -97,7 +99,7 @@ class ReservationServiceUnitTest {
         when(openRuleService.endSlotOf(any())).thenReturn(BizConstants.DEFAULT_SLOT_END);
         service = new ReservationService(reservationRepository, reservationSlotRepository,
                 seatRepository, zoneRepository, userRepository, floorService, ruleConfigService,
-                openRuleService);
+                openRuleService, leaveRecordRepository);
     }
 
     /** 整点 → 30 分钟格序号（格长改造后，用例仍以「小时」表达意图）。 */

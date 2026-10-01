@@ -167,5 +167,11 @@ public class ReservationDTO {
 
         /** 操作时间（取消时返回）。 */
         private String cancelTime;
+
+        /** 主动结束时刻（结束使用时返回）。 */
+        private String finishTime;
+
+        /** 结束使用后累计的连续主动结束次数（S3 每满 5 次加分）。 */
+        private Integer activeFinishStreak;
     }
 }

@@ -1,0 +1,431 @@
+package com.libseat.api;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.libseat.common.BizConstants;
+import com.libseat.entity.LeaveRecord;
+import com.libseat.entity.Reservation;
+import com.libseat.entity.ReservationSlot;
+import com.libseat.enums.LeaveStatus;
+import com.libseat.enums.ReservationStatus;
+import com.libseat.repository.LeaveRecordRepository;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MvcResult;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+
+/**
+ * V2 S2 / T-V2-09：暂离登记与返回的校验链（DESIGN §5.2 七步）。
+ *
+ * <p>两点造数约定，都是为了让用例不随「当天几点跑」飘：
+ * ① 预约用仓储直插 {@code CHECKED_IN} —— 真实签到窗口只有前后 15 分钟；
+ * ② 需要「预约结束时刻足够远」的场景把结束日放到明天，需要「按剩余封顶」的场景
+ *    把结束格设为当前格 +1，两种情况下与 now 的关系都恒定。
+ *
+ * <p>每日次数与「一条预约至多一条 OPEN」都是按人/按预约统计的，
+ * 所以每个用例都用 {@code newUser()} 隔离，不依赖执行顺序。
+ */
+class LeaveApiTest extends ApiTestBase {
+
+    private static final int PARAM_ERROR = 4001;
+    private static final int NOT_FOUND = 4040;
+    private static final int STATUS_NOT_ALLOWED = 4093;
+    private static final int LEAVE_NOT_ALLOWED = 4095;
+    private static final int LEAVE_LIMIT_EXCEEDED = 4096;
+    private static final int LEAVE_ALREADY_OPEN = 4097;
+
+    @Autowired
+    private LeaveRecordRepository leaveRecordRepository;
+
+    /** 直插一条「使用中」预约，并同步写占用明细（平面图只认 t_reservation_slot）。 */
+    private Reservation checkedIn(Long userId, long seatId, long floorId, LocalDate date,
+                                  int startSlot, int slotCount) {
+        Reservation reservation = Reservation.builder()
+                .userId(userId)
+                .seatId(seatId)
+                .floorId(floorId)
+                .reserveDate(date)
+                .startSlot(startSlot)
+                .endSlot(startSlot + slotCount)
+                .status(ReservationStatus.CHECKED_IN)
+                .checkInTime(BizConstants.slotStart(date, startSlot))
+                .build();
+        Reservation saved = reservationRepository.saveAndFlush(reservation);
+        for (int i = 0; i < slotCount; i++) {
+            reservationSlotRepository.saveAndFlush(ReservationSlot.builder()
+                    .reservation(saved)
+                    .seatId(seatId)
+                    .reserveDate(date)
+                    .slotIndex(startSlot + i)
+                    .build());
+        }
+        return saved;
+    }
+
+    /** 取某分区内在 [startSlot, startSlot+slotCount) 全时段都空闲的第 index 个座位。 */
+    private long freeSeatOfZone(long floorId, String zoneCode, LocalDate date,
+                               int startSlot, int slotCount, int index) throws Exception {
+        JsonNode zones = data(exec(get("/api/zones")
+                .param("floorId", String.valueOf(floorId))
+                .header("Authorization", bearer(admin))));
+        long zoneId = -1;
+        for (JsonNode node : zones) {
+            if (zoneCode.equals(node.path("code").asText())) {
+                zoneId = node.path("zoneId").asLong();
+            }
+        }
+        assertTrue(zoneId > 0, "分区列表中应含 " + zoneCode);
+
+        // ★ 必须逐格取交集：种子数据已把今天到 +6 天的部分格子占了，
+        //   只按「起始格空闲」造数会在写 slot 行时撞 uk_slot_seat_date_idx。
+        Set<Long> candidates = null;
+        for (int i = 0; i < slotCount; i++) {
+            JsonNode map = data(exec(get("/api/seats/map")
+                    .param("floorId", String.valueOf(floorId))
+                    .param("zoneId", String.valueOf(zoneId))
+                    .param("date", date.toString())
+                    .param("slot", String.valueOf(startSlot + i))
+                    .header("Authorization", bearer(admin))));
+            Set<Long> free = new LinkedHashSet<>();
+            for (JsonNode seat : map.path("seats")) {
+                if ("FREE".equals(seat.path("displayStatus").asText())) {
+                    free.add(seat.path("seatId").asLong());
+                }
+            }
+            if (candidates == null) {
+                candidates = free;
+            } else {
+                candidates.retainAll(free);
+            }
+        }
+        assertNotNull(candidates, "交集初始化失败");
+        assertTrue(candidates.size() > index,
+                zoneCode + " 在 " + date + " 时段 " + startSlot + ".." + (startSlot + slotCount)
+                        + " 需要至少 " + (index + 1) + " 个全空闲座位，实际 " + candidates.size());
+        return new ArrayList<>(candidates).get(index);
+    }
+
+    private long userId(String token) throws Exception {
+        return data(exec(get("/api/auth/me").header("Authorization", bearer(token)))).path("userId").asLong();
+    }
+
+    private MvcResult start(String token, long reservationId, String reasonCode, String note) throws Exception {
+        Map<String, Object> body = new HashMap<>();
+        body.put("reservationId", reservationId);
+        body.put("reasonCode", reasonCode);
+        if (note != null) {
+            body.put("note", note);
+        }
+        return exec(post("/api/leaves")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(body))
+                .header("Authorization", bearer(token)));
+    }
+
+    private JsonNode startOk(String token, long reservationId, String reasonCode, String note) throws Exception {
+        MvcResult result = start(token, reservationId, reasonCode, note);
+        assertEquals(0, code(result), reasonCode + " 登记应成功，实际：" + body(result));
+        return data(result);
+    }
+
+    private MvcResult returnBack(String token, long leaveId) throws Exception {
+        return exec(post("/api/leaves/" + leaveId + "/return")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(Map.of()))
+                .header("Authorization", bearer(token)));
+    }
+
+    private void returnOpenLeave(String token, long reservationId) throws Exception {
+        LeaveRecord open = leaveRecordRepository
+                .findByReservationIdAndOpenFlag(reservationId, LeaveStatus.OPEN_FLAG).orElseThrow();
+        MvcResult result = returnBack(token, open.getId());
+        assertEquals(0, code(result), "返回应成功：" + body(result));
+    }
+
+    private MvcResult finish(String token, long reservationId) throws Exception {
+        return exec(post("/api/reservations/" + reservationId + "/finish")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(Map.of()))
+                .header("Authorization", bearer(token)));
+    }
+
+    private int slotRowCount(long reservationId) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(1) FROM t_reservation_slot WHERE reservation_id = ?",
+                Integer.class, reservationId);
+        return n == null ? 0 : n;
+    }
+
+    private int openLeaveCount(long reservationId) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(1) FROM t_leave_record WHERE reservation_id = ? AND open_flag = 1",
+                Integer.class, reservationId);
+        return n == null ? 0 : n;
+    }
+
+    /** 某日某格的 HH:mm 标签（与后端同一换算）。 */
+    private String hm(LocalDate date, int slot) {
+        LocalDateTime time = BizConstants.slotEnd(date, slot);
+        return String.format("%02d:%02d", time.getHour(), time.getMinute());
+    }
+
+    @Test
+    @DisplayName("【验收0】原因字典 6 项，仅 CLASS/OTHER 要求填事由")
+    void reasonDictionaryExposed() throws Exception {
+        JsonNode list = data(exec(get("/api/leaves/reasons").header("Authorization", bearer(u1))));
+        assertEquals(6, list.size(), "种子应给出 6 个原因，实际 " + list.size());
+        List<String> needNote = new ArrayList<>();
+        for (JsonNode node : list) {
+            if (node.path("needNote").asBoolean()) {
+                needNote.add(node.path("code").asText());
+            }
+        }
+        assertEquals(List.of("CLASS", "OTHER"), needNote, "只有上课与其他必须写事由");
+    }
+
+    @Test
+    @DisplayName("【验收1】planned_end = min(原因上限, 分区上限, 预约结束)，剩余不足按剩余封顶而非报错")
+    void plannedEndIsCapped() throws Exception {
+        String me = newUser();
+        long uid = userId(me);
+        LocalDate today = LocalDate.now();
+        LocalDate tomorrow = today.plusDays(1);
+        int nowSlot = BizConstants.slotOf(LocalTime.now());
+
+        // 考研专座 leave_max_min=120；原因 MEAL=60 → 原因更紧，取 60
+        // 结束时刻刻意放在明天：无论几点跑，预约结束都不会先被触发
+        Reservation r1 = checkedIn(uid, freeSeatOfZone(floor3, "3F-EXAM", tomorrow, 16, 8, 0),
+                floor3, tomorrow, 16, 8);
+        JsonNode vo1 = startOk(me, r1.getId(), "MEAL", null);
+        assertEquals("OPEN", vo1.path("status").asText());
+        assertEquals(false, vo1.path("returned").asBoolean());
+        assertTrue(vo1.path("remainMin").asInt() >= 58 && vo1.path("remainMin").asInt() <= 60,
+                "就餐上限 60 分钟应生效，实际 remainMin=" + vo1.path("remainMin").asInt());
+
+        // 更短的原因（取物 15）→ 15 生效
+        returnOpenLeave(me, r1.getId());
+        JsonNode vo2 = startOk(me, r1.getId(), "PICKUP", null);
+        assertTrue(vo2.path("remainMin").asInt() >= 13 && vo2.path("remainMin").asInt() <= 15,
+                "取物上限 15 分钟应生效，实际 remainMin=" + vo2.path("remainMin").asInt());
+
+        // ★ 预约只剩 1 格 → 按剩余封顶，且必须成功而不是报错
+        returnOpenLeave(me, r1.getId());
+        Reservation r2 = checkedIn(uid, freeSeatOfZone(floor3, "3F-EXAM", today, nowSlot, 1, 0),
+                floor3, today, nowSlot, 1);
+        JsonNode vo3 = startOk(me, r2.getId(), "MEAL", null);
+        assertEquals(hm(today, r2.getEndSlot()), vo3.path("plannedEndTime").asText(),
+                "剩余不足时应等于预约结束时刻 " + hm(today, r2.getEndSlot()));
+        assertTrue(vo3.path("remainMin").asInt() <= 30, "封顶后剩余不应超过 30 分钟");
+    }
+
+    @Test
+    @DisplayName("【验收2】分区不支持 4095 / 已在暂离 4097 / CLASS 缺事由 4001 / 当日第 4 次 4096")
+    void validationChainErrors() throws Exception {
+        String me = newUser();
+        long uid = userId(me);
+        LocalDate today = LocalDate.now();
+        int nowSlot = BizConstants.slotOf(LocalTime.now());
+
+        // 第 2 步：2F 电子阅览区 allow_leave=false → 4095（且要先于原因校验命中）
+        Reservation eReading = checkedIn(uid, freeSeatOfZone(floor2, "2F-E_READING", tomorrowOf(today), 16, 4, 0),
+                floor2, tomorrowOf(today), 16, 4);
+        MvcResult notAllowed = start(me, eReading.getId(), "MEAL", null);
+        assertEquals(LEAVE_NOT_ALLOWED, code(notAllowed),
+                "电子阅览区应拒绝暂离，实际：" + body(notAllowed));
+
+        // 每次都重新取「当前全空闲」的第 0 座：上一条造数已把上一个座位标脏，天然错开
+        Reservation r1 = checkedIn(uid, freeSeatOfZone(floor1, "1F-SILENT", tomorrowOf(today), 16, 8, 0),
+                floor1, tomorrowOf(today), 16, 8);
+        assertEquals(0, code(start(me, r1.getId(), "MEAL", null)), "静音区应可暂离");
+
+        // 第 3 步：同一条预约再次登记 → 4097
+        MvcResult again = start(me, r1.getId(), "PHONE", null);
+        assertEquals(LEAVE_ALREADY_OPEN, code(again), "已有 OPEN 记录应 4097，实际：" + body(again));
+
+        // 第 5 步：CLASS 不填事由 → 4001。必须先返回上一条，否则命中第 3 步的 4097
+        returnOpenLeave(me, r1.getId());
+        Reservation r2 = checkedIn(uid, freeSeatOfZone(floor1, "1F-SILENT", tomorrowOf(today), 16, 4, 0),
+                floor1, tomorrowOf(today), 16, 4);
+        MvcResult needNote = start(me, r2.getId(), "CLASS", null);
+        assertEquals(PARAM_ERROR, code(needNote), "上课原因不填事由应 4001，实际：" + body(needNote));
+        startOk(me, r2.getId(), "CLASS", "去上第三节课");
+
+        // 第 4 步：静音区每日 3 次。已用 2 次 → 第 3 次仍可，第 4 次 4096
+        returnOpenLeave(me, r2.getId());
+        Reservation r3 = checkedIn(uid, freeSeatOfZone(floor1, "1F-SILENT", tomorrowOf(today), 16, 4, 0),
+                floor1, tomorrowOf(today), 16, 4);
+        startOk(me, r3.getId(), "REST", null);
+        returnOpenLeave(me, r3.getId());
+
+        Reservation r4 = checkedIn(uid, freeSeatOfZone(floor1, "1F-SILENT", today, nowSlot, 2, 0),
+                floor1, today, nowSlot, 2);
+        MvcResult exceeded = start(me, r4.getId(), "MEAL", null);
+        assertEquals(LEAVE_LIMIT_EXCEEDED, code(exceeded),
+                "静音区每日 3 次，第 4 次应 4096，实际：" + body(exceeded));
+    }
+
+    private LocalDate tomorrowOf(LocalDate today) {
+        return today.plusDays(1);
+    }
+
+    @Test
+    @DisplayName("【验收3】我已返回 → RETURNED + open_flag 归 NULL + 座位仍占用 + 结束时刻不顺延")
+    void returnBackKeepsOriginalEnd() throws Exception {
+        String me = newUser();
+        long uid = userId(me);
+        LocalDate today = LocalDate.now();
+        int nowSlot = BizConstants.slotOf(LocalTime.now());
+        long seat = freeSeatOfZone(floor1, "1F-SILENT", today, nowSlot, 6, 0);
+        Reservation reservation = checkedIn(uid, seat, floor1, today, nowSlot, 6);
+
+        JsonNode started = startOk(me, reservation.getId(), "MEAL", null);
+        long leaveId = started.path("leaveId").asLong();
+        String endBefore = started.path("reservationEndTime").asText();
+        assertEquals("暂离中", started.path("statusText").asText());
+        assertEquals("IN_USE", displayStatus(floor1, seat, today.toString(), nowSlot),
+                "暂离期间座位应仍算占用（T-V2-10 才改派生成 ON_LEAVE）");
+
+        MvcResult returnResult = returnBack(me, leaveId);
+        assertEquals(0, code(returnResult), "返回应成功：" + body(returnResult));
+        JsonNode returned = data(returnResult);
+        assertEquals("RETURNED", returned.path("status").asText());
+        assertEquals(true, returned.path("returned").asBoolean());
+        assertTrue(returned.path("actualReturnTime").asText().length() == 5,
+                "实际返回时刻应为 HH:mm，实际 " + returned.path("actualReturnTime").asText());
+        assertEquals(endBefore, returned.path("reservationEndTime").asText(),
+                "★ 剩余使用时间不顺延：预约结束时刻必须一字不变");
+        assertEquals("IN_USE", displayStatus(floor1, seat, today.toString(), nowSlot),
+                "返回后座位仍属该预约，没有提前释放");
+
+        LeaveRecord record = leaveRecordRepository.findById(leaveId).orElseThrow();
+        assertNull(record.getOpenFlag(),
+                "★ 结束后 open_flag 必须置回 NULL，否则该预约再也开不了第二条暂离");
+        assertEquals(LeaveStatus.RETURNED, record.getStatus());
+        assertEquals(0, openLeaveCount(reservation.getId()));
+
+        // 名额已释放：同一条预约可以再登记
+        startOk(me, reservation.getId(), "PHONE", null);
+
+        // 已结束的记录重复返回 → 4093
+        MvcResult again = returnBack(me, record.getId());
+        assertEquals(STATUS_NOT_ALLOWED, code(again),
+                "重复返回应 4093，实际：" + body(again));
+    }
+
+    @Test
+    @DisplayName("【验收4】并发登记同预约 → 唯一索引只放过一条，失败方拿到 4097")
+    void concurrentStartSingleWinner() throws Exception {
+        String me = newUser();
+        long uid = userId(me);
+        int nowSlot = BizConstants.slotOf(LocalTime.now());
+        long seat = freeSeatOfZone(floor1, "1F-SILENT", LocalDate.now(), nowSlot, 6, 0);
+        Reservation reservation = checkedIn(uid, seat, floor1, LocalDate.now(), nowSlot, 6);
+
+        ExecutorService pool = Executors.newFixedThreadPool(4);
+        List<Future<Integer>> futures = new ArrayList<>();
+        try {
+            for (int i = 0; i < 4; i++) {
+                Callable<Integer> task = () -> code(start(me, reservation.getId(), "MEAL", null));
+                futures.add(pool.submit(task));
+            }
+            List<Integer> codes = new ArrayList<>();
+            for (Future<Integer> future : futures) {
+                codes.add(future.get());
+            }
+            long success = codes.stream().filter(c -> c == 0).count();
+            assertEquals(1, success, "★ 只允许一条成功，实际返回：" + codes);
+            for (int c : codes) {
+                assertTrue(c == 0 || c == LEAVE_ALREADY_OPEN,
+                        "失败方必须明确报 4097（而不是 5000 或静默成功），实际：" + codes);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+        assertEquals(1, openLeaveCount(reservation.getId()), "库里 OPEN 记录必须恰好一条");
+
+        // ★ 单独证明「索引才是兜底」：绕过服务直插第二条 OPEN 也必须被数据库拒掉，
+        //   否则并发场景里只是先查后插侥幸拦住的，换个调用顺序就会漏。
+        int before = openLeaveCount(reservation.getId());
+        try {
+            leaveRecordRepository.saveAndFlush(LeaveRecord.builder()
+                    .reservationId(reservation.getId()).userId(uid).seatId(seat)
+                    .reasonCode("MEAL")
+                    .startTime(LocalDateTime.now()).plannedEndTime(LocalDateTime.now().plusMinutes(30))
+                    .status(LeaveStatus.OPEN).openFlag(LeaveStatus.OPEN_FLAG)
+                    .build());
+            throw new AssertionError("第二条 OPEN 暂离本应被 uk_leave_open 拦下");
+        } catch (DataIntegrityViolationException expected) {
+            assertEquals(before, openLeaveCount(reservation.getId()),
+                    "被拦下后库里仍应只有一条 OPEN");
+        }
+
+        // 历史态（open_flag=NULL）可以无限条：结束后再来一条不应撞索引
+        returnOpenLeave(me, reservation.getId());
+        startOk(me, reservation.getId(), "MEAL", null);
+        assertEquals(1, openLeaveCount(reservation.getId()), "返回后重新占额，仍只有一条 OPEN");
+    }
+
+    @Test
+    @DisplayName("【验收5】未签到/已结束后不可暂离；暂离中不可提前结束使用")
+    void finishedReservationRejectsLeave() throws Exception {
+        String me = newUser();
+        long uid = userId(me);
+        LocalDate today = LocalDate.now();
+        int nowSlot = BizConstants.slotOf(LocalTime.now());
+        long seat = freeSeatOfZone(floor1, "1F-SILENT", today, nowSlot, 6, 0);
+
+        // 第 1 步：CONFIRMED（未签到）→ 4093
+        Reservation confirmed = reservationRepository.saveAndFlush(Reservation.builder()
+                .userId(uid).seatId(seat).floorId(floor1).reserveDate(today.plusDays(1))
+                .startSlot(16).endSlot(20).status(ReservationStatus.CONFIRMED).build());
+        MvcResult notCheckedIn = start(me, confirmed.getId(), "MEAL", null);
+        assertEquals(STATUS_NOT_ALLOWED, code(notCheckedIn), "未签到应 4093，实际：" + body(notCheckedIn));
+
+        // 主动结束使用 → COMPLETED + slot 物理删除 + 计数累加
+        Reservation active = checkedIn(uid, seat, floor1, today, nowSlot, 6);
+        MvcResult finished = finish(me, active.getId());
+        assertEquals(0, code(finished), "主动结束应成功：" + body(finished));
+        assertEquals("COMPLETED", data(finished).path("status").asText());
+        assertEquals(1, data(finished).path("activeFinishStreak").asInt(), "连续主动结束次数要累加");
+        assertEquals(0, slotRowCount(active.getId()), "结束后 slot 行必须物理删除，座位立刻让给他人");
+
+        MvcResult afterFinish = start(me, active.getId(), "MEAL", null);
+        assertEquals(STATUS_NOT_ALLOWED, code(afterFinish),
+                "已结束的预约不可再暂离，实际：" + body(afterFinish));
+
+        // 暂离中 → 先返回才能结束
+        Reservation another = checkedIn(uid, freeSeatOfZone(floor1, "1F-SILENT", today, nowSlot, 6, 0),
+                floor1, today, nowSlot, 6);
+        startOk(me, another.getId(), "MEAL", null);
+        MvcResult blocked = finish(me, another.getId());
+        assertEquals(STATUS_NOT_ALLOWED, code(blocked),
+                "暂离中应先返回，实际：" + body(blocked));
+        assertEquals(6, slotRowCount(another.getId()), "被拒的结束不能删掉 slot 行");
+
+        // 非本人的预约 → 4040（防水平越权，沿用 V1 语义）
+        MvcResult foreign = start(u1, another.getId(), "PHONE", null);
+        assertEquals(NOT_FOUND, code(foreign), "别人的预约应 4040，实际：" + body(foreign));
+    }
+}

@@ -63,6 +63,16 @@ public class User {
     @Column(name = "no_show_count", nullable = false)
     private Integer noShowCount = 0;
 
+    /**
+     * 连续「主动结束使用」次数（DESIGN §5.4）。
+     *
+     * <p>迁移 {@code V2__role.sql} 已建此列，S3 信用分上线前只累计不加分；
+     * 每满 5 次由信用服务给 +5 并清零。
+     */
+    @Builder.Default
+    @Column(name = "active_finish_streak", nullable = false)
+    private Integer activeFinishStreak = 0;
+
     /** 账号状态：ACTIVE / DISABLED。 */
     @Builder.Default
     @Column(name = "status", nullable = false, length = 20)
@@ -90,6 +100,9 @@ public class User {
         }
         if (noShowCount == null) {
             noShowCount = 0;
+        }
+        if (activeFinishStreak == null) {
+            activeFinishStreak = 0;
         }
         if (status == null) {
             status = "ACTIVE";

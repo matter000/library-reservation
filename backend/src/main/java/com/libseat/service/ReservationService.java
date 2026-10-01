@@ -8,8 +8,11 @@ import com.libseat.dto.ReservationDTO;
 import com.libseat.entity.Reservation;
 import com.libseat.entity.ReservationSlot;
 import com.libseat.entity.Seat;
+import com.libseat.entity.User;
+import com.libseat.enums.LeaveStatus;
 import com.libseat.enums.ReservationStatus;
 import com.libseat.enums.UserRole;
+import com.libseat.repository.LeaveRecordRepository;
 import com.libseat.repository.ReservationRepository;
 import com.libseat.repository.ReservationSlotRepository;
 import com.libseat.repository.SeatRepository;
@@ -55,6 +58,9 @@ public class ReservationService {
     private final RuleConfigService ruleConfigService;
 
     private final OpenRuleService openRuleService;
+
+    /** 只用于「暂离未归不可结束使用」这一道闸；不反向依赖 {@code LeaveService}，避免循环注入。 */
+    private final LeaveRecordRepository leaveRecordRepository;
 
     /**
      * 提交预约（DESIGN §4.3-C1 七步校验）。
@@ -318,6 +324,51 @@ public class ReservationService {
                 .reservationId(reservation.getId())
                 .status(ReservationStatus.CANCELLED.name())
                 .cancelTime(BizConstants.formatDateTime(now))
+                .build();
+    }
+
+    /**
+     * 主动结束使用（DESIGN §5.4）：用不完的时间提前释放给他人。
+     *
+     * <p>与取消的区别在于「已经签到」，因此必须走独立入口：置 {@code COMPLETED}、物理删 slot 行、
+     * 累计 {@code active_finish_streak}。暂离未返回时先返回才能结束，避免把「人还在外面」
+     * 误记成一次主动结束。
+     *
+     * @param userId        当前用户 ID
+     * @param reservationId 预约 ID
+     * @return 操作结果
+     */
+    @Transactional
+    public ReservationDTO.ReservationActionVO finish(Long userId, Long reservationId) {
+        Reservation reservation = requireOwnReservation(userId, reservationId);
+        if (reservation.getStatus() != ReservationStatus.CHECKED_IN) {
+            throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED, "仅使用中的预约可提前结束");
+        }
+        boolean onLeave = leaveRecordRepository
+                .findByReservationIdAndOpenFlag(reservationId, LeaveStatus.OPEN_FLAG)
+                .isPresent();
+        if (onLeave) {
+            throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED, "暂离中请先点「我已返回」再结束使用");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        reservation.setStatus(ReservationStatus.COMPLETED);
+        reservationRepository.save(reservation);
+        reservationSlotRepository.deleteByReservationId(reservation.getId());
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "用户不存在"));
+        int streak = (user.getActiveFinishStreak() == null ? 0 : user.getActiveFinishStreak()) + 1;
+        user.setActiveFinishStreak(streak);
+        userRepository.save(user);
+        // TODO S3 / T-V2-12：streak 每满 5 次由 CreditService 给 +5 并清零（PRD §6.3），
+        //  本片只累计计数 —— 信用账本与处罚评估在 S3 建。
+
+        return ReservationDTO.ReservationActionVO.builder()
+                .reservationId(reservation.getId())
+                .status(ReservationStatus.COMPLETED.name())
+                .finishTime(BizConstants.formatDateTime(now))
+                .activeFinishStreak(streak)
                 .build();
     }
 

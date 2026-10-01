@@ -98,4 +98,16 @@ public class ReservationController {
         Long userId = UserContext.getUserId();
         return Result.ok(reservationService.checkIn(userId, id));
     }
+
+    /**
+     * 主动结束使用（V2 §5.4）：用不完的时间提前释放给他人。
+     *
+     * @param id 预约 ID
+     * @return 操作结果
+     */
+    @PostMapping("/{id}/finish")
+    public Result<ReservationDTO.ReservationActionVO> finish(@PathVariable Long id) {
+        Long userId = UserContext.getUserId();
+        return Result.ok(reservationService.finish(userId, id));
+    }
 }
