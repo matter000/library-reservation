@@ -17,6 +17,7 @@ import { LockOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { changePassword, fetchMe } from '../api/auth';
 import { useAuth } from '../store/AuthContext';
+import { USER_ROLE_META, roleText } from '../constants';
 
 /**
  * 个人中心：基本信息 + 违约次数 + 修改密码。
@@ -91,8 +92,8 @@ export default function Profile() {
                 <Descriptions.Item label="姓名">{info.realName}</Descriptions.Item>
                 <Descriptions.Item label="手机号">{info.phoneMasked || '未填写'}</Descriptions.Item>
                 <Descriptions.Item label="角色">
-                  <Tag color={info.role === 'ADMIN' ? 'volcano' : 'blue'}>
-                    {info.role === 'ADMIN' ? '管理员' : '普通用户'}
+                  <Tag color={(USER_ROLE_META[info.role] || {}).color || 'default'}>
+                    {roleText(info.role)}
                   </Tag>
                 </Descriptions.Item>
               </Descriptions>

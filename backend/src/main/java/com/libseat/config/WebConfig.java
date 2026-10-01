@@ -111,6 +111,7 @@ public class WebConfig implements WebMvcConfigurer {
                 "/floors/{floorId}/seats",
                 "/my/reservations",
                 "/profile",
+                "/staff",
                 "/admin",
                 "/admin/floors",
                 "/admin/floors/{floorId}/seats",

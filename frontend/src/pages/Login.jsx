@@ -3,9 +3,10 @@ import { Button, Card, Form, Input, Typography } from 'antd';
 import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/AuthContext';
+import { roleHomePath } from '../constants';
 
 /**
- * 登录页：登录成功按角色跳转（ADMIN → /admin/statistics，USER → /floors）。
+ * 登录页：登录成功按角色跳转（落地路由统一取自 USER_ROLE_META）。
  *
  * @returns {JSX.Element} 登录页
  */
@@ -19,11 +20,7 @@ export default function Login() {
     setSubmitting(true);
     try {
       const user = await login(values.username.trim(), values.password);
-      if (user.role === 'ADMIN') {
-        navigate('/admin/statistics', { replace: true });
-      } else {
-        navigate('/floors', { replace: true });
-      }
+      navigate(roleHomePath(user.role), { replace: true });
     } catch (e) {
       // 错误提示由 request 拦截器统一弹出
     } finally {

@@ -125,7 +125,7 @@ class SecurityApiTest extends ApiTestBase {
     }
 
     @Test
-    @DisplayName("【4030】已注册但被强制为 USER 的账号仍然拿不到管理员权限")
+    @DisplayName("【4030】已注册但被强制为 STUDENT 的账号仍然拿不到管理权限")
     void registeredUserIsNotAdmin() throws Exception {
         String username = "qa" + UUID.randomUUID().toString().substring(0, 8);
         Map<String, Object> register = new HashMap<>();
@@ -134,21 +134,47 @@ class SecurityApiTest extends ApiTestBase {
         register.put("confirmPassword", "123456");
         register.put("realName", "越权测试");
         register.put("phone", "13900001111");
-        register.put("role", "ADMIN");
+        register.put("role", "SYS_ADMIN");
 
         MvcResult result = exec(post("/api/auth/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json(register)));
         assertEquals(0, code(result), "注册应成功：" + body(result));
-        assertEquals("USER", data(result).path("role").asText(),
-                "★ 注册时传 role=ADMIN，后端必须强制为 USER，实际：" + data(result));
+        assertEquals("STUDENT", data(result).path("role").asText(),
+                "★ 注册时传 role=SYS_ADMIN，后端必须强制为 STUDENT，实际：" + data(result));
 
         String token = login(username, "123456");
         JsonNode me = data(exec(get("/api/auth/me").header("Authorization", bearer(token))));
-        assertEquals("USER", me.path("role").asText());
+        assertEquals("STUDENT", me.path("role").asText());
 
         MvcResult adminCall = exec(get("/api/admin/users").header("Authorization", bearer(token)));
         assertEquals(FORBIDDEN, code(adminCall), "注册用户访问管理员接口应 4030");
+    }
+
+    @Test
+    @DisplayName("【V2 权限矩阵】四角色 × 三命名空间的入口可达性")
+    void roleMatrix() throws Exception {
+        String teacher = login("teacher1", "123456");
+        String librarian = login("librarian1", "123456");
+
+        // 学生面 /api/**：四个已登录角色都可访问
+        String[] all = {u1, teacher, librarian, admin};
+        for (String token : all) {
+            assertEquals(0, code(exec(get("/api/floors").header("Authorization", bearer(token)))),
+                    "已登录角色应可访问 /api/floors");
+        }
+
+        // 馆员面 /api/staff/**：学生与教师必须 4030（拦截器先于路由，故路径未实现也能验证拒绝分支）
+        assertEquals(FORBIDDEN, code(exec(get("/api/staff/usage").header("Authorization", bearer(u1)))),
+                "学生不得访问 /api/staff/**");
+        assertEquals(FORBIDDEN, code(exec(get("/api/staff/usage").header("Authorization", bearer(teacher)))),
+                "教师不得访问 /api/staff/**");
+
+        // 管理面 /api/admin/**：馆员必须 4030，系统管理员放行
+        assertEquals(FORBIDDEN, code(exec(get("/api/admin/floors").header("Authorization", bearer(librarian)))),
+                "馆员不得访问 /api/admin/**");
+        assertEquals(0, code(exec(get("/api/admin/floors").header("Authorization", bearer(admin)))),
+                "系统管理员应可访问 /api/admin/floors");
     }
 
     @Test

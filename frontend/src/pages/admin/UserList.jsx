@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, Input, Table, Tag, Typography } from 'antd';
 import { fetchAdminUsers } from '../../api/admin';
 import PageLoading from '../../components/PageLoading';
+import { USER_ROLE_META, roleText } from '../../constants';
 
 /**
  * 管理员·用户管理（P1）：只列表，手机号由后端脱敏后返回。
@@ -52,7 +53,7 @@ export default function UserList() {
       dataIndex: 'role',
       width: 110,
       render: (v) => (
-        <Tag color={v === 'ADMIN' ? 'volcano' : 'blue'}>{v === 'ADMIN' ? '管理员' : '普通用户'}</Tag>
+        <Tag color={(USER_ROLE_META[v] || {}).color || 'default'}>{roleText(v)}</Tag>
       ),
     },
     {

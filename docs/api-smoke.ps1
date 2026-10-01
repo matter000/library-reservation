@@ -42,9 +42,9 @@ function Show {
 $stamp = Get-Random -Maximum 99999
 
 # ---------- 1. 注册 ----------
-Show '1. 注册新用户（后端强制 role=USER）' (Invoke-Api POST '/api/auth/register' @{
+Show '1. 注册新用户（后端强制 role=STUDENT）' (Invoke-Api POST '/api/auth/register' @{
     username = "smoke$stamp"; password = '123456'; confirmPassword = '123456'
-    realName = '冒烟用户'; phone = '13900001234'; role = 'ADMIN'
+    realName = '冒烟用户'; phone = '13900001234'; role = 'SYS_ADMIN'
 })
 
 # ---------- 2. 重复注册 → 4090 ----------
@@ -67,6 +67,17 @@ Show '5. 未登录访问 /api/floors（期望 4010）' (Invoke-Api GET '/api/flo
 
 # ---------- 6. 越权：学生访问 /api/admin/** → 4030 ----------
 Show '6. 学生 Token 访问 /api/admin/floors（期望 4030）' (Invoke-Api GET '/api/admin/floors' $null $stuToken)
+
+# ---------- 6b. V2 四角色权限矩阵 ----------
+$tch = Invoke-Api POST '/api/auth/login' @{ username = 'teacher1'; password = '123456' }
+$lib = Invoke-Api POST '/api/auth/login' @{ username = 'librarian1'; password = '123456' }
+Show '6b. 四角色矩阵（教师/馆员角色 + 命名空间拒绝）' @{
+    teacherRole    = $tch.data.user.role
+    librarianRole  = $lib.data.user.role
+    studentToStaff = (Invoke-Api GET '/api/staff/usage' $null $stuToken).__httpError   # 期望 403
+    libToAdmin     = (Invoke-Api GET '/api/admin/floors' $null $lib.data.token).__httpError  # 期望 403
+    libToFloors    = (Invoke-Api GET '/api/floors' $null $lib.data.token).code          # 期望 0
+}
 
 # ---------- 7. 楼层列表 ----------
 $floors = Invoke-Api GET '/api/floors' $null $stuToken

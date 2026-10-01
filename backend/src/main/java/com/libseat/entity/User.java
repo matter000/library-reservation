@@ -56,7 +56,7 @@ public class User {
     @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 20)
-    private UserRole role = UserRole.USER;
+    private UserRole role = UserRole.STUDENT;
 
     /** 超时未签到次数。 */
     @Builder.Default
@@ -86,7 +86,7 @@ public class User {
             updateTime = now;
         }
         if (role == null) {
-            role = UserRole.USER;
+            role = UserRole.STUDENT;
         }
         if (noShowCount == null) {
             noShowCount = 0;

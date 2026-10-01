@@ -86,7 +86,7 @@ public class DataInitializer implements ApplicationRunner {
                 .passwordHash(passwordEncoder.encode("admin123"))
                 .realName("系统管理员")
                 .phone("13800000000")
-                .role(UserRole.ADMIN)
+                .role(UserRole.SYS_ADMIN)
                 .noShowCount(0)
                 .status("ACTIVE")
                 .build());
@@ -95,7 +95,7 @@ public class DataInitializer implements ApplicationRunner {
                 .passwordHash(passwordEncoder.encode("123456"))
                 .realName("张三")
                 .phone("13812345671")
-                .role(UserRole.USER)
+                .role(UserRole.STUDENT)
                 .noShowCount(0)
                 .status("ACTIVE")
                 .build());
@@ -104,7 +104,7 @@ public class DataInitializer implements ApplicationRunner {
                 .passwordHash(passwordEncoder.encode("123456"))
                 .realName("李四")
                 .phone("13812345672")
-                .role(UserRole.USER)
+                .role(UserRole.STUDENT)
                 .noShowCount(1)
                 .status("ACTIVE")
                 .build());
@@ -113,7 +113,25 @@ public class DataInitializer implements ApplicationRunner {
                 .passwordHash(passwordEncoder.encode("123456"))
                 .realName("王五")
                 .phone("13812345673")
-                .role(UserRole.USER)
+                .role(UserRole.STUDENT)
+                .noShowCount(0)
+                .status("ACTIVE")
+                .build());
+        users.add(User.builder()
+                .username("teacher1")
+                .passwordHash(passwordEncoder.encode("123456"))
+                .realName("陈老师")
+                .phone("13812345674")
+                .role(UserRole.TEACHER)
+                .noShowCount(0)
+                .status("ACTIVE")
+                .build());
+        users.add(User.builder()
+                .username("librarian1")
+                .passwordHash(passwordEncoder.encode("123456"))
+                .realName("馆员小林")
+                .phone("13800000001")
+                .role(UserRole.LIBRARIAN)
                 .noShowCount(0)
                 .status("ACTIVE")
                 .build());
@@ -192,7 +210,7 @@ public class DataInitializer implements ApplicationRunner {
 
         List<User> students = new ArrayList<>();
         for (User user : users) {
-            if (user.getRole() == UserRole.USER) {
+            if (user.getRole() == UserRole.STUDENT) {
                 students.add(user);
             }
         }
@@ -374,10 +392,12 @@ public class DataInitializer implements ApplicationRunner {
     private void printDemoAccounts() {
         log.info("=========================================================");
         log.info("  演示账号（密码明文）：");
-        log.info("    管理员   admin / admin123        → /admin/statistics");
-        log.info("    学生     student1 / 123456（张三）→ /floors");
-        log.info("    学生     student2 / 123456（李四）");
-        log.info("    学生     student3 / 123456（王五）");
+        log.info("    系统管理员  admin / admin123       → /admin/statistics");
+        log.info("    馆员        librarian1 / 123456    → /staff");
+        log.info("    教师        teacher1 / 123456      → /floors");
+        log.info("    学生        student1 / 123456（张三）→ /floors");
+        log.info("    学生        student2 / 123456（李四）");
+        log.info("    学生        student3 / 123456（王五）");
         log.info("=========================================================");
     }
 }

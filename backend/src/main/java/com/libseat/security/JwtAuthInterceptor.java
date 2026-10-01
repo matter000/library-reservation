@@ -16,16 +16,14 @@ import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 
 /**
  * JWT 鉴权拦截器。
  *
  * <ol>
- *   <li>白名单（登录 / 注册 / H2 console / error）直接放行；</li>
- *   <li>OPTIONS 预检请求直接放行（CORS preflight 不带 Authorization 头）；</li>
- *   <li>无 Token / 解析失败 → 4010；</li>
- *   <li>路径以 {@code /api/admin/} 开头且 role ≠ ADMIN → 4030；</li>
+ *   <li>公开路径（{@link RolePermission#isPublic}）与 OPTIONS 预检直接放行；</li>
+ *   <li>无 Token / 解析失败 / 角色值非法 → 4010；</li>
+ *   <li>入口权限由 {@link RolePermission} 的「路径前缀 → 角色集合」矩阵判定 → 不通过 4030；</li>
  *   <li>写入 {@link UserContext}；afterCompletion 必须 clear()。</li>
  * </ol>
  */
@@ -35,13 +33,6 @@ import java.util.List;
 public class JwtAuthInterceptor implements HandlerInterceptor {
 
     private static final String BEARER_PREFIX = "Bearer ";
-
-    private static final List<String> WHITE_LIST = List.of(
-            "/api/auth/login",
-            "/api/auth/register",
-            "/h2-console",
-            "/error"
-    );
 
     private final JwtUtil jwtUtil;
 
@@ -56,10 +47,8 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
             return true;
         }
-        for (String prefix : WHITE_LIST) {
-            if (uri.startsWith(prefix)) {
-                return true;
-            }
+        if (RolePermission.isPublic(uri)) {
+            return true;
         }
 
         String token = resolveToken(request);
@@ -86,10 +75,10 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
             return false;
         }
 
-        // 数据权限红线：/api/admin/** 必须 ADMIN
-        if (uri.startsWith("/api/admin/") && role != UserRole.ADMIN) {
+        // 入口权限矩阵（唯一事实来源，见 RolePermission）
+        if (!RolePermission.permits(uri, role)) {
             log.warn("越权访问被拦截：userId={}, role={}, uri={}", userId, role, uri);
-            reject(response, ErrorCode.FORBIDDEN.getCode(), "无权限访问，仅管理员可操作");
+            reject(response, ErrorCode.FORBIDDEN.getCode(), "无权限访问");
             return false;
         }
 

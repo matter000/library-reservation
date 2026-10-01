@@ -15,19 +15,18 @@ import UsageQuery from '../pages/admin/UsageQuery';
 import ReservationList from '../pages/admin/ReservationList';
 import Statistics from '../pages/admin/Statistics';
 import UserList from '../pages/admin/UserList';
+import StaffHome from '../pages/staff/StaffHome';
 import { useAuth } from '../store/AuthContext';
+import { USER_ROLE, roleHomePath } from '../constants';
 
 /**
- * 登录成功后按角色跳转的目标地址。
+ * 登录成功后按角色跳转的目标地址（落地路由只在 USER_ROLE_META 里定义一次）。
  *
  * @returns {JSX.Element} 跳转
  */
 function RoleHome() {
-  const { hasRole } = useAuth();
-  if (hasRole('ADMIN')) {
-    return <Navigate to="/admin/statistics" replace />;
-  }
-  return <Navigate to="/floors" replace />;
+  const { user } = useAuth();
+  return <Navigate to={roleHomePath(user && user.role)} replace />;
 }
 
 /**
@@ -56,11 +55,21 @@ export default function AppRoutes() {
         <Route path="/profile" element={<Profile />} />
       </Route>
 
-      {/* 管理员端 */}
+      {/* 馆员作业面（S0 先占位，实时监控 / 巡查 / 违规处理随 S2·S3·S6 交付） */}
+      <Route
+        path="/staff"
+        element={
+          <RequireAuth roles={[USER_ROLE.LIBRARIAN, USER_ROLE.SYS_ADMIN]}>
+            <StaffHome />
+          </RequireAuth>
+        }
+      />
+
+      {/* 系统管理面 */}
       <Route
         path="/admin"
         element={
-          <RequireAuth role="ADMIN">
+          <RequireAuth roles={[USER_ROLE.SYS_ADMIN]}>
             <AdminLayout />
           </RequireAuth>
         }

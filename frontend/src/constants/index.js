@@ -101,3 +101,46 @@ export const ERROR_CODE = {
   STATUS_NOT_ALLOWED: 4093,
   DELETE_FORBIDDEN: 4094,
 };
+
+/** 用户角色（与后端 UserRole 枚举逐字一致，V2 四角色）。 */
+export const USER_ROLE = {
+  STUDENT: 'STUDENT',
+  TEACHER: 'TEACHER',
+  LIBRARIAN: 'LIBRARIAN',
+  SYS_ADMIN: 'SYS_ADMIN',
+};
+
+/**
+ * 角色 → 中文文案 + Tag 颜色 + 登录后落地路由。
+ *
+ * ★ 落地路由只在这里定义一次，Login / RoleHome / RequireAuth 全部从这里取，
+ *   避免「同一个信息写两处」导致改一处漏一处。
+ */
+export const USER_ROLE_META = {
+  STUDENT: { text: '学生', color: 'blue', home: '/floors' },
+  TEACHER: { text: '教师', color: 'cyan', home: '/floors' },
+  LIBRARIAN: { text: '馆员', color: 'gold', home: '/staff' },
+  SYS_ADMIN: { text: '系统管理员', color: 'volcano', home: '/admin/statistics' },
+};
+
+/**
+ * 角色中文文案（未知角色回落到原始值，便于排查）。
+ *
+ * @param {string} role 角色枚举值
+ * @returns {string} 文案
+ */
+export function roleText(role) {
+  const meta = USER_ROLE_META[role];
+  return meta ? meta.text : role || '未知角色';
+}
+
+/**
+ * 该角色登录后的默认落地路由。
+ *
+ * @param {string} role 角色枚举值
+ * @returns {string} 路径
+ */
+export function roleHomePath(role) {
+  const meta = USER_ROLE_META[role];
+  return meta ? meta.home : '/floors';
+}

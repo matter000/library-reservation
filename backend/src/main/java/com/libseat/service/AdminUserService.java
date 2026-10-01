@@ -70,7 +70,7 @@ public class AdminUserService {
     }
 
     private AdminDTO.UserVO toVO(User user) {
-        UserRole role = user.getRole() == null ? UserRole.USER : user.getRole();
+        UserRole role = user.getRole() == null ? UserRole.STUDENT : user.getRole();
         return AdminDTO.UserVO.builder()
                 .userId(user.getId())
                 .username(user.getUsername())

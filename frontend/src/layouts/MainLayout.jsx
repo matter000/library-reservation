@@ -3,6 +3,7 @@ import { Avatar, Button, Layout, Menu, Typography } from 'antd';
 import { BookOutlined, LogoutOutlined, UserOutlined } from '@ant-design/icons';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/AuthContext';
+import { USER_ROLE } from '../constants';
 
 const { Header, Content, Footer } = Layout;
 
@@ -20,8 +21,11 @@ export default function MainLayout() {
     { key: '/floors', icon: <BookOutlined />, label: '楼层' },
     { key: '/my/reservations', icon: <UserOutlined />, label: '我的预约' },
   ];
-  if (hasRole('ADMIN')) {
-    menuItems.push({ key: '/admin/statistics', icon: <UserOutlined />, label: '管理后台' });
+  if (hasRole(USER_ROLE.SYS_ADMIN)) {
+    menuItems.push({ key: '/admin/statistics', icon: <UserOutlined />, label: '系统管理' });
+  }
+  if (hasRole(USER_ROLE.LIBRARIAN) || hasRole(USER_ROLE.SYS_ADMIN)) {
+    menuItems.push({ key: '/staff', icon: <UserOutlined />, label: '馆员工作台' });
   }
 
   const selectedKey = location.pathname.startsWith('/my') ? '/my/reservations' : '/floors';

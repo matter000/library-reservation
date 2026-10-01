@@ -57,7 +57,7 @@ public class AuthService {
                 .passwordHash(passwordEncoder.encode(password))
                 .realName(realName)
                 .phone(StringUtils.hasText(request.getPhone()) ? request.getPhone().trim() : null)
-                .role(UserRole.USER)
+                .role(UserRole.STUDENT)
                 .noShowCount(0)
                 .status(ACCOUNT_STATUS_ACTIVE)
                 .build();
@@ -142,7 +142,7 @@ public class AuthService {
                 .userId(user.getId())
                 .username(user.getUsername())
                 .realName(user.getRealName())
-                .role(user.getRole() == null ? UserRole.USER.name() : user.getRole().name())
+                .role(user.getRole() == null ? UserRole.STUDENT.name() : user.getRole().name())
                 .phoneMasked(BizConstants.maskPhone(user.getPhone()))
                 .noShowCount(user.getNoShowCount() == null ? 0 : user.getNoShowCount())
                 .build();
