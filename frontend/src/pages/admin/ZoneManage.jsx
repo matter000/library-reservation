@@ -15,8 +15,11 @@ const ALL_ROLES = Object.keys(USER_ROLE_META);
 
 const roleOptions = ALL_ROLES.map((value) => ({ value, label: USER_ROLE_META[value].text }));
 
+/** 后端返回角色数组，这里兜住 null 与非数组的脏值。 */
+const asRoles = (list) => (Array.isArray(list) ? list : []);
+
 /**
- * 把分区的后端 VO 转换成表单初值（角色 CSV → 数组）。
+ * 把分区的后端 VO 转换成表单初值。
  *
  * @param {object} zone 分区 VO
  * @returns {object} 表单值
@@ -35,8 +38,8 @@ function toForm(zone) {
     leaveDailyLimit: zone.leaveDailyLimit,
     allowGroup: zone.allowGroup,
     groupRequired: zone.groupRequired,
-    visibleRoles: ALL_ROLES.filter((r) => (zone.visibleRoles || '').split(',').includes(r)),
-    eligibleRoles: ALL_ROLES.filter((r) => (zone.eligibleRoles || '').split(',').includes(r)),
+    visibleRoles: asRoles(zone.visibleRoles),
+    eligibleRoles: asRoles(zone.eligibleRoles),
     sortOrder: zone.sortOrder,
     remark: zone.remark,
   };
@@ -88,7 +91,6 @@ export default function ZoneManage() {
   const openCreate = () => {
     setEditing({});
     form.setFieldsValue({
-      ...toForm({ visibleRoles: ALL_ROLES.join(','), eligibleRoles: ALL_ROLES.join(',') }),
       name: '',
       code: '',
       zoneType: 'SILENT',
@@ -196,9 +198,9 @@ export default function ZoneManage() {
       width: 200,
       render: (_, row) => (
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {(row.visibleRoles || '-').split(',').map((r) => USER_ROLE_META[r]?.text || r).join('、')}
+          {asRoles(row.visibleRoles).map((r) => USER_ROLE_META[r]?.text || r).join('、') || '-'}
           {' / '}
-          {(row.eligibleRoles || '-').split(',').map((r) => USER_ROLE_META[r]?.text || r).join('、')}
+          {asRoles(row.eligibleRoles).map((r) => USER_ROLE_META[r]?.text || r).join('、') || '-'}
         </Typography.Text>
       ),
     },
