@@ -5,12 +5,14 @@ import com.libseat.dto.StatsDTO;
 import com.libseat.entity.Floor;
 import com.libseat.entity.Reservation;
 import com.libseat.entity.Seat;
+import com.libseat.entity.Zone;
 import com.libseat.enums.ReservationStatus;
 import com.libseat.enums.SeatDisplayStatus;
 import com.libseat.enums.SeatStatus;
 import com.libseat.repository.FloorRepository;
 import com.libseat.repository.ReservationRepository;
 import com.libseat.repository.SeatRepository;
+import com.libseat.repository.ZoneRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +35,9 @@ public class AdminStatisticsService {
 
     private static final int DEFAULT_DAYS = 7;
 
+    /** 未分区座位在下钻明细里的桶名（zone_id 为 NULL，见 {@code ZoneService.delete} 的退回语义）。 */
+    private static final String UNASSIGNED_ZONE_NAME = "未分区";
+
     private final ReservationRepository reservationRepository;
 
     private final SeatRepository seatRepository;
@@ -40,6 +45,10 @@ public class AdminStatisticsService {
     private final FloorRepository floorRepository;
 
     private final OccupancyService occupancyService;
+
+    private final ZoneRepository zoneRepository;
+
+    private final OpenRuleService openRuleService;
 
     /**
      * 6 大指标概览。
@@ -98,7 +107,10 @@ public class AdminStatisticsService {
     }
 
     /**
-     * 时段热度（固定 14 项 8~21，把 [startSlot, endSlot) 展开累加）。
+     * 时段热度（固定 {@code SLOT_COUNT} 项，即全局开放窗口的每个 30 分钟格，把 [startSlot, endSlot) 展开累加）。
+     *
+     * <p>窗口外的格恒为 0：闭馆档案更短时末尾会出现零值柱，这是「全量格子」视图的取舍，
+     * 换取前端坐标轴在不同日期下宽度一致。
      *
      * @param days 统计窗口天数，默认 7
      * @return 时段热度列表
@@ -129,7 +141,10 @@ public class AdminStatisticsService {
     }
 
     /**
-     * 各楼层利用率。
+     * 各楼层利用率（含分区下钻）。
+     *
+     * <p>楼层合计与分区明细在同一次座位遍历里累加，因此「Σ 分区 occupied == 楼层 occupied」
+     * 与「Σ 分区 totalSeats == 楼层 totalSeats」是构造上成立的，不靠两处各算一遍再对齐。
      *
      * @param date 日期，默认今天
      * @param slot 时段序号，默认当前时段
@@ -144,18 +159,28 @@ public class AdminStatisticsService {
         List<Floor> floors = floorRepository.findAllByOrderBySortOrderAscIdAsc();
         List<StatsDTO.FloorUsageVO> list = new ArrayList<>(floors.size());
         for (Floor floor : floors) {
-            boolean floorClosed = floor.getStatus() == com.libseat.enums.FloorStatus.CLOSED;
+            // 与楼层卡 / 平面图 / 分区卡同一派生入口：闭馆日也必须整体置灰
+            boolean floorClosed = floor.getStatus() == com.libseat.enums.FloorStatus.CLOSED
+                    || openRuleService.isClosed(targetDate);
             List<Seat> seats = seatRepository.findByFloorIdOrderByRowNoAscColNoAsc(floor.getId());
+            // key = zoneId（null 键即「未分区」桶，见 ZoneService.delete 会把座位退回 null）
+            Map<Long, long[]> byZone = new HashMap<>();
             long occupied = 0;
             long usable = 0;
             for (Seat seat : seats) {
                 SeatDisplayStatus display = occupancyService.derive(seat, floorClosed, occupiedMap);
-                if (display == SeatDisplayStatus.RESERVED || display == SeatDisplayStatus.IN_USE) {
+                boolean occupiedSeat = display == SeatDisplayStatus.RESERVED || display == SeatDisplayStatus.IN_USE;
+                boolean usableSeat = display != SeatDisplayStatus.UNAVAILABLE;
+                if (occupiedSeat) {
                     occupied++;
                 }
-                if (display != SeatDisplayStatus.UNAVAILABLE) {
+                if (usableSeat) {
                     usable++;
                 }
+                long[] agg = byZone.computeIfAbsent(seat.getZoneId(), key -> new long[3]);
+                agg[0] += occupiedSeat ? 1 : 0;
+                agg[1] += usableSeat ? 1 : 0;
+                agg[2]++;
             }
             list.add(StatsDTO.FloorUsageVO.builder()
                     .floorId(floor.getId())
@@ -164,9 +189,44 @@ public class AdminStatisticsService {
                     .totalSeats((long) seats.size())
                     .occupied(occupied)
                     .usageRate(BizConstants.rate(occupied, usable))
+                    .zones(zoneUsage(floor.getId(), byZone))
                     .build());
         }
         return list;
+    }
+
+    /**
+     * 由楼层遍历得到的按区累加值构造下钻明细。
+     *
+     * <p>楼层下的空分区仍会返回（占位为 0，便于管理员看出「这个区还没座位」），
+     * 未分区座位单独成桶并排在最后，保证明细与楼层合计对得上。
+     */
+    private List<StatsDTO.ZoneUsageVO> zoneUsage(Long floorId, Map<Long, long[]> byZone) {
+        List<Zone> zones = zoneRepository.findByFloorIdOrderBySortOrderAscIdAsc(floorId);
+        List<StatsDTO.ZoneUsageVO> list = new ArrayList<>(zones.size() + 1);
+        for (Zone zone : zones) {
+            long[] agg = byZone.remove(zone.getId());
+            list.add(toZoneVO(zone.getId(), zone.getName(), zone.getZoneType().getText(), agg));
+        }
+        long[] unassigned = byZone.remove(null);
+        if (unassigned != null) {
+            list.add(toZoneVO(null, UNASSIGNED_ZONE_NAME, "待归类", unassigned));
+        }
+        return list;
+    }
+
+    private StatsDTO.ZoneUsageVO toZoneVO(Long zoneId, String name, String typeText, long[] agg) {
+        long occupied = agg == null ? 0 : agg[0];
+        long usable = agg == null ? 0 : agg[1];
+        long total = agg == null ? 0 : agg[2];
+        return StatsDTO.ZoneUsageVO.builder()
+                .zoneId(zoneId)
+                .name(name)
+                .zoneTypeText(typeText)
+                .totalSeats(total)
+                .occupied(occupied)
+                .usageRate(BizConstants.rate(occupied, usable))
+                .build();
     }
 
     /**

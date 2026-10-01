@@ -10,7 +10,7 @@ export function fetchTrend(days) {
   return request.get('/admin/statistics/trend', { params: { days } });
 }
 
-/** 时段热度（14 项）。 */
+/** 时段热度（全局开放窗口按 30 分钟一格）。 */
 export function fetchSlotHeat(days) {
   return request.get('/admin/statistics/slot-heat', { params: { days } });
 }

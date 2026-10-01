@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, Button, Card, Col, Row, Select, Statistic, Typography } from 'antd';
-import { ReloadOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import {
   fetchFloorUsage,
@@ -21,6 +21,9 @@ const EMPTY_HINT = '暂无数据';
  * 管理员·数据统计：6 指标卡片 + 2×2 图表栅格。
  * 空数据时仍返回完整 option（series.data=[]），ECharts 显示空坐标系，不报错。
  *
+ * <p>利用率图支持「楼层 → 分区」下钻：分区明细由后端在同一次占用派生中累加，
+ * 因此前端无需再担心两级数据对不上；下钻只切换视图，不额外发请求。
+ *
  * @returns {JSX.Element} 统计页
  */
 export default function Statistics() {
@@ -32,6 +35,7 @@ export default function Statistics() {
   const [slotHeat, setSlotHeat] = useState([]);
   const [floorUsage, setFloorUsage] = useState([]);
   const [statusDist, setStatusDist] = useState([]);
+  const [drillFloorId, setDrillFloorId] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -103,27 +107,71 @@ export default function Statistics() {
     ],
   };
 
-  const floorUsageOption = {
-    tooltip: { trigger: 'axis', formatter: (params) => {
-      const p = Array.isArray(params) ? params[0] : params;
-      return `${p.name}<br/>利用率 ${p.value}%`;
-    } },
-    grid: { left: 90, right: 40, top: 24, bottom: 24 },
+  /** 时段热度窗口文案由数据本身推出，避免写死 08:00-22:00（开放档案一变就失真）。 */
+  const slotRangeText = slotHeat.length
+    ? `${slotHeat[0].label.split('-')[0]}–${slotHeat[slotHeat.length - 1].label.split('-')[1]}，${slotHeat.length} 格`
+    : '30 分钟/格';
+
+  /** 当前下钻到的楼层；楼层被删除或刷新后不存在时自动回到楼层视角。 */
+  const drilled = floorUsage.find((item) => item.floorId === drillFloorId) || null;
+
+  /** 利用率图的数据行：未下钻时是楼层，下钻后是该楼层的分区（含「未分区」桶）。 */
+  const usageRows = drilled
+    ? (drilled.zones || []).map((zone) => ({
+      label: zone.name,
+      usageRate: zone.usageRate,
+      occupied: zone.occupied,
+      totalSeats: zone.totalSeats,
+      note: zone.zoneTypeText,
+    }))
+    : floorUsage.map((item) => ({
+      label: `${item.name}（${item.code}）`,
+      usageRate: item.usageRate,
+      occupied: item.occupied,
+      totalSeats: item.totalSeats,
+      note: null,
+    }));
+
+  const usageOption = {
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params) => {
+        const p = Array.isArray(params) ? params[0] : params;
+        const row = usageRows[p.dataIndex];
+        if (!row) {
+          return `${p.name}<br/>利用率 ${p.value}%`;
+        }
+        return `${row.label}<br/>利用率 ${row.usageRate}%（占用 ${row.occupied}/${row.totalSeats} 座）`
+          + (row.note ? `<br/>类型：${row.note}` : '');
+      },
+    },
+    grid: { left: 110, right: 44, top: 24, bottom: 24 },
     xAxis: { type: 'value', max: 100, name: '%' },
     yAxis: {
       type: 'category',
-      data: floorUsage.map((item) => `${item.name}（${item.code}）`),
+      data: usageRows.map((item) => item.label),
+      axisLabel: { fontSize: 11 },
     },
     series: [
       {
         name: '利用率',
         type: 'bar',
-        data: floorUsage.map((item) => item.usageRate),
-        itemStyle: { color: '#52c41a', borderRadius: [0, 3, 3, 0] },
+        data: usageRows.map((item) => item.usageRate),
+        itemStyle: { color: drilled ? '#1677ff' : '#52c41a', borderRadius: [0, 3, 3, 0] },
         barMaxWidth: 20,
         label: { show: true, position: 'right', formatter: '{c}%' },
       },
     ],
+  };
+
+  /** 下钻点击：只有楼层视角需要响应（分区视角已是末级）。 */
+  const usageEvents = drilled ? undefined : {
+    click: (params) => {
+      const target = floorUsage[params.dataIndex];
+      if (target) {
+        setDrillFloorId(target.floorId);
+      }
+    },
   };
 
   const statusOption = {
@@ -242,7 +290,7 @@ export default function Statistics() {
           </Card>
         </Col>
         <Col xs={24} xl={12}>
-          <Card title="时段热度分布（08:00-22:00）" {...chartCardProps}>
+          <Card title={`时段热度分布（${slotRangeText}）`} {...chartCardProps}>
             {slotHeat.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#999', paddingTop: 100 }}>{EMPTY_HINT}</div>
             ) : (
@@ -251,11 +299,36 @@ export default function Statistics() {
           </Card>
         </Col>
         <Col xs={24} xl={12}>
-          <Card title="各楼层利用率对比" {...chartCardProps}>
-            {floorUsage.length === 0 ? (
-              <div style={{ textAlign: 'center', color: '#999', paddingTop: 100 }}>{EMPTY_HINT}</div>
+          <Card
+            title={drilled ? `${drilled.name} · 分区利用率下钻` : '各楼层利用率对比'}
+            {...chartCardProps}
+            extra={(
+              drilled ? (
+                <Button
+                  size="small"
+                  icon={<ArrowLeftOutlined />}
+                  onClick={() => setDrillFloorId(null)}
+                >
+                  返回楼层
+                </Button>
+              ) : (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  点击条形下钻分区
+                </Typography.Text>
+              )
+            )}
+          >
+            {usageRows.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#999', paddingTop: 100 }}>
+                {drilled ? '该楼层暂无分区归属的座位' : EMPTY_HINT}
+              </div>
             ) : (
-              <ReactECharts option={floorUsageOption} style={{ height: 280 }} notMerge />
+              <ReactECharts
+                option={usageOption}
+                onEvents={usageEvents}
+                style={{ height: 280 }}
+                notMerge
+              />
             )}
           </Card>
         </Col>

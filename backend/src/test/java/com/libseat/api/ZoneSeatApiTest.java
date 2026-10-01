@@ -3,10 +3,14 @@ package com.libseat.api;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -99,6 +103,88 @@ class ZoneSeatApiTest extends ApiTestBase {
                 "★ 分区空闲数之和必须等于平面图空闲数（同一时刻、同一派生入口）");
         assertEquals(firstFloor.path("freeSeats").asLong(), wholeMap.path("stats").path("free").asLong(),
                 "楼层卡与平面图的空闲数必须一致");
+
+        // 统计页的楼层下钻必须与同一时刻的平面图对得上（四处共用一次派生）
+        JsonNode usage = data(exec(get("/api/admin/statistics/floor-usage")
+                .param("date", date).param("slot", String.valueOf(slot))
+                .header("Authorization", bearer(admin))));
+        JsonNode statFloor = null;
+        for (JsonNode node : usage) {
+            if (node.path("floorId").asLong() == floor1) {
+                statFloor = node;
+            }
+        }
+        assertTrue(statFloor != null, "统计应含 1F");
+        assertEquals(wholeMap.path("stats").path("total").asLong(), statFloor.path("totalSeats").asLong(),
+                "统计楼层总数必须等于平面图总数");
+        long zoneOccupySum = 0;
+        long zoneSeatSum = 0;
+        for (JsonNode zone : statFloor.path("zones")) {
+            zoneOccupySum += zone.path("occupied").asLong();
+            zoneSeatSum += zone.path("totalSeats").asLong();
+        }
+        assertEquals(statFloor.path("occupied").asLong(), zoneOccupySum,
+                "★ 分区下钻占用之和必须等于楼层占用（同一 occupiedMap 才可能成立）");
+        assertEquals(statFloor.path("totalSeats").asLong(), zoneSeatSum,
+                "分区下钻座位之和必须等于楼层座位数");
+    }
+
+    @Test
+    @DisplayName("【验收3b】楼层没有任何分区：下钻须出现「未分区」桶且仍与楼层合计自洽")
+    void unassignedZoneStillReconciles() throws Exception {
+        Map<String, Object> floorBody = new HashMap<>();
+        floorBody.put("name", "QA 无分区楼层");
+        floorBody.put("code", "QZ" + UUID.randomUUID().toString().substring(0, 5).toUpperCase());
+        floorBody.put("sortOrder", 99);
+        long zonelessFloor = data(exec(post("/api/admin/floors")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(floorBody))
+                .header("Authorization", bearer(admin)))).path("floorId").asLong();
+        try {
+            Map<String, Object> req = new HashMap<>();
+            req.put("floorId", zonelessFloor);
+            req.put("prefix", "U");
+            req.put("startNo", 1);
+            req.put("rows", 2);
+            req.put("cols", 2);
+            req.put("status", "AVAILABLE");
+            MvcResult batch = exec(post("/api/admin/seats/batch")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(json(req))
+                    .header("Authorization", bearer(admin)));
+            assertEquals(0, code(batch), "无分区楼层也应能批量生成座位：" + body(batch));
+            assertEquals(4, data(batch).path("created").asInt(), "2×2 应生成 4 座");
+
+            String date = dw(3);
+            int slot = slot(10);
+            JsonNode usage = data(exec(get("/api/admin/statistics/floor-usage")
+                    .param("date", date).param("slot", String.valueOf(slot))
+                    .header("Authorization", bearer(admin))));
+            JsonNode node = null;
+            for (JsonNode item : usage) {
+                if (item.path("floorId").asLong() == zonelessFloor) {
+                    node = item;
+                }
+            }
+            assertTrue(node != null, "统计应包含新建楼层");
+            assertEquals(0, data(exec(get("/api/zones").param("floorId", String.valueOf(zonelessFloor))
+                    .header("Authorization", bearer(admin)))).size(), "新建楼层本就不该有分区");
+
+            JsonNode zones = node.path("zones");
+            assertEquals(1, zones.size(),
+                    "★ 一个分区都没有时，下钻只能有「未分区」一桶，漏了它就对不上楼层合计：" + zones);
+            JsonNode bucket = zones.get(0);
+            assertTrue(bucket.path("zoneId").isNull(), "未分区桶的 zoneId 应为 null");
+            assertEquals("未分区", bucket.path("name").asText());
+            assertEquals(4, bucket.path("totalSeats").asLong(), "4 座都应落在未分区桶");
+            assertEquals(node.path("totalSeats").asLong(), bucket.path("totalSeats").asLong(),
+                    "明细之和必须等于楼层合计");
+
+            JsonNode map = seatMap(zonelessFloor, date, slot, null, u1);
+            assertEquals(4, map.path("seats").size(), "无分区楼层的平面图不应漏座");
+        } finally {
+            deleteFloor(zonelessFloor);
+        }
     }
 
     @Test

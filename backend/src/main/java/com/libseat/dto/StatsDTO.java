@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 /**
  * 统计相关 DTO：概览 / 趋势 / 时段热度 / 楼层利用率 / 状态分布。
  */
@@ -55,7 +57,7 @@ public class StatsDTO {
     }
 
     /**
-     * 时段热度（固定 14 项 8~21）。
+     * 时段热度（全局开放窗口的每个 30 分钟格一项）。
      */
     @Data
     @Builder
@@ -63,10 +65,10 @@ public class StatsDTO {
     @AllArgsConstructor
     public static class SlotHeatVO {
 
-        /** 时段序号。 */
+        /** 时段序号（30 分钟粒度）。 */
         private Integer slotIndex;
 
-        /** 标签，如 08:00-09:00。 */
+        /** 标签，如 08:00-08:30。 */
         private String label;
 
         /** 预约占用次数。 */
@@ -90,6 +92,37 @@ public class StatsDTO {
 
         /** 楼层编号。 */
         private String code;
+
+        /** 座位总数。 */
+        private Long totalSeats;
+
+        /** 占用数。 */
+        private Long occupied;
+
+        /** 利用率（%）。 */
+        private Double usageRate;
+
+        /** 分区下钻（与楼层合计同一次遍历累加，含「未分区」桶，故明细之和恒等于楼层合计）。 */
+        private List<ZoneUsageVO> zones;
+    }
+
+    /**
+     * 分区占用（楼层利用率的下钻层）。
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ZoneUsageVO {
+
+        /** 分区 ID。 */
+        private Long zoneId;
+
+        /** 分区名称。 */
+        private String name;
+
+        /** 分区类型文案。 */
+        private String zoneTypeText;
 
         /** 座位总数。 */
         private Long totalSeats;
