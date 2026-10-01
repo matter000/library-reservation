@@ -317,7 +317,10 @@ class ReservationRuleApiTest extends ApiTestBase {
         // 已开始未签到：用「当前小时的前一个时段」构造，凌晨（<09:00）不存在已开始时段则跳过
         int hour = LocalDateTime.now().getHour();
         if (hour >= 9) {
-            Reservation started = insertReservation(userId, seat, LocalDate.now(), hour - 1, 1,
+            // ★ 该时段的座位可能被随机种子数据或其它用例占用（硬编码 A29 会撞 uk_slot_seat_date_idx），
+            //   故动态取「该日期该时段真正空闲」的座位，与本文件其它造数用例保持一致的隔离方式。
+            long startedSeat = freeSeatOn(floor1, d(0), hour - 1);
+            Reservation started = insertReservation(userId, startedSeat, LocalDate.now(), hour - 1, 1,
                     ReservationStatus.CONFIRMED);
             MvcResult r1 = exec(post("/api/reservations/" + started.getId() + "/cancel")
                     .header("Authorization", bearer(me)));
