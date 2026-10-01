@@ -115,7 +115,7 @@ public class AdminUsageService {
                     .endSlot(reservation == null ? null : reservation.getEndSlot())
                     .timeRange(reservation == null ? null
                             : BizConstants.rangeLabel(reservation.getStartSlot(),
-                            reservation.getEndSlot() - reservation.getStartSlot()))
+                            BizConstants.hoursOfSlots(reservation.getEndSlot() - reservation.getStartSlot())))
                     .reservationStatus(reservation == null ? null : reservation.getStatus().name())
                     .build());
         }
@@ -228,7 +228,7 @@ public class AdminUsageService {
                     floorName = null;
                 }
             }
-            int duration = reservation.getEndSlot() - reservation.getStartSlot();
+            int duration = BizConstants.hoursOfSlots(reservation.getEndSlot() - reservation.getStartSlot());
             list.add(AdminDTO.AdminReservationVO.builder()
                     .reservationId(reservation.getId())
                     .userId(reservation.getUserId())

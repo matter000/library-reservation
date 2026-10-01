@@ -72,6 +72,8 @@ class ReservationServiceUnitTest {
     private FloorService floorService;
     @Mock
     private RuleConfigService ruleConfigService;
+    @Mock
+    private com.libseat.service.OpenRuleService openRuleService;
 
     private ReservationService service;
 
@@ -85,8 +87,19 @@ class ReservationServiceUnitTest {
         when(ruleConfigService.advanceDays()).thenReturn(BizConstants.ADVANCE_DAYS);
         when(ruleConfigService.defaultDuration()).thenReturn(BizConstants.DEFAULT_DURATION);
         when(ruleConfigService.allowedDurations()).thenReturn(BizConstants.ALLOWED_DURATIONS);
+        // 开放规则桩成「不闭馆的默认窗口」，闭馆与日型分支由 OpenRuleApiTest / OpenRuleServiceTest 覆盖
+        when(openRuleService.resolve(any())).thenReturn(new com.libseat.service.OpenRuleService.DayRule(
+                TODAY, com.libseat.enums.DayType.WORKDAY,
+                BizConstants.DEFAULT_SLOT_START, BizConstants.DEFAULT_SLOT_END,
+                false, List.of(), null, "工作日"));
+        when(openRuleService.endSlotOf(any())).thenReturn(BizConstants.DEFAULT_SLOT_END);
         service = new ReservationService(reservationRepository, reservationSlotRepository,
-                seatRepository, userRepository, floorService, ruleConfigService);
+                seatRepository, userRepository, floorService, ruleConfigService, openRuleService);
+    }
+
+    /** 整点 → 30 分钟格序号（格长改造后，用例仍以「小时」表达意图）。 */
+    private static int slot(int hour) {
+        return hour * BizConstants.SLOTS_PER_HOUR;
     }
 
     private Seat availableSeat() {
@@ -134,7 +147,7 @@ class ReservationServiceUnitTest {
     @Test
     @DisplayName("seatId 为空 → 4001")
     void create_nullSeatId() {
-        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), 10, 2);
+        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), slot(10), 2);
         r.setSeatId(null);
         assertEquals(ErrorCode.PARAM_ERROR.getCode(), expectBiz(() -> service.createReservation(USER_ID, r)).getCode());
     }
@@ -142,7 +155,7 @@ class ReservationServiceUnitTest {
     @Test
     @DisplayName("date 为空 → 4001")
     void create_nullDate() {
-        ReservationDTO.ReservationCreateRequest r = req(null, 10, 2);
+        ReservationDTO.ReservationCreateRequest r = req(null, slot(10), 2);
         assertEquals(ErrorCode.PARAM_ERROR.getCode(), expectBiz(() -> service.createReservation(USER_ID, r)).getCode());
     }
 
@@ -159,7 +172,7 @@ class ReservationServiceUnitTest {
     @DisplayName("座位不存在 → 4040")
     void create_seatNotFound() {
         when(seatRepository.findById(SEAT_ID)).thenReturn(Optional.empty());
-        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), 10, 2);
+        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), slot(10), 2);
         assertEquals(ErrorCode.NOT_FOUND.getCode(), expectBiz(() -> service.createReservation(USER_ID, r)).getCode());
     }
 
@@ -170,7 +183,7 @@ class ReservationServiceUnitTest {
             Seat seat = availableSeat();
             seat.setStatus(status);
             when(seatRepository.findById(SEAT_ID)).thenReturn(Optional.of(seat));
-            ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), 10, 2);
+            ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), slot(10), 2);
             assertEquals(ErrorCode.STATUS_NOT_ALLOWED.getCode(),
                     expectBiz(() -> service.createReservation(USER_ID, r)).getCode(),
                     "座位状态 " + status + " 应拒绝预约");
@@ -184,7 +197,7 @@ class ReservationServiceUnitTest {
         closed.setStatus(FloorStatus.CLOSED);
         when(seatRepository.findById(SEAT_ID)).thenReturn(Optional.of(availableSeat()));
         when(floorService.requireFloor(FLOOR_ID)).thenReturn(closed);
-        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), 10, 2);
+        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), slot(10), 2);
         assertEquals(ErrorCode.STATUS_NOT_ALLOWED.getCode(),
                 expectBiz(() -> service.createReservation(USER_ID, r)).getCode());
     }
@@ -195,7 +208,7 @@ class ReservationServiceUnitTest {
     @DisplayName("日期为昨天 → 4001")
     void create_yesterday() {
         givenHappyPath();
-        ReservationDTO.ReservationCreateRequest r = req(TODAY.minusDays(1), 10, 2);
+        ReservationDTO.ReservationCreateRequest r = req(TODAY.minusDays(1), slot(10), 2);
         assertEquals(ErrorCode.PARAM_ERROR.getCode(), expectBiz(() -> service.createReservation(USER_ID, r)).getCode());
     }
 
@@ -203,7 +216,7 @@ class ReservationServiceUnitTest {
     @DisplayName("日期为今天+7 → 4001（超出窗口）")
     void create_tooFar() {
         givenHappyPath();
-        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(7), 10, 2);
+        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(7), slot(10), 2);
         assertEquals(ErrorCode.PARAM_ERROR.getCode(), expectBiz(() -> service.createReservation(USER_ID, r)).getCode());
     }
 
@@ -212,7 +225,7 @@ class ReservationServiceUnitTest {
     void create_lastAllowedDay() {
         givenHappyPath();
         givenSaveOk();
-        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(6), 10, 2);
+        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(6), slot(10), 2);
         assertNotNull(service.createReservation(USER_ID, r));
     }
 
@@ -223,7 +236,7 @@ class ReservationServiceUnitTest {
     @DisplayName("duration 非法（0/5/负数/过大）→ 4001")
     void create_invalidDuration(int duration) {
         givenHappyPath();
-        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), 10, duration);
+        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), slot(10), duration);
         assertEquals(ErrorCode.PARAM_ERROR.getCode(), expectBiz(() -> service.createReservation(USER_ID, r)).getCode(),
                 "duration=" + duration + " 应被拒绝");
     }
@@ -233,45 +246,60 @@ class ReservationServiceUnitTest {
     void create_defaultDuration() {
         givenHappyPath();
         givenSaveOk();
-        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), 10, null);
+        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), slot(10), null);
         ReservationDTO.ReservationCreateVO vo = service.createReservation(USER_ID, r);
-        assertEquals(10, vo.getStartSlot());
-        assertEquals(12, vo.getEndSlot());
+        assertEquals(slot(10), vo.getStartSlot());
+        assertEquals(slot(12), vo.getEndSlot());
         assertEquals("10:00-12:00", vo.getTimeRange());
     }
 
     @Test
-    @DisplayName("startSlot = 7（早于开放）→ 4001")
+    @DisplayName("起始早于开放窗口（07:00）→ 4001")
     void create_slotTooEarly() {
         givenHappyPath();
-        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), 7, 2);
+        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), slot(7), 2);
         assertEquals(ErrorCode.PARAM_ERROR.getCode(), expectBiz(() -> service.createReservation(USER_ID, r)).getCode());
     }
 
     @Test
-    @DisplayName("startSlot = 22（晚于开放）→ 4001")
+    @DisplayName("起始落在开放结束时（22:00）→ 4001")
     void create_slotTooLate() {
         givenHappyPath();
-        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), 22, 1);
+        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), slot(22), 1);
         assertEquals(ErrorCode.PARAM_ERROR.getCode(), expectBiz(() -> service.createReservation(USER_ID, r)).getCode());
     }
 
     @Test
-    @DisplayName("startSlot = 21 且 duration = 2（跨天 / 超 22:00）→ 4001")
+    @DisplayName("21:00 起约 2 小时（越过 22:00）→ 4001")
     void create_crossDay() {
         givenHappyPath();
-        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), 21, 2);
+        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), slot(21), 2);
         assertEquals(ErrorCode.PARAM_ERROR.getCode(), expectBiz(() -> service.createReservation(USER_ID, r)).getCode());
     }
 
     @Test
-    @DisplayName("startSlot = 21 且 duration = 1 → 允许（最晚时段）")
+    @DisplayName("21:00 起约 1 小时 → 允许，结束边界为 22:00")
     void create_lastSlot() {
         givenHappyPath();
         givenSaveOk();
-        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), 21, 1);
+        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), slot(21), 1);
         ReservationDTO.ReservationCreateVO vo = service.createReservation(USER_ID, r);
-        assertEquals(22, vo.getEndSlot());
+        assertEquals(slot(22), vo.getEndSlot());
+    }
+
+    @Test
+    @DisplayName("半小时格可约：21:30 起约 1 小时到 22:30 越界 → 4001；到 22:00 的 30 分钟起约合法")
+    void create_halfSlotBoundary() {
+        givenHappyPath();
+        // 21:30 = slot 43，是合法起始格；但 1 小时会越过 22:00 边界
+        ReservationDTO.ReservationCreateRequest tooLate = req(TODAY.plusDays(1), 43, 1);
+        assertEquals(ErrorCode.PARAM_ERROR.getCode(),
+                expectBiz(() -> service.createReservation(USER_ID, tooLate)).getCode(),
+                "★ 30 分钟格下必须按格数（slotsOf）判越界，不能把小时直接加在格号上");
+        givenHappyPath();
+        givenSaveOk();
+        ReservationDTO.ReservationCreateRequest ok = req(TODAY.plusDays(1), 42, 1);
+        assertEquals(44, service.createReservation(USER_ID, ok).getEndSlot());
     }
 
     @Test
@@ -282,7 +310,7 @@ class ReservationServiceUnitTest {
             return; // 凌晨跑不了这个用例
         }
         givenHappyPath();
-        ReservationDTO.ReservationCreateRequest r = req(TODAY, 8, 1);
+        ReservationDTO.ReservationCreateRequest r = req(TODAY, slot(8), 1);
         assertEquals(ErrorCode.PARAM_ERROR.getCode(), expectBiz(() -> service.createReservation(USER_ID, r)).getCode());
     }
 
@@ -294,7 +322,7 @@ class ReservationServiceUnitTest {
         givenHappyPath();
         when(reservationRepository.findOverlapping(anyLong(), anyCollection(), any(), anyInt(), anyInt()))
                 .thenReturn(List.of(Reservation.builder().id(1L).build()));
-        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), 10, 2);
+        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), slot(10), 2);
         assertEquals(ErrorCode.USER_SLOT_OVERLAP.getCode(),
                 expectBiz(() -> service.createReservation(USER_ID, r)).getCode());
     }
@@ -304,12 +332,12 @@ class ReservationServiceUnitTest {
     void create_overlapUsesOccupyingStatuses() {
         givenHappyPath();
         givenSaveOk();
-        service.createReservation(USER_ID, req(TODAY.plusDays(1), 10, 2));
+        service.createReservation(USER_ID, req(TODAY.plusDays(1), slot(10), 2));
         verify(reservationRepository).findOverlapping(org.mockito.ArgumentMatchers.eq(USER_ID),
                 org.mockito.ArgumentMatchers.eq(OccupancyService.OCCUPYING_STATUSES),
                 org.mockito.ArgumentMatchers.eq(TODAY.plusDays(1)),
-                org.mockito.ArgumentMatchers.eq(12),
-                org.mockito.ArgumentMatchers.eq(10));
+                org.mockito.ArgumentMatchers.eq(slot(12)),
+                org.mockito.ArgumentMatchers.eq(slot(10)));
     }
 
     // ==================== C1 第 7 步：并发 ====================
@@ -325,7 +353,7 @@ class ReservationServiceUnitTest {
         });
         when(reservationSlotRepository.saveAllAndFlush(any()))
                 .thenThrow(new DataIntegrityViolationException("Unique index violation"));
-        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), 10, 2);
+        ReservationDTO.ReservationCreateRequest r = req(TODAY.plusDays(1), slot(10), 2);
         assertEquals(ErrorCode.SEAT_SLOT_CONFLICT.getCode(),
                 expectBiz(() -> service.createReservation(USER_ID, r)).getCode());
     }

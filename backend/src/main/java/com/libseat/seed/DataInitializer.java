@@ -300,7 +300,9 @@ public class DataInitializer implements ApplicationRunner {
     private void seedReservations(List<User> users, List<Seat> seats) {
         Random random = new Random(RANDOM_SEED);
         LocalDate today = LocalDate.now();
-        int currentHour = LocalDateTime.now().getHour();
+        // 时段是 30 分钟一格，种子一律用 BizConstants 换算，不再写死小时字面量
+        int currentSlot = BizConstants.slotOf(LocalDateTime.now().toLocalTime());
+        int windowEnd = BizConstants.DEFAULT_SLOT_END;
 
         List<User> students = new ArrayList<>();
         for (User user : users) {
@@ -321,10 +323,10 @@ public class DataInitializer implements ApplicationRunner {
             LocalDate date = today.minusDays(daysAgo);
             int count = 4 + random.nextInt(2);
             for (int i = 0; i < count; i++) {
-                int startSlot = 8 + random.nextInt(12);
+                int startSlot = randomStartSlot(random);
                 int duration = 1 + random.nextInt(3);
-                if (startSlot + duration > BizConstants.OPEN_HOUR_END) {
-                    duration = BizConstants.OPEN_HOUR_END - startSlot;
+                if (startSlot + BizConstants.slotsOf(duration) > windowEnd) {
+                    duration = Math.max(1, (windowEnd - startSlot) / BizConstants.SLOTS_PER_HOUR);
                 }
                 int roll = random.nextInt(100);
                 ReservationStatus status;
@@ -342,13 +344,15 @@ public class DataInitializer implements ApplicationRunner {
         }
 
         // ---------- 今天：已结束的上午时段 ----------
-        if (currentHour >= 10) {
-            int upper = Math.min(currentHour - 1, 19);
+        if (currentSlot >= BizConstants.SLOT_INDEX_MIN + 4) {
+            int upper = Math.min(currentSlot - 2, BizConstants.SLOT_INDEX_MAX - 2);
             for (int i = 0; i < 2; i++) {
-                int startSlot = 8 + random.nextInt(Math.max(1, upper - 8));
+                int startSlot = BizConstants.SLOT_INDEX_MIN
+                        + random.nextInt(Math.max(1, upper - BizConstants.SLOT_INDEX_MIN));
                 int duration = 1 + random.nextInt(2);
-                if (startSlot + duration > currentHour) {
-                    duration = Math.max(1, currentHour - startSlot);
+                if (startSlot + BizConstants.slotsOf(duration) > currentSlot) {
+                    duration = Math.max(1,
+                            (currentSlot - startSlot) / BizConstants.SLOTS_PER_HOUR);
                 }
                 ReservationStatus status = (i == 0) ? ReservationStatus.COMPLETED : ReservationStatus.NO_SHOW;
                 Seat seat = seats.get(random.nextInt(seats.size()));
@@ -358,8 +362,10 @@ public class DataInitializer implements ApplicationRunner {
         }
 
         // ---------- 今天：正在使用中（CHECKED_IN，写 slot） ----------
-        if (currentHour >= 10 && currentHour <= 20) {
-            int startSlot = currentHour - 1;
+        // 起始格取「当前格往前一小时」，配 2 小时时长，使该预约必然跨越当前时刻
+        if (currentSlot >= BizConstants.SLOT_INDEX_MIN + 2
+                && currentSlot <= BizConstants.DEFAULT_SLOT_END - 2) {
+            int startSlot = currentSlot - 2;
             int duration = 2;
             for (int i = 0; i < 2; i++) {
                 Seat seat = pickFreeSeat(random, seats, usedSlotKeys, today, startSlot, duration);
@@ -374,10 +380,11 @@ public class DataInitializer implements ApplicationRunner {
         }
 
         // ---------- 今天：未来的 CONFIRMED（写 slot） ----------
-        if (currentHour <= 20) {
+        if (currentSlot < BizConstants.SLOT_INDEX_MAX) {
+            int latestStart = BizConstants.DEFAULT_SLOT_END - BizConstants.slotsOf(2);
             for (int i = 0; i < 3; i++) {
-                int startSlot = Math.min(BizConstants.SLOT_INDEX_MAX - 1, currentHour + 1 + i);
-                if (startSlot <= currentHour || startSlot < BizConstants.SLOT_INDEX_MIN) {
+                int startSlot = Math.min(latestStart, currentSlot + 2 + i * 2);
+                if (startSlot <= currentSlot || startSlot < BizConstants.SLOT_INDEX_MIN) {
                     continue;
                 }
                 int duration = 2;
@@ -394,7 +401,7 @@ public class DataInitializer implements ApplicationRunner {
         for (int offset = 1; offset <= 2; offset++) {
             LocalDate date = today.plusDays(offset);
             for (int i = 0; i < 2; i++) {
-                int startSlot = 9 + random.nextInt(10);
+                int startSlot = randomStartSlot(random);
                 int duration = 2;
                 Seat seat = pickFreeSeat(random, seats, usedSlotKeys, date, startSlot, duration);
                 if (seat == null) {
@@ -414,6 +421,21 @@ public class DataInitializer implements ApplicationRunner {
         log.debug("种子预约 {} 条，占用明细 {} 行", saved.size(), slots.size());
     }
 
+    /**
+     * 随机起始时段（对齐整点）。
+     *
+     * <p>格长已是 30 分钟，但演示数据仍从整点起约，这样平面图与统计看起来与 V1 时代一致，
+     * 便于对照验收 1「历史预约标签语义不变」。上限留出 3 小时余量，避免后续按时长截断。
+     *
+     * @param random 随机源
+     * @return 起始时段序号
+     */
+    private int randomStartSlot(Random random) {
+        int hours = (BizConstants.DEFAULT_SLOT_END - BizConstants.SLOT_INDEX_MIN) / BizConstants.SLOTS_PER_HOUR;
+        int pick = random.nextInt(Math.max(1, hours - 3));
+        return BizConstants.SLOT_INDEX_MIN + pick * BizConstants.SLOTS_PER_HOUR;
+    }
+
     private Reservation buildReservation(User user, Seat seat, LocalDate date, int startSlot, int duration,
                                          ReservationStatus status, int daysAgo, Random random,
                                          boolean writeSlot, List<ReservationSlot> slotCollector) {
@@ -430,7 +452,7 @@ public class DataInitializer implements ApplicationRunner {
                 .floorId(seat.getFloorId())
                 .reserveDate(date)
                 .startSlot(startSlot)
-                .endSlot(startSlot + duration)
+                .endSlot(startSlot + BizConstants.slotsOf(duration))
                 .status(status)
                 .createTime(createTime)
                 .updateTime(createTime)
@@ -443,7 +465,7 @@ public class DataInitializer implements ApplicationRunner {
         }
         if (writeSlot && status.isOccupying() && slotCollector != null) {
             Reservation unsaved = reservation;
-            for (int slot = startSlot; slot < startSlot + duration; slot++) {
+            for (int slot = startSlot; slot < startSlot + BizConstants.slotsOf(duration); slot++) {
                 slotCollector.add(ReservationSlot.builder()
                         .reservation(unsaved)
                         .seatId(seat.getId())
@@ -463,14 +485,14 @@ public class DataInitializer implements ApplicationRunner {
                 continue;
             }
             boolean free = true;
-            for (int slot = startSlot; slot < startSlot + duration; slot++) {
+            for (int slot = startSlot; slot < startSlot + BizConstants.slotsOf(duration); slot++) {
                 if (usedSlotKeys.contains(slotKey(seat.getId(), date, slot))) {
                     free = false;
                     break;
                 }
             }
             if (free) {
-                for (int slot = startSlot; slot < startSlot + duration; slot++) {
+                for (int slot = startSlot; slot < startSlot + BizConstants.slotsOf(duration); slot++) {
                     usedSlotKeys.add(slotKey(seat.getId(), date, slot));
                 }
                 return seat;

@@ -87,14 +87,14 @@ class ReservationRuleApiTest extends ApiTestBase {
         long seat = seatId(floor1, "A20");
         String me = newUser();
 
-        assertEquals(PARAM_ERROR, code(reserveRaw(me, seat, d(3), 10, 0)), "duration=0 应 4001");
-        assertEquals(PARAM_ERROR, code(reserveRaw(me, seat, d(3), 10, 5)), "duration=5 应 4001");
-        assertEquals(PARAM_ERROR, code(reserveRaw(me, seat, d(3), 10, -1)), "duration=-1 应 4001");
+        assertEquals(PARAM_ERROR, code(reserveRaw(me, seat, dw(3), slot(10), 0)), "duration=0 应 4001");
+        assertEquals(PARAM_ERROR, code(reserveRaw(me, seat, dw(3), slot(10), 5)), "duration=5 应 4001");
+        assertEquals(PARAM_ERROR, code(reserveRaw(me, seat, dw(3), slot(10), -1)), "duration=-1 应 4001");
 
         // 非整数 / 字符串
         // ⚠ 实测发现：Jackson 2.15 默认标量强制转换会把 2.5 截断成 2，后端接受了本该拒绝的入参。
         // 这里显式固化当前行为（code=0 且 duration=2），便于后续修复时对比。
-        String nonInteger = "{\"seatId\":" + seat + ",\"date\":\"" + d(3) + "\",\"startSlot\":10,\"duration\":2.5}";
+        String nonInteger = "{\"seatId\":" + seat + ",\"date\":\"" + dw(3) + "\",\"startSlot\":10,\"duration\":2.5}";
         MvcResult r1 = exec(post("/api/reservations").contentType(MediaType.APPLICATION_JSON)
                 .content(nonInteger).header("Authorization", bearer(me)));
         System.out.println("[QA][duration=2.5] 实际响应 = " + body(r1));
@@ -108,7 +108,7 @@ class ReservationRuleApiTest extends ApiTestBase {
 
         // ⚠ 实测发现：字符串 "2" 也会被 Jackson 强制转成整数 2 并被接受。
         // 用独立用户 + 独立时段，单独固化这一行为。
-        String asString = "{\"seatId\":" + seat + ",\"date\":\"" + d(3) + "\",\"startSlot\":14,\"duration\":\"2\"}";
+        String asString = "{\"seatId\":" + seat + ",\"date\":\"" + dw(3) + "\",\"startSlot\":14,\"duration\":\"2\"}";
         MvcResult r2 = exec(post("/api/reservations").contentType(MediaType.APPLICATION_JSON)
                 .content(asString).header("Authorization", bearer(newUser())));
         System.out.println("[QA][duration=\"2\"] 实际响应 = " + body(r2));
@@ -120,7 +120,7 @@ class ReservationRuleApiTest extends ApiTestBase {
         }
 
         // 不传 duration → 默认 2 → 成功（换一个没被占用的时段，避免与上面的探针互相干扰）
-        JsonNode ok = reserveOk(newUser(), seat, d(3), 16, null);
+        JsonNode ok = reserveOk(newUser(), seat, dw(3), slot(16), null);
         assertEquals("16:00-18:00", ok.path("timeRange").asText(), "默认时长应为 2 小时");
     }
 
@@ -132,17 +132,17 @@ class ReservationRuleApiTest extends ApiTestBase {
         long seat = seatId(floor1, "A21");
         String me = newUser();
 
-        MvcResult yesterday = reserveRaw(me, seat, d(-1), 10, 2);
+        MvcResult yesterday = reserveRaw(me, seat, d(-1), slot(10), 2);
         assertEquals(PARAM_ERROR, code(yesterday), "昨天应 4001，实际：" + body(yesterday));
 
-        MvcResult tooFar = reserveRaw(me, seat, d(7), 10, 2);
+        MvcResult tooFar = reserveRaw(me, seat, d(7), slot(10), 2);
         assertEquals(PARAM_ERROR, code(tooFar), "今天+7 应 4001，实际：" + body(tooFar));
 
-        JsonNode edge = reserveOk(me, seat, d(6), 10, 2);
+        JsonNode edge = reserveOk(me, seat, d(6), slot(10), 2);
         assertEquals(d(6), edge.path("date").asText(), "今天+6 是最远可约日期，应成功");
 
         if (LocalDateTime.now().getHour() < 21) {
-            JsonNode todayOk = reserveOk(me, seat, d(0), 21, 1);
+            JsonNode todayOk = reserveOk(me, seat, d(0), slot(21), 1);
             assertEquals(d(0), todayOk.path("date").asText(), "今天最晚时段（21:00-22:00）应可预约");
         }
     }
@@ -155,7 +155,7 @@ class ReservationRuleApiTest extends ApiTestBase {
             return; // 08:00 前不存在“已过去的时段”
         }
         long seat = seatId(floor1, "A22");
-        MvcResult result = reserveRaw(newUser(), seat, d(0), 8, 1);
+        MvcResult result = reserveRaw(newUser(), seat, d(0), slot(8), 1);
         assertEquals(PARAM_ERROR, code(result), "今天已过去的时段应 4001，实际：" + body(result));
     }
 
@@ -167,17 +167,17 @@ class ReservationRuleApiTest extends ApiTestBase {
         long seat = seatId(floor1, "A23");
         String me = newUser();
 
-        MvcResult early = reserveRaw(me, seat, d(3), 7, 2);
+        MvcResult early = reserveRaw(me, seat, dw(3), slot(7), 2);
         assertEquals(PARAM_ERROR, code(early), "startSlot=7 应 4001，实际：" + body(early));
 
-        MvcResult late = reserveRaw(me, seat, d(3), 22, 1);
+        MvcResult late = reserveRaw(me, seat, dw(3), slot(22), 1);
         assertEquals(PARAM_ERROR, code(late), "startSlot=22 应 4001，实际：" + body(late));
 
-        MvcResult crossDay = reserveRaw(me, seat, d(3), 21, 2);
+        MvcResult crossDay = reserveRaw(me, seat, dw(3), slot(21), 2);
         assertEquals(PARAM_ERROR, code(crossDay), "startSlot=21 duration=2 跨天应 4001，实际：" + body(crossDay));
 
-        JsonNode ok = reserveOk(me, seat, d(3), 21, 1);
-        assertEquals(22, ok.path("endSlot").asInt(), "21:00-22:00 应可预约");
+        JsonNode ok = reserveOk(me, seat, dw(3), slot(21), 1);
+        assertEquals(slot(22), ok.path("endSlot").asInt(), "21:00-22:00 应可预约");
     }
 
     // ==================== 冲突 ====================
@@ -188,17 +188,17 @@ class ReservationRuleApiTest extends ApiTestBase {
         long seat = seatId(floor1, "A24");
         String first = newUser();
         String second = newUser();
-        reserveOk(first, seat, d(3), 10, 2);
-        MvcResult conflict = reserveRaw(second, seat, d(3), 10, 2);
+        reserveOk(first, seat, dw(3), slot(10), 2);
+        MvcResult conflict = reserveRaw(second, seat, dw(3), slot(10), 2);
         assertEquals(SEAT_CONFLICT, code(conflict), "座位时段冲突应 4091，实际：" + body(conflict));
 
         // 部分重叠也应冲突：从 11 开始
-        MvcResult partial = reserveRaw(second, seat, d(3), 11, 2);
+        MvcResult partial = reserveRaw(second, seat, dw(3), slot(11), 2);
         assertEquals(SEAT_CONFLICT, code(partial), "部分重叠也应 4091，实际：" + body(partial));
 
         // 完全不重叠应成功
-        JsonNode ok = reserveOk(second, seat, d(3), 12, 2);
-        assertEquals(12, ok.path("startSlot").asInt());
+        JsonNode ok = reserveOk(second, seat, dw(3), slot(12), 2);
+        assertEquals(slot(12), ok.path("startSlot").asInt());
     }
 
     @Test
@@ -208,15 +208,15 @@ class ReservationRuleApiTest extends ApiTestBase {
         long seatB = seatId(floor1, "A26");
         String me = newUser();
 
-        reserveOk(me, seatA, d(3), 14, 2);   // [14,16)
+        reserveOk(me, seatA, dw(3), slot(14), 2);   // [14,16)
 
-        MvcResult overlapInside = reserveRaw(me, seatB, d(3), 15, 1);
+        MvcResult overlapInside = reserveRaw(me, seatB, dw(3), slot(15), 1);
         assertEquals(USER_OVERLAP, code(overlapInside), "区间内含重叠应 4092，实际：" + body(overlapInside));
 
-        MvcResult overlapSpan = reserveRaw(me, seatB, d(3), 13, 4);
+        MvcResult overlapSpan = reserveRaw(me, seatB, dw(3), slot(13), 4);
         assertEquals(USER_OVERLAP, code(overlapSpan), "区间跨越重叠应 4092，实际：" + body(overlapSpan));
 
-        JsonNode adjacent = reserveOk(me, seatB, d(3), 12, 2); // [12,14) 与 [14,16) 相邻不重叠
+        JsonNode adjacent = reserveOk(me, seatB, dw(3), slot(12), 2); // [12,14) 与 [14,16) 相邻不重叠
         assertEquals("12:00-14:00", adjacent.path("timeRange").asText());
     }
 
@@ -226,9 +226,9 @@ class ReservationRuleApiTest extends ApiTestBase {
     @DisplayName("【4093】MAINTENANCE 座位（A15）不可预约")
     void maintenanceSeat() throws Exception {
         long seat = seatId(floor1, MAINT_1F);
-        MvcResult result = reserveRaw(newUser(), seat, d(3), 10, 2);
+        MvcResult result = reserveRaw(newUser(), seat, dw(3), slot(10), 2);
         assertEquals(STATUS_NOT_ALLOWED, code(result), "维护中座位应 4093，实际：" + body(result));
-        assertEquals("UNAVAILABLE", displayStatus(floor1, seat, d(3), 10));
+        assertEquals("UNAVAILABLE", displayStatus(floor1, seat, dw(3), slot(10)));
     }
 
     @Test
@@ -236,9 +236,9 @@ class ReservationRuleApiTest extends ApiTestBase {
     void disabledSeat() throws Exception {
         long seat = seatId(floor1, "A27");
         assertEquals(0, code(setSeatStatus(seat, "DISABLED")));
-        MvcResult result = reserveRaw(newUser(), seat, d(3), 10, 2);
+        MvcResult result = reserveRaw(newUser(), seat, dw(3), slot(10), 2);
         assertEquals(STATUS_NOT_ALLOWED, code(result), "停用座位应 4093，实际：" + body(result));
-        assertEquals("UNAVAILABLE", displayStatus(floor1, seat, d(3), 10));
+        assertEquals("UNAVAILABLE", displayStatus(floor1, seat, dw(3), slot(10)));
         // 还原
         assertEquals(0, code(setSeatStatus(seat, "AVAILABLE")));
     }
@@ -249,13 +249,13 @@ class ReservationRuleApiTest extends ApiTestBase {
         long seat = seatId(floor3, "C01");
         assertEquals(0, code(setFloorStatus(floor3, "CLOSED")));
 
-        MvcResult result = reserveRaw(newUser(), seat, d(3), 10, 2);
+        MvcResult result = reserveRaw(newUser(), seat, dw(3), slot(10), 2);
         assertEquals(STATUS_NOT_ALLOWED, code(result), "关闭楼层应 4093，实际：" + body(result));
 
         MvcResult map = exec(get("/api/seats/map")
                 .param("floorId", String.valueOf(floor3))
-                .param("date", d(3))
-                .param("slot", "10")
+                .param("date", dw(3))
+                .param("slot", String.valueOf(slot(10)))
                 .header("Authorization", bearer(u1)));
         assertEquals(0, code(map), "CLOSED 楼层平面图接口仍应可访问");
         assertEquals("CLOSED", data(map).path("floorStatus").asText());
@@ -277,22 +277,22 @@ class ReservationRuleApiTest extends ApiTestBase {
         long seat = seatId(floor1, "A28");
         String me = newUser();
         String other = newUser();
-        JsonNode created = reserveOk(me, seat, d(3), 10, 2);
+        JsonNode created = reserveOk(me, seat, dw(3), slot(10), 2);
         long reservationId = created.path("reservationId").asLong();
-        assertEquals("RESERVED", displayStatus(floor1, seat, d(3), 10));
+        assertEquals("RESERVED", displayStatus(floor1, seat, dw(3), slot(10)));
 
         MvcResult cancel = exec(post("/api/reservations/" + reservationId + "/cancel")
                 .header("Authorization", bearer(me)));
         assertEquals(0, code(cancel), "开始前取消应成功，实际：" + body(cancel));
         assertEquals("CANCELLED", data(cancel).path("status").asText());
 
-        assertEquals("FREE", displayStatus(floor1, seat, d(3), 10), "取消后座位应立即释放为 FREE");
+        assertEquals("FREE", displayStatus(floor1, seat, dw(3), slot(10)), "取消后座位应立即释放为 FREE");
         assertEquals(0L, jdbc.queryForObject(
                 "select count(*) from t_reservation_slot where reservation_id = ?", Long.class, reservationId),
                 "取消后 t_reservation_slot 必须物理删除");
 
         // slot 复用：换一个用户重新预约同一座位同一时段
-        reserveOk(other, seat, d(3), 10, 2);
+        reserveOk(other, seat, dw(3), slot(10), 2);
 
         // 取消后落入 cancelled 分组
         JsonNode cancelled = data(exec(get("/api/reservations/my")
@@ -319,8 +319,8 @@ class ReservationRuleApiTest extends ApiTestBase {
         if (hour >= 9) {
             // ★ 该时段的座位可能被随机种子数据或其它用例占用（硬编码 A29 会撞 uk_slot_seat_date_idx），
             //   故动态取「该日期该时段真正空闲」的座位，与本文件其它造数用例保持一致的隔离方式。
-            long startedSeat = freeSeatOn(floor1, d(0), hour - 1);
-            Reservation started = insertReservation(userId, startedSeat, LocalDate.now(), hour - 1, 1,
+            long startedSeat = freeSeatOn(floor1, d(0), slot(hour - 1));
+            Reservation started = insertReservation(userId, startedSeat, LocalDate.now(), slot(hour - 1), 1,
                     ReservationStatus.CONFIRMED);
             MvcResult r1 = exec(post("/api/reservations/" + started.getId() + "/cancel")
                     .header("Authorization", bearer(me)));
@@ -378,7 +378,7 @@ class ReservationRuleApiTest extends ApiTestBase {
         // 太晚：开始时间已过 2 小时
         int hour = LocalDateTime.now().getHour();
         if (hour >= 10) {
-            Reservation late = insertReservation(userId, seat, LocalDate.now(), hour - 2, 1,
+            Reservation late = insertReservation(userId, seat, LocalDate.now(), slot(hour - 2), 1,
                     ReservationStatus.CONFIRMED);
             MvcResult tooLate = exec(post("/api/reservations/" + late.getId() + "/check-in")
                     .header("Authorization", bearer(u1)));
@@ -393,9 +393,9 @@ class ReservationRuleApiTest extends ApiTestBase {
         int minute = now.getMinute();
         int targetSlot;
         if (minute <= 15 && now.getHour() >= 8 && now.getHour() <= 21) {
-            targetSlot = now.getHour();
+            targetSlot = slot(now.getHour());
         } else if (minute >= 45 && now.getHour() + 1 >= 8 && now.getHour() + 1 <= 21) {
-            targetSlot = now.getHour() + 1;
+            targetSlot = slot(now.getHour() + 1);
         } else {
             // 当前时刻不在任何签到窗口内（如 10:30），该用例跳过
             return;
@@ -436,7 +436,7 @@ class ReservationRuleApiTest extends ApiTestBase {
     void myReservationsTabs() throws Exception {
         long seat = seatId(floor1, "A32");
         String me = newUser();
-        JsonNode created = reserveOk(me, seat, d(3), 10, 2);
+        JsonNode created = reserveOk(me, seat, dw(3), slot(10), 2);
         long reservationId = created.path("reservationId").asLong();
 
         JsonNode upcoming = data(exec(get("/api/reservations/my")
@@ -480,27 +480,41 @@ class ReservationRuleApiTest extends ApiTestBase {
     // ==================== 时段选项 ====================
 
     @Test
-    @DisplayName("【时段】/api/config/slots 固定返回 14 项，slotIndex 8~21")
+    @DisplayName("【时段】30 分钟格：工作日 28 格、标签 HH:mm-HH:mm，且周末窗口与工作日不同")
     void slotOptions() throws Exception {
-        JsonNode options = data(exec(get("/api/config/slots").header("Authorization", bearer(u1))));
-        assertEquals(14, options.size(), "时段选项固定 14 项");
-        int index = 8;
+        String weekday = dw(1);
+        JsonNode options = data(exec(get("/api/config/slots")
+                .param("date", weekday).header("Authorization", bearer(u1))));
+        assertEquals(com.libseat.common.BizConstants.SLOT_COUNT, options.size(),
+                "★ 默认窗口 08:00-22:00 在 30 分钟格下应为 28 项");
+        int slot = com.libseat.common.BizConstants.SLOT_INDEX_MIN;
         for (JsonNode option : options) {
-            assertEquals(index, option.path("slotIndex").asInt());
-            assertEquals(String.format("%02d:00-%02d:00", index, index + 1), option.path("label").asText());
-            index++;
+            assertEquals(slot, option.path("slotIndex").asInt(), "格序号必须连续无空洞");
+            // 验收 4：标签全站统一 HH:mm-HH:mm，且必须体现半点格
+            assertEquals(com.libseat.common.BizConstants.slotLabel(slot), option.path("label").asText());
+            assertTrue(option.path("label").asText().matches("\\d{2}:\\d{2}-\\d{2}:\\d{2}"),
+                    "标签格式必须是 HH:mm-HH:mm，实际：" + option.path("label").asText());
+            slot++;
         }
+
+        // 验收 2：换一个日型，开放窗口必须真的不同
+        String weekend = nextWeekend();
+        JsonNode weekendOptions = data(exec(get("/api/config/slots")
+                .param("date", weekend).header("Authorization", bearer(u1))));
+        assertTrue(weekendOptions.size() < options.size(),
+                "周末档案 09:00-21:00 应比工作日 08:00-22:00 短，实际 "
+                        + weekendOptions.size() + " vs " + options.size());
 
         JsonNode todayOptions = data(exec(get("/api/config/slots")
                 .param("date", d(0)).header("Authorization", bearer(u1))));
         JsonNode futureOptions = data(exec(get("/api/config/slots")
-                .param("date", d(3)).header("Authorization", bearer(u1))));
+                .param("date", weekday).header("Authorization", bearer(u1))));
         for (JsonNode option : futureOptions) {
-            assertTrue(option.path("bookable").asBoolean(), "未来日期所有时段都应可预约");
+            assertTrue(option.path("bookable").asBoolean(), "未来工作日所有时段都应可预约");
         }
         int hour = LocalDateTime.now().getHour();
         for (JsonNode option : todayOptions) {
-            if (option.path("slotIndex").asInt() <= hour) {
+            if (option.path("slotIndex").asInt() <= slot(hour)) {
                 assertTrue(!option.path("bookable").asBoolean(),
                         "今天已过去/正在进行的时段 bookable 应为 false，slot=" + option.path("slotIndex"));
             }
@@ -511,12 +525,12 @@ class ReservationRuleApiTest extends ApiTestBase {
     @DisplayName("【平面图】派生状态与统计自洽：free+reserved+inUse+unavailable = total")
     void seatMapStatsConsistent() throws Exception {
         long seat = seatId(floor1, "A34");
-        reserveOk(newUser(), seat, d(3), 10, 2);
+        reserveOk(newUser(), seat, dw(3), slot(10), 2);
 
         MvcResult result = exec(get("/api/seats/map")
                 .param("floorId", String.valueOf(floor1))
-                .param("date", d(3))
-                .param("slot", "10")
+                .param("date", dw(3))
+                .param("slot", String.valueOf(slot(10)))
                 .header("Authorization", bearer(u1)));
         JsonNode stats = data(result).path("stats");
         long total = stats.path("total").asLong();
@@ -532,7 +546,7 @@ class ReservationRuleApiTest extends ApiTestBase {
     @DisplayName("【参数】请求体缺少必填字段应返回 4001")
     void missingFields() throws Exception {
         Map<String, Object> noSeat = new HashMap<>();
-        noSeat.put("date", d(3));
+        noSeat.put("date", dw(3));
         noSeat.put("startSlot", 10);
         MvcResult r1 = exec(post("/api/reservations").contentType(MediaType.APPLICATION_JSON)
                 .content(json(noSeat)).header("Authorization", bearer(u3)));
@@ -543,7 +557,7 @@ class ReservationRuleApiTest extends ApiTestBase {
         assertEquals(PARAM_ERROR, code(r2), "空请求体应 4001，实际：" + body(r2));
 
         MvcResult r3 = exec(post("/api/reservations").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"seatId\":99999999,\"date\":\"" + d(3) + "\",\"startSlot\":10,\"duration\":2}")
+                .content("{\"seatId\":99999999,\"date\":\"" + dw(3) + "\",\"startSlot\":10,\"duration\":2}")
                 .header("Authorization", bearer(u3)));
         assertEquals(4040, code(r3), "不存在的座位应 4040，实际：" + body(r3));
     }

@@ -79,7 +79,7 @@ class AuditApiTest extends ApiTestBase {
         long seat = seatId(floor1, "A21");
         MvcResult createdResult = exec(post("/api/reservations")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(json(Map.of("seatId", seat, "date", d(3), "startSlot", 10, "duration", 1)))
+                .content(json(Map.of("seatId", seat, "date", dw(3), "startSlot", slot(10), "duration", 1)))
                 .header("Authorization", bearer(me)));
         assertEquals(0, code(createdResult), "前置预约应成功：" + body(createdResult));
         long reservationId = data(createdResult).path("reservationId").asLong();

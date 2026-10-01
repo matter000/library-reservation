@@ -39,7 +39,8 @@ class SchedulerApiTest extends ApiTestBase {
                                ReservationStatus status) {
         Reservation reservation = Reservation.builder()
                 .userId(userId).seatId(seatId).floorId(floor1)
-                .reserveDate(date).startSlot(startSlot).endSlot(startSlot + duration)
+                .reserveDate(date).startSlot(startSlot).endSlot(startSlot
+                        + com.libseat.common.BizConstants.slotsOf(duration))
                 .status(status).build();
         return reservationRepository.saveAndFlush(reservation);
     }
@@ -67,9 +68,11 @@ class SchedulerApiTest extends ApiTestBase {
         }
         long seat = seatId(floor1, "A50");
 
-        Reservation target = insert(userId, seat, today, 8, 2, ReservationStatus.CONFIRMED);
+        Reservation target = insert(userId, seat, today, slot(8), 2, ReservationStatus.CONFIRMED);
         insertSlots(target, seat, today);
-        assertEquals(2, reservationSlotRepository.findBySeatIdAndReserveDate(seat, today).size());
+        assertEquals(com.libseat.common.BizConstants.slotsOf(2),
+                reservationSlotRepository.findBySeatIdAndReserveDate(seat, today).size(),
+                "2 小时的预约在 30 分钟格下应占 4 行 slot");
 
         int before = jdbc.queryForObject("select no_show_count from t_user where id = ?", Integer.class, userId);
 
@@ -103,9 +106,11 @@ class SchedulerApiTest extends ApiTestBase {
         LocalDate today = LocalDate.now();
         long seat = seatId(floor1, "A51");
 
-        Reservation target = insert(userId, seat, today, 8, 1, ReservationStatus.CHECKED_IN);
+        Reservation target = insert(userId, seat, today, slot(8), 1, ReservationStatus.CHECKED_IN);
         insertSlots(target, seat, today);
-        assertEquals(1, reservationSlotRepository.findBySeatIdAndReserveDate(seat, today).size());
+        assertEquals(com.libseat.common.BizConstants.slotsOf(1),
+                reservationSlotRepository.findBySeatIdAndReserveDate(seat, today).size(),
+                "1 小时预约应占 2 行 slot");
 
         int before = jdbc.queryForObject("select no_show_count from t_user where id = ?", Integer.class, userId);
 
@@ -128,7 +133,7 @@ class SchedulerApiTest extends ApiTestBase {
         LocalDate future = LocalDate.now().plusDays(3);
         long seat = seatId(floor1, "A52");
 
-        Reservation futureConfirmed = insert(userId, seat, future, 14, 2, ReservationStatus.CONFIRMED);
+        Reservation futureConfirmed = insert(userId, seat, future, slot(14), 2, ReservationStatus.CONFIRMED);
         insertSlots(futureConfirmed, seat, future);
 
         int before = jdbc.queryForObject("select no_show_count from t_user where id = ?", Integer.class, userId);
@@ -138,7 +143,8 @@ class SchedulerApiTest extends ApiTestBase {
 
         Reservation after = reservationRepository.findById(futureConfirmed.getId()).orElseThrow();
         assertEquals(ReservationStatus.CONFIRMED, after.getStatus(), "未来日期的预约不应被定时任务改动");
-        assertEquals(2, reservationSlotRepository.findBySeatIdAndReserveDate(seat, future).size(),
+        assertEquals(com.libseat.common.BizConstants.slotsOf(2),
+                reservationSlotRepository.findBySeatIdAndReserveDate(seat, future).size(),
                 "未来日期的 slot 行不应被删除");
         int afterCount = jdbc.queryForObject("select no_show_count from t_user where id = ?", Integer.class, userId);
         assertEquals(before, afterCount);
@@ -154,7 +160,7 @@ class SchedulerApiTest extends ApiTestBase {
         if (hour < 10) {
             return;
         }
-        Reservation r = insert(userId, seat, today, 8, 2, ReservationStatus.CONFIRMED);
+        Reservation r = insert(userId, seat, today, slot(8), 2, ReservationStatus.CONFIRMED);
         insertSlots(r, seat, today);
 
         scheduler.scanNoShow();

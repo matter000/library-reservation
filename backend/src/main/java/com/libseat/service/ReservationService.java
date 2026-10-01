@@ -51,6 +51,8 @@ public class ReservationService {
 
     private final RuleConfigService ruleConfigService;
 
+    private final OpenRuleService openRuleService;
+
     /**
      * 提交预约（DESIGN §4.3-C1 七步校验）。
      *
@@ -99,9 +101,21 @@ public class ReservationService {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "只能预约今天起 " + advanceDays + " 天内的座位");
         }
 
-        // ---------- 第 3 步：时段在 8~22 且不跨天 ----------
-        if (!BizConstants.validSlotIndex(startSlot) || startSlot + duration > BizConstants.OPEN_HOUR_END) {
-            throw new BusinessException(ErrorCode.PARAM_ERROR, "预约时段超出开放时间（08:00-22:00）");
+        // ---------- 第 2b 步：该日不开放（日型整体闭馆或日历临时闭馆）----------
+        OpenRuleService.DayRule dayRule = openRuleService.resolve(date);
+        if (dayRule.isClosed()) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR,
+                    date + " 闭馆，不接受预约" + (dayRule.getCalendarRemark() == null
+                            ? "" : "（" + dayRule.getCalendarRemark() + "）"));
+        }
+
+        // ---------- 第 3 步：时段落在当日开放窗口内（30 分钟格，不跨天）----------
+        // duration 是小时、startSlot 是 30 分钟格序号，必须先 slotsOf 换算再相加
+        int endSlot = startSlot + BizConstants.slotsOf(duration);
+        if (!BizConstants.validSlotIndex(startSlot) || endSlot > openWindowEndSlot(date)) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "预约时段超出开放时间（"
+                    + BizConstants.slotText(BizConstants.SLOT_INDEX_MIN) + "-"
+                    + BizConstants.slotText(openWindowEndSlot(date)) + "）");
         }
 
         // ---------- 第 4 步：时长 ∈ 配置的可选值（默认 1/2/3/4 小时） ----------
@@ -118,7 +132,6 @@ public class ReservationService {
         }
 
         // ---------- 第 6 步：用户无重叠有效预约 ----------
-        int endSlot = startSlot + duration;
         List<Reservation> overlapping = reservationRepository.findOverlapping(
                 userId, OccupancyService.OCCUPYING_STATUSES, date, endSlot, startSlot);
         if (!overlapping.isEmpty()) {
@@ -393,7 +406,7 @@ public class ReservationService {
             windowText = "签到窗口 " + openAt.format(HM_FORMATTER) + "-" + closeAt.format(HM_FORMATTER);
         }
 
-        int duration = reservation.getEndSlot() - reservation.getStartSlot();
+        int duration = BizConstants.hoursOfSlots(reservation.getEndSlot() - reservation.getStartSlot());
         String username = (usernameMap == null) ? null : usernameMap.get(reservation.getUserId());
 
         return ReservationDTO.ReservationVO.builder()
@@ -455,5 +468,18 @@ public class ReservationService {
             list.add(toVO(reservation, usernameMap, null, seatMap));
         }
         return list;
+    }
+
+    /**
+     * 该日开放窗口的结束时段（开区间边界）。
+     *
+     * <p>窗口来自开放档案 / 日历而非 {@code BizConstants} 常量，
+     * 因此周末与节假日会自然收窄，无需在多处重复写 22:00。
+     *
+     * @param date 预约日期
+     * @return 结束时段的开区间序号
+     */
+    private int openWindowEndSlot(LocalDate date) {
+        return openRuleService.endSlotOf(date);
     }
 }

@@ -51,8 +51,8 @@ class ConcurrencyApiTest extends ApiTestBase {
     @DisplayName("【P0-1】8 个不同用户并发抢同一座位同一时段：恰好 1 个成功，其余 4091，DB 无脏数据")
     void concurrentSameSeatDifferentUsers() throws Exception {
         long seat = seatId(floor1, "A10");
-        String date = d(3);
-        int startSlot = 14;
+        String date = dw(3);
+        int startSlot = slot(14);
         int duration = 2;
 
         List<String> tokens = new ArrayList<>();
@@ -95,9 +95,11 @@ class ConcurrencyApiTest extends ApiTestBase {
             long slotRows = jdbc.queryForObject(
                     "select count(*) from t_reservation_slot where seat_id = ? and reserve_date = ? "
                             + "and slot_index between ? and ?",
-                    Long.class, seat, java.time.LocalDate.parse(date), startSlot, startSlot + duration - 1);
-            assertEquals(duration, slotRows,
-                    "★ t_reservation_slot 该座位该时段应恰好 " + duration + " 行，实际 " + slotRows);
+                    Long.class, seat, java.time.LocalDate.parse(date), startSlot,
+                    startSlot + com.libseat.common.BizConstants.slotsOf(duration) - 1);
+            assertEquals(com.libseat.common.BizConstants.slotsOf(duration), slotRows,
+                    "★ t_reservation_slot 该座位该时段应恰好 "
+                            + com.libseat.common.BizConstants.slotsOf(duration) + " 行，实际 " + slotRows);
 
             long mainRows = jdbc.queryForObject(
                     "select count(*) from t_reservation where seat_id = ? and reserve_date = ? and start_slot = ? "
@@ -124,8 +126,8 @@ class ConcurrencyApiTest extends ApiTestBase {
     @DisplayName("【P0-1】同一用户并发重复提交：最多 1 个成功，不允许出现重复预约")
     void concurrentSameUser() throws Exception {
         long seat = seatId(floor1, "A11");
-        String date = d(3);
-        int startSlot = 16;
+        String date = dw(3);
+        int startSlot = slot(16);
         int duration = 2;
         String token = newUser();
 
@@ -167,8 +169,8 @@ class ConcurrencyApiTest extends ApiTestBase {
     void concurrentDifferentSeats() throws Exception {
         long seatA = seatId(floor1, "A12");
         long seatB = seatId(floor1, "A13");
-        String date = d(3);
-        int startSlot = 9;
+        String date = dw(3);
+        int startSlot = slot(9);
 
         List<String> tokens = List.of(newUser(), newUser());
         ExecutorService pool = Executors.newFixedThreadPool(2);
@@ -208,11 +210,11 @@ class ConcurrencyApiTest extends ApiTestBase {
         try {
             futures.add(pool.submit(() -> {
                 start.await(5, TimeUnit.SECONDS);
-                return createReservation(t1, seat, d(4), 10, 2);
+                return createReservation(t1, seat, d(4), slot(10), 2);
             }));
             futures.add(pool.submit(() -> {
                 start.await(5, TimeUnit.SECONDS);
-                return createReservation(t2, seat, d(5), 10, 2);
+                return createReservation(t2, seat, d(5), slot(10), 2);
             }));
             start.countDown();
             List<Integer> codes = new ArrayList<>();

@@ -7,28 +7,46 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 /**
- * 全局业务常量与时段工具方法（DESIGN §8.4）。
+ * 全局业务常量与时段工具方法（DESIGN-V2 §4）。
  *
- * <p>开放时间 08:00–22:00，粒度 1 小时，共 14 个时段，slot_index = 8~21。
+ * <p><b>时段编码唯一口径</b>：内部格长固定 30 分钟，{@code slot = (hour*60 + minute) / 30}，
+ * {@code end_slot} 为开区间。{@code duration} 仍然是<b>小时</b>（用户可选时长的语义不变），
+ * 因此任何「起始时段 + 时长」的运算都必须先经 {@link #slotsOf(int)} 换算单位，
+ * 不能像 V1 那样把小时直接加在时段号上（V1 恰好 1 格 = 1 小时才没暴露这个单位混用）。
+ *
+ * <p>默认开放窗口 08:00–22:00 → 起始时段 16~43，结束边界 44，共 28 格；
+ * 实际窗口由开放日历（{@code t_open_profile} / {@code t_open_calendar}）按日型覆盖。
  */
 public final class BizConstants {
+
+    /** 每个时段的分钟数（内部格长，固定 30 分钟）。 */
+    public static final int SLOT_MINUTES = 30;
+
+    /** 每小时的时段格数。 */
+    public static final int SLOTS_PER_HOUR = 60 / SLOT_MINUTES;
 
     /** 开放结束小时（开区间）。 */
     public static final int OPEN_HOUR_END = 22;
 
-    /** 时段总数。 */
-    public static final int SLOT_COUNT = 14;
+    /** 默认开放起始时段序号（08:00）。 */
+    public static final int DEFAULT_SLOT_START = 8 * SLOTS_PER_HOUR;
 
-    /** slot_index 最小值。 */
-    public static final int SLOT_INDEX_MIN = 8;
+    /** 默认开放结束时段的开区间边界（22:00）。 */
+    public static final int DEFAULT_SLOT_END = OPEN_HOUR_END * SLOTS_PER_HOUR;
 
-    /** slot_index 最大值（21:00-22:00）。 */
-    public static final int SLOT_INDEX_MAX = 21;
+    /** 时段总数（默认窗口内可预约的起始时段数）。 */
+    public static final int SLOT_COUNT = DEFAULT_SLOT_END - DEFAULT_SLOT_START;
 
-    /** 默认时长。 */
+    /** slot_index 最小值（可作为起始时段的最小格）。 */
+    public static final int SLOT_INDEX_MIN = DEFAULT_SLOT_START;
+
+    /** slot_index 最大值（最后一格的起始时段，即 21:30）。 */
+    public static final int SLOT_INDEX_MAX = DEFAULT_SLOT_END - 1;
+
+    /** 默认时长（小时）。 */
     public static final int DEFAULT_DURATION = 2;
 
-    /** 可选时长；上限即本列表最大值 4 小时。 */
+    /** 可选时长（小时）；上限即本列表最大值 4 小时。 */
     public static final List<Integer> ALLOWED_DURATIONS = List.of(1, 2, 3, 4);
 
     /** 可预约窗口天数（今天 ~ 今天+6）。 */
@@ -63,60 +81,128 @@ public final class BizConstants {
     }
 
     /**
-     * 把小时序号格式化为 {@code HH:mm}。
+     * 小时时长 → 时段格数。跨单位运算的唯一入口。
+     *
+     * @param durationHours 时长（小时）
+     * @return 格数
+     */
+    public static int slotsOf(int durationHours) {
+        return durationHours * SLOTS_PER_HOUR;
+    }
+
+    /**
+     * 时段格数 → 小时（用于把库里的 end_slot - start_slot 还原为时长语义）。
+     *
+     * <p>与 {@link #slotsOf(int)} 成对出现：写库时小时换算为格，读库展示时格还原为小时。
+     * 任何一处漏掉换算，就会把 2 格当成 2 小时显示，标签直接翻倍。
+     *
+     * @param slots 格数
+     * @return 小时
+     */
+    public static int hoursOfSlots(int slots) {
+        return slots / SLOTS_PER_HOUR;
+    }
+
+    /**
+     * 时段格数 → 分钟。
+     *
+     * @param slots 格数
+     * @return 分钟
+     */
+    public static int minutesOfSlots(int slots) {
+        return slots * SLOT_MINUTES;
+    }
+
+    /**
+     * 时间 → 时段序号（向下取整到所在格）。
+     *
+     * @param time 时间
+     * @return 时段序号
+     */
+    public static int slotOf(LocalTime time) {
+        return (time.getHour() * 60 + time.getMinute()) / SLOT_MINUTES;
+    }
+
+    /**
+     * 时段序号 → 时间。
+     *
+     * @param slot 时段序号
+     * @return 该格起始时间
+     */
+    public static LocalTime timeOfSlot(int slot) {
+        int minutes = slot * SLOT_MINUTES;
+        // 跨小时进位交给 LocalTime.of 校验，超过 24:00 的边界由调用方保证
+        return LocalTime.of((minutes / 60) % 24, minutes % 60);
+    }
+
+    /**
+     * 时段序号格式化为 {@code HH:mm}。
+     *
+     * @param slot 时段序号
+     * @return {@code 08:00} / {@code 08:30} 形式
+     */
+    public static String slotText(int slot) {
+        LocalTime time = timeOfSlot(slot);
+        return String.format("%02d:%02d", time.getHour(), time.getMinute());
+    }
+
+    /**
+     * 把小时序号格式化为 {@code HH:00}。
      *
      * @param hour 小时（0~23）
      * @return {@code 08:00} 形式的字符串
+     * @deprecated V2 起时段是 30 分钟格，请改用 {@link #slotText(int)}；本方法只在整小时语境下正确
      */
+    @Deprecated
     public static String hourText(int hour) {
         return String.format("%02d:00", hour);
     }
 
     /**
-     * 时段标签，如 {@code 14:00-15:00}。
+     * 时段标签，如 {@code 14:00-14:30}。
      *
      * @param slotIndex 时段序号
      * @return 时段标签
      */
     public static String slotLabel(int slotIndex) {
-        return hourText(slotIndex) + "-" + hourText(slotIndex + 1);
+        return slotText(slotIndex) + "-" + slotText(slotIndex + 1);
     }
 
     /**
-     * 预约时段区间文本，如 {@code 14:00-16:00}。
+     * 预约区间文本，如 {@code 14:00-16:00}。
      *
      * @param startSlot 起始时段
-     * @param duration  时长（小时）
+     * @param duration  时长（小时，内部换算为格数）
      * @return 区间文本
      */
     public static String rangeLabel(int startSlot, int duration) {
-        return hourText(startSlot) + "-" + hourText(startSlot + duration);
+        return slotText(startSlot) + "-" + slotText(startSlot + slotsOf(duration));
     }
 
     /**
-     * 由日期 + 时段序号构造时间点。
+     * 由日期 + 时段序号构造起始时间点。
      *
      * @param date      日期
      * @param slotIndex 时段序号
      * @return 该时段起始时间
      */
     public static LocalDateTime slotStart(LocalDate date, int slotIndex) {
-        return LocalDateTime.of(date, LocalTime.of(slotIndex, 0));
+        return LocalDateTime.of(date, timeOfSlot(slotIndex));
     }
 
     /**
      * 由日期 + 时段序号构造结束时间点（开区间）。
      *
      * @param date      日期
-     * @param slotIndex 结束时段序号
+     * @param slotIndex 结束时段的开区间边界序号
      * @return 该时段结束时间
      */
     public static LocalDateTime slotEnd(LocalDate date, int slotIndex) {
-        return LocalDateTime.of(date, LocalTime.of(slotIndex, 0));
+        return LocalDateTime.of(date, timeOfSlot(slotIndex));
     }
 
     /**
-     * 判断时段序号是否合法（8~21）。
+     * 判断时段序号是否可作为起始格。
      *
      * @param slotIndex 时段序号
      * @return 是否合法
@@ -126,7 +212,7 @@ public final class BizConstants {
     }
 
     /**
-     * 判断时长是否合法（1~4）。
+     * 判断时长是否合法（1~4 小时）。
      *
      * @param duration 时长
      * @return 是否合法
@@ -136,19 +222,19 @@ public final class BizConstants {
     }
 
     /**
-     * 把任意小时数收敛到合法时段区间内（用于「当前时段」计算）。
+     * 把任意时段序号收敛到合法区间内（用于「当前时段」计算）。
      *
-     * @param hour 当前小时
+     * @param slot 时段序号
      * @return 合法时段序号
      */
-    public static int clampToSlotRange(int hour) {
-        if (hour < SLOT_INDEX_MIN) {
+    public static int clampToSlotRange(int slot) {
+        if (slot < SLOT_INDEX_MIN) {
             return SLOT_INDEX_MIN;
         }
-        if (hour > SLOT_INDEX_MAX) {
+        if (slot > SLOT_INDEX_MAX) {
             return SLOT_INDEX_MAX;
         }
-        return hour;
+        return slot;
     }
 
     /**

@@ -257,7 +257,7 @@ class AdminApiTest extends ApiTestBase {
         long seatId = seat.path("seatId").asLong();
 
         // 制造一条未来预约
-        JsonNode reservation = reserveOk(newUser(), seatId, d(3), 10, 2);
+        JsonNode reservation = reserveOk(newUser(), seatId, dw(3), slot(10), 2);
         long reservationId = reservation.path("reservationId").asLong();
 
         MvcResult blockedSeat = deleteSeat(seatId);
@@ -281,7 +281,7 @@ class AdminApiTest extends ApiTestBase {
         assertEquals(4, seatIds.size());
         // 给其中两个座位造历史（已结束）预约，验证级联清理
         long historySeat = seatIds.get(0);
-        JsonNode history = reserveOk(newUser(), historySeat, d(3), 14, 2);
+        JsonNode history = reserveOk(newUser(), historySeat, dw(3), slot(14), 2);
         assertEquals(0, code(release(history.path("reservationId").asLong(), "清理历史")));
 
         MvcResult floorDeleted = deleteFloor(floorId);
@@ -310,7 +310,7 @@ class AdminApiTest extends ApiTestBase {
     void releaseRules() throws Exception {
         long seat = seatId(floor1, "A40");
         String owner = newUser();
-        JsonNode created = reserveOk(owner, seat, d(3), 10, 2);
+        JsonNode created = reserveOk(owner, seat, dw(3), slot(10), 2);
         long reservationId = created.path("reservationId").asLong();
 
         MvcResult empty = release(reservationId, "");
@@ -326,7 +326,7 @@ class AdminApiTest extends ApiTestBase {
         MvcResult ok = release(reservationId, "设备检修");
         assertEquals(0, code(ok), "正常释放应成功，实际：" + body(ok));
         assertEquals("ADMIN_CANCELLED", data(ok).path("status").asText());
-        assertEquals("FREE", displayStatus(floor1, seat, d(3), 10), "释放后座位应立即变 FREE");
+        assertEquals("FREE", displayStatus(floor1, seat, dw(3), slot(10)), "释放后座位应立即变 FREE");
         assertEquals(0L, jdbc.queryForObject(
                 "select count(*) from t_reservation_slot where reservation_id = ?", Long.class, reservationId));
 
@@ -349,11 +349,11 @@ class AdminApiTest extends ApiTestBase {
     @DisplayName("【使用情况】only=occupied / only=free 过滤与统计自洽")
     void usageFilters() throws Exception {
         long seat = seatId(floor1, "A41");
-        reserveOk(newUser(), seat, d(3), 10, 2);
+        reserveOk(newUser(), seat, dw(3), slot(10), 2);
 
         JsonNode all = data(exec(get("/api/admin/usage")
                 .param("floorId", String.valueOf(floor1))
-                .param("date", d(3)).param("slot", "10")
+                .param("date", dw(3)).param("slot", String.valueOf(slot(10)))
                 .header("Authorization", bearer(admin))));
         JsonNode summary = all.path("summary");
         assertEquals(60L, summary.path("total").asLong());
@@ -363,7 +363,7 @@ class AdminApiTest extends ApiTestBase {
 
         JsonNode occupied = data(exec(get("/api/admin/usage")
                 .param("floorId", String.valueOf(floor1))
-                .param("date", d(3)).param("slot", "10").param("only", "occupied")
+                .param("date", dw(3)).param("slot", String.valueOf(slot(10))).param("only", "occupied")
                 .header("Authorization", bearer(admin))));
         for (JsonNode row : occupied.path("rows")) {
             String display = row.path("displayStatus").asText();
@@ -374,7 +374,7 @@ class AdminApiTest extends ApiTestBase {
 
         JsonNode free = data(exec(get("/api/admin/usage")
                 .param("floorId", String.valueOf(floor1))
-                .param("date", d(3)).param("slot", "10").param("only", "free")
+                .param("date", dw(3)).param("slot", String.valueOf(slot(10))).param("only", "free")
                 .header("Authorization", bearer(admin))));
         for (JsonNode row : free.path("rows")) {
             assertEquals("FREE", row.path("displayStatus").asText(), "only=free 只应返回 FREE 座位");
@@ -410,15 +410,16 @@ class AdminApiTest extends ApiTestBase {
 
         JsonNode heat = data(exec(get("/api/admin/statistics/slot-heat")
                 .header("Authorization", bearer(admin))));
-        assertEquals(14, heat.size(), "slot-heat 固定 14 项");
-        int index = 8;
+        assertEquals(com.libseat.common.BizConstants.SLOT_COUNT, heat.size(),
+                "时段热度项数应等于默认窗口的格数（30 分钟一格）");
+        int index = com.libseat.common.BizConstants.SLOT_INDEX_MIN;
         for (JsonNode node : heat) {
             assertEquals(index++, node.path("slotIndex").asInt());
             assertFalse(node.path("count").isNull(), "slot-heat 无数据时应为 0");
         }
 
         JsonNode floorUsage = data(exec(get("/api/admin/statistics/floor-usage")
-                .param("date", d(3)).param("slot", "10")
+                .param("date", dw(3)).param("slot", String.valueOf(slot(10)))
                 .header("Authorization", bearer(admin))));
         assertTrue(floorUsage.size() >= 3, "楼层利用率应至少包含 3 个楼层，实际：" + floorUsage.size());
         for (JsonNode node : floorUsage) {

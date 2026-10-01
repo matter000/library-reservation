@@ -73,10 +73,10 @@ public class FloorDTO {
     @AllArgsConstructor
     public static class SlotOptionVO {
 
-        /** 时段序号 8~21。 */
+        /** 时段序号（30 分钟一格）。 */
         private Integer slotIndex;
 
-        /** 标签，如 14:00-15:00。 */
+        /** 标签，如 14:00-14:30。 */
         private String label;
 
         /** 开始时间 HH:mm。 */
@@ -85,8 +85,14 @@ public class FloorDTO {
         /** 结束时间 HH:mm。 */
         private String end;
 
-        /** 是否可预约（未来日期全可约；今天需开始时间 > now）。 */
+        /** 是否可预约（判定含开放窗口与是否已过期，前端不再重复实现）。 */
         private Boolean bookable;
+
+        /** 不可预约的原因，可预约时为 null。 */
+        private String reason;
+
+        /** 是否落在高峰窗口内。 */
+        private Boolean peak;
 
         /** 是否为当前所处时段。 */
         private Boolean isCurrent;

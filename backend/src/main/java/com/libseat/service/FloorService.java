@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +36,8 @@ public class FloorService {
     private final SeatRepository seatRepository;
 
     private final OccupancyService occupancyService;
+
+    private final OpenRuleService openRuleService;
 
     /**
      * 楼层列表（含各楼层空闲数与占用率）。
@@ -53,7 +56,7 @@ public class FloorService {
         List<FloorDTO.FloorVO> result = new ArrayList<>(floors.size());
         for (Floor floor : floors) {
             List<Seat> seats = seatRepository.findByFloorIdOrderByRowNoAscColNoAsc(floor.getId());
-            result.add(buildFloorVO(floor, seats, occupiedMap));
+            result.add(buildFloorVO(floor, seats, occupiedMap, targetDate));
         }
         return result;
     }
@@ -73,7 +76,7 @@ public class FloorService {
         int targetSlot = (slot == null) ? currentSlot() : BizConstants.clampToSlotRange(slot);
         Map<Long, ReservationStatus> occupiedMap = occupancyService.getOccupiedMap(targetDate, targetSlot);
         List<Seat> seats = seatRepository.findByFloorIdOrderByRowNoAscColNoAsc(floorId);
-        return buildFloorVO(floor, seats, occupiedMap);
+        return buildFloorVO(floor, seats, occupiedMap, targetDate);
     }
 
     /**
@@ -89,7 +92,8 @@ public class FloorService {
         Floor floor = requireFloor(floorId);
         LocalDate targetDate = (date == null) ? LocalDate.now() : date;
         int targetSlot = (slot == null) ? currentSlot() : BizConstants.clampToSlotRange(slot);
-        boolean floorClosed = floor.getStatus() == FloorStatus.CLOSED;
+        // 闭馆（日型整体闭馆或日历临时闭馆）与楼层关闭同样处理：整层座位转为不可用
+        boolean floorClosed = floor.getStatus() == FloorStatus.CLOSED || openRuleService.isClosed(targetDate);
 
         List<Seat> seats = seatRepository.findByFloorIdOrderByRowNoAscColNoAsc(floorId);
         Map<Long, ReservationStatus> occupiedMap = occupancyService.getOccupiedMap(targetDate, targetSlot);
@@ -163,17 +167,28 @@ public class FloorService {
         LocalDateTime now = LocalDateTime.now();
         boolean isToday = targetDate.equals(LocalDate.now());
         int currentSlot = currentSlot();
+        OpenRuleService.DayRule day = openRuleService.resolve(targetDate);
 
-        List<FloorDTO.SlotOptionVO> options = new ArrayList<>(BizConstants.SLOT_COUNT);
-        for (int i = BizConstants.SLOT_INDEX_MIN; i <= BizConstants.SLOT_INDEX_MAX; i++) {
+        // 窗口来自当日开放规则而非全局常量：周末 / 节假日 / 临时闭馆都会反映到格数上
+        // 闭馆日必须返回空列表：不能退化成「从 0 到 0」的一格假选项
+        if (day.isClosed()) {
+            return List.of();
+        }
+        int from = day.getOpenStart();
+        int to = day.getOpenEnd() - 1;
+
+        List<FloorDTO.SlotOptionVO> options = new ArrayList<>(Math.max(0, to - from + 1));
+        for (int i = from; i <= to; i++) {
             LocalDateTime start = BizConstants.slotStart(targetDate, i);
-            boolean bookable = !isToday || start.isAfter(now);
+            boolean expired = isToday && !start.isAfter(now);
             options.add(FloorDTO.SlotOptionVO.builder()
                     .slotIndex(i)
                     .label(BizConstants.slotLabel(i))
-                    .start(BizConstants.hourText(i))
-                    .end(BizConstants.hourText(i + 1))
-                    .bookable(bookable)
+                    .start(BizConstants.slotText(i))
+                    .end(BizConstants.slotText(i + 1))
+                    .bookable(!expired)
+                    .reason(expired ? "该时段已过" : null)
+                    .peak(day.peakOf(i) != null)
                     .isCurrent(isToday && i == currentSlot)
                     .build());
         }
@@ -196,17 +211,17 @@ public class FloorService {
     }
 
     /**
-     * 当前所处时段（收敛到 8~21）。
+     * 当前所处的 30 分钟时段序号（收敛到合法区间）。
      *
      * @return 时段序号
      */
     public int currentSlot() {
-        return BizConstants.clampToSlotRange(LocalDateTime.now().getHour());
+        return BizConstants.clampToSlotRange(BizConstants.slotOf(LocalTime.now()));
     }
 
     private FloorDTO.FloorVO buildFloorVO(Floor floor, List<Seat> seats,
-                                          Map<Long, ReservationStatus> occupiedMap) {
-        boolean floorClosed = floor.getStatus() == FloorStatus.CLOSED;
+                                          Map<Long, ReservationStatus> occupiedMap, LocalDate date) {
+        boolean floorClosed = floor.getStatus() == FloorStatus.CLOSED || openRuleService.isClosed(date);
         long total = seats.size();
         long occupied = 0;
         long unavailable = 0;

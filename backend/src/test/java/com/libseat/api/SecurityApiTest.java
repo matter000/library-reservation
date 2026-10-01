@@ -208,7 +208,7 @@ class SecurityApiTest extends ApiTestBase {
         long seat = seatId(floor1, "A01");
         String owner = newUser();
         String attacker = newUser();
-        JsonNode created = reserveOk(owner, seat, d(3), 10, 2);
+        JsonNode created = reserveOk(owner, seat, dw(3), slot(10), 2);
         long reservationId = created.path("reservationId").asLong();
 
         MvcResult detail = exec(get("/api/reservations/" + reservationId)
@@ -242,12 +242,12 @@ class SecurityApiTest extends ApiTestBase {
     @DisplayName("【隐私】/api/seats/map 响应体不得出现任何占用人身份信息")
     void seatMapHasNoIdentity() throws Exception {
         long seat = seatId(floor1, "A02");
-        reserveOk(newUser(), seat, d(3), 20, 1);
+        reserveOk(newUser(), seat, dw(3), slot(20), 1);
 
         MvcResult result = exec(get("/api/seats/map")
                 .param("floorId", String.valueOf(floor1))
-                .param("date", d(3))
-                .param("slot", "20")
+                .param("date", dw(3))
+                .param("slot", String.valueOf(slot(20)))
                 .header("Authorization", bearer(u2)));
         assertEquals(0, code(result));
         String raw = result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
@@ -263,19 +263,19 @@ class SecurityApiTest extends ApiTestBase {
             assertTrue(allowed.containsAll(fields), "平面图座位对象出现多余字段：" + fields);
         }
         // 被占用的座位应能看到 RESERVED，但看不到是谁
-        assertEquals("RESERVED", displayStatus(floor1, seat, d(3), 20));
+        assertEquals("RESERVED", displayStatus(floor1, seat, dw(3), slot(20)));
     }
 
     @Test
     @DisplayName("【隐私】/api/admin/usage 占用人只含 realName + username，不得含手机号")
     void usageOccupantHasNoPhone() throws Exception {
         long seat = seatId(floor1, "A03");
-        reserveOk(newUser(), seat, d(3), 12, 2);
+        reserveOk(newUser(), seat, dw(3), slot(12), 2);
 
         MvcResult result = exec(get("/api/admin/usage")
                 .param("floorId", String.valueOf(floor1))
-                .param("date", d(3))
-                .param("slot", "12")
+                .param("date", dw(3))
+                .param("slot", String.valueOf(slot(12)))
                 .header("Authorization", bearer(admin)));
         assertEquals(0, code(result));
         String raw = result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
@@ -316,7 +316,7 @@ class SecurityApiTest extends ApiTestBase {
         assertTrue(foundStudent1, "用户列表应包含 student1");
 
         long seat = seatId(floor1, "A04");
-        reserveOk(newUser(), seat, d(3), 15, 2);
+        reserveOk(newUser(), seat, dw(3), slot(15), 2);
         MvcResult reservations = exec(get("/api/admin/reservations").header("Authorization", bearer(admin)));
         assertEquals(0, code(reservations));
         String rawReservations = reservations.getResponse()

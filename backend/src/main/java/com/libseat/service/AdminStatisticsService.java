@@ -138,8 +138,7 @@ public class AdminStatisticsService {
     @Transactional(readOnly = true)
     public List<StatsDTO.FloorUsageVO> floorUsage(LocalDate date, Integer slot) {
         LocalDate targetDate = (date == null) ? LocalDate.now() : date;
-        int targetSlot = (slot == null) ? BizConstants.clampToSlotRange(java.time.LocalDateTime.now().getHour())
-                : BizConstants.clampToSlotRange(slot);
+        int targetSlot = (slot == null) ? currentSlot() : BizConstants.clampToSlotRange(slot);
         Map<Long, ReservationStatus> occupiedMap = occupancyService.getOccupiedMap(targetDate, targetSlot);
 
         List<Floor> floors = floorRepository.findAllByOrderBySortOrderAscIdAsc();
@@ -201,9 +200,15 @@ public class AdminStatisticsService {
 
     private long currentOccupiedCount() {
         LocalDate today = LocalDate.now();
-        int slot = BizConstants.clampToSlotRange(java.time.LocalDateTime.now().getHour());
+        int slot = currentSlot();
         Map<Long, ReservationStatus> occupiedMap = occupancyService.getOccupiedMap(today, slot);
         return occupiedMap.size();
+    }
+
+    /** 当前所处的 30 分钟时段序号。 */
+    private int currentSlot() {
+        return BizConstants.clampToSlotRange(
+                BizConstants.slotOf(java.time.LocalTime.now()));
     }
 
     private long countAvailableSeats() {

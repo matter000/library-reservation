@@ -67,6 +67,12 @@ public class AuditService {
     /** 动作码：删除桌位。 */
     public static final String ACTION_TABLE_DELETE = "TABLE_DELETE";
 
+    /** 动作码：维护开放档案 / 开放日历。 */
+    public static final String ACTION_OPEN_RULE_SAVE = "OPEN_RULE_SAVE";
+
+    /** 动作码：删除开放日历覆盖。 */
+    public static final String ACTION_OPEN_RULE_DELETE = "OPEN_RULE_DELETE";
+
     /** 动作码 → 中文文案（唯一来源，前端直接展示，不在两处写映射）。 */
     private static final Map<String, String> ACTION_TEXT = Map.ofEntries(
             Map.entry(ACTION_RULE_UPDATE, "修改规则配置"),
@@ -77,7 +83,9 @@ public class AuditService {
             Map.entry(ACTION_ZONE_SAVE, "维护分区"),
             Map.entry(ACTION_ZONE_DELETE, "删除分区"),
             Map.entry(ACTION_TABLE_SAVE, "维护桌位"),
-            Map.entry(ACTION_TABLE_DELETE, "删除桌位")
+            Map.entry(ACTION_TABLE_DELETE, "删除桌位"),
+            Map.entry(ACTION_OPEN_RULE_SAVE, "维护开放时间"),
+            Map.entry(ACTION_OPEN_RULE_DELETE, "删除开放日历覆盖")
     );
 
     private final AuditLogRepository auditLogRepository;

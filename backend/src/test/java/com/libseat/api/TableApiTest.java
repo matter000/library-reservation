@@ -102,7 +102,7 @@ class TableApiTest extends ApiTestBase {
 
             // 平面图上这 4 座都要可见且不属于任何其它桌
             JsonNode map = data(exec(get("/api/seats/map").param("floorId", String.valueOf(floor1))
-                    .param("date", d(1)).param("slot", "14")
+                    .param("date", d(1)).param("slot", String.valueOf(slot(14)))
                     .header("Authorization", bearer(u1))));
             int onMap = 0;
             for (JsonNode seat : map.path("seats")) {

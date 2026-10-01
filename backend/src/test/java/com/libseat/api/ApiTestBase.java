@@ -86,6 +86,66 @@ abstract class ApiTestBase {
 
     // ==================== 基础工具 ====================
 
+    /**
+     * 整点 → 30 分钟格序号。
+     *
+     * <p>V2 的格长是 30 分钟，用例仍以「小时」表达意图，避免到处写 ×2 的魔法数。
+     *
+     * @param hour 整点小时
+     * @return 时段序号
+     */
+    protected static int slot(int hour) {
+        return hour * com.libseat.common.BizConstants.SLOTS_PER_HOUR;
+    }
+
+    /**
+     * 第 n 个<b>工作日</b>的日期偏移（周六周日跳过）。
+     *
+     * <p>V2 起开放窗口按日型不同（工作日 08:00-22:00、周末 09:00-21:00），
+     * 用例若固定写 {@code d(3)} 会随「今天是星期几」落到周末，晚间时段就会被正确拒绝，
+     * 表现为与代码无关的星期依赖性 flaky。需要完整窗口时用本方法取日期。
+     *
+     * @param weekdays 工作日序号（1 表示下一个工作日）
+     * @return 相对今天的日历日偏移，可直接传给 {@link #d(int)}
+     */
+    protected static int weekdayOffset(int weekdays) {
+        int step = 0;
+        for (int counted = 0; counted < weekdays; ) {
+            step++;
+            java.time.DayOfWeek dow = java.time.LocalDate.now().plusDays(step).getDayOfWeek();
+            if (dow != java.time.DayOfWeek.SATURDAY && dow != java.time.DayOfWeek.SUNDAY) {
+                counted++;
+            }
+        }
+        // 仍需落在 7 天可约窗口内，否则用例会因为窗口校验而失真
+        return Math.min(step, com.libseat.common.BizConstants.ADVANCE_DAYS - 1);
+    }
+
+    /**
+     * 第 n 个工作日对应的日期字符串。
+     *
+     * @param weekdays 工作日序号
+     * @return yyyy-MM-dd
+     */
+    protected static String dw(int weekdays) {
+        return d(weekdayOffset(weekdays));
+    }
+
+    /**
+     * 最近一个周六或周日的日期（用于对比日型窗口差异）。
+     *
+     * @return yyyy-MM-dd
+     */
+    protected static String nextWeekend() {
+        for (int step = 1; step <= 7; step++) {
+            java.time.DayOfWeek dow = java.time.LocalDate.now().plusDays(step).getDayOfWeek();
+            if (dow == java.time.DayOfWeek.SATURDAY || dow == java.time.DayOfWeek.SUNDAY) {
+                return d(step);
+            }
+        }
+        throw new AssertionError("未来 7 天内必有周末，此分支不可达");
+    }
+
     protected static String bearer(String token) {
         return "Bearer " + token;
     }
@@ -152,7 +212,7 @@ abstract class ApiTestBase {
         MvcResult result = exec(get("/api/seats/map")
                 .param("floorId", String.valueOf(floorId))
                 .param("date", LocalDate.now().plusDays(3).toString())
-                .param("slot", "14")
+                .param("slot", String.valueOf(slot(14)))
                 .header("Authorization", bearer(u1)));
         assertEquals(0, code(result), "平面图查询失败");
         for (JsonNode seat : data(result).path("seats")) {
