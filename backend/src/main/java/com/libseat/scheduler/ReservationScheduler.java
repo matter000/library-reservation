@@ -34,6 +34,8 @@ public class ReservationScheduler {
 
     private final ReservationStateService reservationStateService;
 
+    private final com.libseat.service.RuleConfigService ruleConfigService;
+
     /**
      * 扫描超时未签到。
      *
@@ -46,10 +48,11 @@ public class ReservationScheduler {
         List<Reservation> candidates = reservationRepository.findByStatusAndDateRange(
                 ReservationStatus.CONFIRMED, today.minusDays(1), today);
         LocalDateTime now = LocalDateTime.now();
+        int checkInAfterMin = ruleConfigService.checkInAfterMin();
         int count = 0;
         for (Reservation reservation : candidates) {
             LocalDateTime start = BizConstants.slotStart(reservation.getReserveDate(), reservation.getStartSlot());
-            if (!start.plusMinutes(BizConstants.CHECK_IN_AFTER_MIN).isBefore(now)) {
+            if (!start.plusMinutes(checkInAfterMin).isBefore(now)) {
                 continue;
             }
             try {

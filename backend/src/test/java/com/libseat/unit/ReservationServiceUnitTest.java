@@ -1,5 +1,6 @@
 package com.libseat.unit;
 
+import com.libseat.common.BizConstants;
 import com.libseat.common.BusinessException;
 import com.libseat.common.ErrorCode;
 import com.libseat.dto.ReservationDTO;
@@ -16,6 +17,7 @@ import com.libseat.repository.UserRepository;
 import com.libseat.service.FloorService;
 import com.libseat.service.OccupancyService;
 import com.libseat.service.ReservationService;
+import com.libseat.service.RuleConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -68,6 +70,8 @@ class ReservationServiceUnitTest {
     private UserRepository userRepository;
     @Mock
     private FloorService floorService;
+    @Mock
+    private RuleConfigService ruleConfigService;
 
     private ReservationService service;
 
@@ -75,8 +79,14 @@ class ReservationServiceUnitTest {
 
     @BeforeEach
     void setUp() {
+        // 规则配置桩成默认值：本文件验证业务规则本身，配置中心的生效性由 RuleApiTest 覆盖
+        when(ruleConfigService.checkInBeforeMin()).thenReturn(BizConstants.CHECK_IN_BEFORE_MIN);
+        when(ruleConfigService.checkInAfterMin()).thenReturn(BizConstants.CHECK_IN_AFTER_MIN);
+        when(ruleConfigService.advanceDays()).thenReturn(BizConstants.ADVANCE_DAYS);
+        when(ruleConfigService.defaultDuration()).thenReturn(BizConstants.DEFAULT_DURATION);
+        when(ruleConfigService.allowedDurations()).thenReturn(BizConstants.ALLOWED_DURATIONS);
         service = new ReservationService(reservationRepository, reservationSlotRepository,
-                seatRepository, userRepository, floorService);
+                seatRepository, userRepository, floorService, ruleConfigService);
     }
 
     private Seat availableSeat() {

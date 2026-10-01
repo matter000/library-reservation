@@ -49,6 +49,8 @@ public class ReservationService {
 
     private final FloorService floorService;
 
+    private final RuleConfigService ruleConfigService;
+
     /**
      * 提交预约（DESIGN §4.3-C1 七步校验）。
      *
@@ -67,7 +69,7 @@ public class ReservationService {
         Long seatId = request.getSeatId();
         LocalDate date = request.getDate();
         Integer startSlot = request.getStartSlot();
-        Integer duration = (request.getDuration() == null) ? BizConstants.DEFAULT_DURATION : request.getDuration();
+        Integer duration = (request.getDuration() == null) ? ruleConfigService.defaultDuration() : request.getDuration();
 
         // ---------- 第 0 步：参数基本校验 ----------
         if (seatId == null) {
@@ -91,9 +93,10 @@ public class ReservationService {
             throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED, "该楼层暂不开放，请选择其他楼层");
         }
 
-        // ---------- 第 2 步：日期在 [今天, 今天+6] ----------
-        if (date.isBefore(today) || date.isAfter(today.plusDays(BizConstants.ADVANCE_DAYS - 1L))) {
-            throw new BusinessException(ErrorCode.PARAM_ERROR, "只能预约今天起 7 天内的座位");
+        // ---------- 第 2 步：日期在 [今天, 今天 + advance-days - 1] ----------
+        int advanceDays = ruleConfigService.advanceDays();
+        if (date.isBefore(today) || date.isAfter(today.plusDays(advanceDays - 1L))) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "只能预约今天起 " + advanceDays + " 天内的座位");
         }
 
         // ---------- 第 3 步：时段在 8~22 且不跨天 ----------
@@ -101,9 +104,11 @@ public class ReservationService {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "预约时段超出开放时间（08:00-22:00）");
         }
 
-        // ---------- 第 4 步：时长 ∈ {1,2,3,4} ----------
-        if (!BizConstants.validDuration(duration)) {
-            throw new BusinessException(ErrorCode.PARAM_ERROR, "时长只能选择 1/2/3/4 小时");
+        // ---------- 第 4 步：时长 ∈ 配置的可选值（默认 1/2/3/4 小时） ----------
+        List<Integer> allowedDurations = ruleConfigService.allowedDurations();
+        if (!allowedDurations.contains(duration)) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "时长只能选择 "
+                    + String.join("/", allowedDurations.stream().map(String::valueOf).toList()) + " 小时");
         }
 
         // ---------- 第 5 步：今天时起始时段未过期 ----------
@@ -298,8 +303,8 @@ public class ReservationService {
         }
 
         LocalDateTime start = BizConstants.slotStart(reservation.getReserveDate(), reservation.getStartSlot());
-        LocalDateTime openAt = start.minusMinutes(BizConstants.CHECK_IN_BEFORE_MIN);
-        LocalDateTime closeAt = start.plusMinutes(BizConstants.CHECK_IN_AFTER_MIN);
+        LocalDateTime openAt = start.minusMinutes(ruleConfigService.checkInBeforeMin());
+        LocalDateTime closeAt = start.plusMinutes(ruleConfigService.checkInAfterMin());
         if (now.isBefore(openAt)) {
             throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED,
                     "未到签到时间，" + openAt.format(HM_FORMATTER) + " 后可签到");
@@ -370,8 +375,8 @@ public class ReservationService {
         LocalDateTime now = LocalDateTime.now();
         ReservationStatus status = reservation.getStatus();
         LocalDateTime start = BizConstants.slotStart(reservation.getReserveDate(), reservation.getStartSlot());
-        LocalDateTime openAt = start.minusMinutes(BizConstants.CHECK_IN_BEFORE_MIN);
-        LocalDateTime closeAt = start.plusMinutes(BizConstants.CHECK_IN_AFTER_MIN);
+        LocalDateTime openAt = start.minusMinutes(ruleConfigService.checkInBeforeMin());
+        LocalDateTime closeAt = start.plusMinutes(ruleConfigService.checkInAfterMin());
 
         boolean canCancel = status == ReservationStatus.CONFIRMED && now.isBefore(start);
         boolean canCheckIn = status == ReservationStatus.CONFIRMED
