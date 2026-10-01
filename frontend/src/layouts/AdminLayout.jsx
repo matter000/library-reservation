@@ -6,6 +6,7 @@ import {
   DatabaseOutlined,
   LogoutOutlined,
   ProfileOutlined,
+  SettingOutlined,
   TableOutlined,
   TeamOutlined,
 } from '@ant-design/icons';
@@ -20,6 +21,7 @@ const MENU_ITEMS = [
   { key: '/admin/usage', icon: <AppstoreOutlined />, label: '使用情况' },
   { key: '/admin/reservations', icon: <ProfileOutlined />, label: '预约记录' },
   { key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' },
+  { key: '/admin/rules', icon: <SettingOutlined />, label: '规则配置' },
 ];
 
 /**
