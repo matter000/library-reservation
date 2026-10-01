@@ -3,6 +3,8 @@ import {
   ADVANCE_DAYS,
   SLOT_INDEX_MAX,
   SLOT_INDEX_MIN,
+  SLOT_MINUTES,
+  SLOTS_PER_HOUR,
 } from '../constants';
 
 /** 日期格式。 */
@@ -25,7 +27,20 @@ export function getBookableDates(advanceDays = ADVANCE_DAYS) {
 }
 
 /**
- * 时段标签，如 14:00-15:00。
+ * 时段序号 → 时间文本（30 分钟一格，slot = (hour*60+minute)/30）。
+ *
+ * @param {number} slotIndex 时段序号
+ * @returns {string} HH:mm
+ */
+export function slotText(slotIndex) {
+  const minutes = slotIndex * SLOT_MINUTES;
+  const hh = String(Math.floor(minutes / 60) % 24).padStart(2, '0');
+  const mm = String(minutes % 60).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+/**
+ * 时段标签，如 14:00-14:30。
  *
  * @param {number} slotIndex 时段序号
  * @returns {string} 标签
@@ -41,40 +56,42 @@ export function slotLabel(slotIndex) {
  * @returns {string} 时间文本
  */
 export function slotStartLabel(slotIndex) {
-  return `${String(slotIndex).padStart(2, '0')}:00`;
+  return slotText(slotIndex);
 }
 
 /**
  * 预约区间文本，如 14:00-16:00。
+ *
+ * <p>duration 是<b>小时</b>（用户可选时长的语义），必须先换算成格数再相加；
+ * 后端 BizConstants.rangeLabel 同源，两端不得各写一份算法。
  *
  * @param {number} startSlot 起始时段
  * @param {number} duration 时长（小时）
  * @returns {string} 区间文本
  */
 export function buildTimeRange(startSlot, duration) {
-  const start = String(startSlot).padStart(2, '0');
-  const end = String(startSlot + duration).padStart(2, '0');
-  return `${start}:00-${end}:00`;
+  return `${slotText(startSlot)}-${slotText(startSlot + duration * SLOTS_PER_HOUR)}`;
 }
 
 /**
- * 当前所处时段序号（收敛到 8~21）。
+ * 当前所处时段序号（收敛到合法区间）。
  *
  * @returns {number} 时段序号
  */
 export function nowSlot() {
-  const hour = dayjs().hour();
-  if (hour < SLOT_INDEX_MIN) {
+  const now = dayjs();
+  const slot = Math.floor((now.hour() * 60 + now.minute()) / SLOT_MINUTES);
+  if (slot < SLOT_INDEX_MIN) {
     return SLOT_INDEX_MIN;
   }
-  if (hour > SLOT_INDEX_MAX) {
+  if (slot > SLOT_INDEX_MAX) {
     return SLOT_INDEX_MAX;
   }
-  return hour;
+  return slot;
 }
 
 /**
- * 生成 14 个时段的静态选项（接口不可用时的兜底）。
+ * 生成默认窗口的静态时段选项（接口不可用时的兜底）。
  *
  * @returns {Array<{slotIndex:number,label:string}>} 时段选项
  */
@@ -85,7 +102,7 @@ export function buildFallbackSlots() {
       slotIndex: i,
       label: slotLabel(i),
       start: slotStartLabel(i),
-      end: slotStartLabel(i + 1),
+      end: slotText(i + 1),
       bookable: true,
       isCurrent: i === nowSlot(),
     });

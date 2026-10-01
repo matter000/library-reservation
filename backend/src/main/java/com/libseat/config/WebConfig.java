@@ -121,7 +121,8 @@ public class WebConfig implements WebMvcConfigurer {
                 "/admin/users",
                 "/admin/rules",
                 "/admin/zones",
-                "/admin/tables"
+                "/admin/tables",
+                "/admin/open"
         })
         public String forward() {
             return "forward:/index.html";

@@ -63,9 +63,18 @@ export const SEAT_BASE_STATUS_META = {
   DISABLED: { text: '已停用', color: 'default' },
 };
 
-/** 开放时间与时段（后端 BizConstants：08:00-22:00，粒度 1 小时，slot_index 8~21）。 */
-export const SLOT_INDEX_MIN = 8;
-export const SLOT_INDEX_MAX = 21;
+/** 开放时间与时段（后端 BizConstants：08:00-22:00，V2 起内部格长 30 分钟）。 */
+/** 每个时段的分钟数。 */
+export const SLOT_MINUTES = 30;
+
+/** 每小时格数。 */
+export const SLOTS_PER_HOUR = 60 / SLOT_MINUTES;
+
+/** 时段序号下界（08:00）。 */
+export const SLOT_INDEX_MIN = 8 * SLOTS_PER_HOUR;
+
+/** 时段序号上界（21:30，最后一格的起始）。 */
+export const SLOT_INDEX_MAX = 22 * SLOTS_PER_HOUR - 1;
 
 /** 可选时长（★ 仅作为规则中心不可用时的兜底，真实值取自 /api/config/booking）。 */
 export const DURATION_OPTIONS = [
@@ -106,6 +115,13 @@ export const DISCUSS_OPTIONS = [
   { value: 'NO', label: '禁止交谈' },
   { value: 'LOW', label: '低声交流' },
   { value: 'YES', label: '允许讨论' },
+];
+
+/** 日型（与后端 DayType 对齐）。 */
+export const DAY_TYPE_OPTIONS = [
+  { value: 'WORKDAY', label: '工作日' },
+  { value: 'WEEKEND', label: '周末' },
+  { value: 'HOLIDAY', label: '节假日' },
 ];
 
 /** localStorage key。 */
