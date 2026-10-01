@@ -46,6 +46,58 @@ public class SeatDTO {
 
         /** 派生展示态：FREE / RESERVED / IN_USE / UNAVAILABLE。 */
         private String displayStatus;
+
+        /** 所属分区 ID。 */
+        private Long zoneId;
+
+        /** 所属桌位 ID（非组队区为 null）。 */
+        private Long tableId;
+    }
+
+    /**
+     * 分区在「当前用户 + 当前时刻」下的有效规则。
+     *
+     * <p>这些值全部由服务端算好，前端只负责展示与置灰：
+     * 若前端自己再判一遍，就会出现「界面允许点、后端拒绝」的口径分裂（S0 门槛已踩过一次）。
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ZoneRuleVO {
+
+        /** 分区 ID。 */
+        private Long zoneId;
+
+        /** 分区名称。 */
+        private String zoneName;
+
+        /** 分区类型文案。 */
+        private String zoneTypeText;
+
+        /** 当前角色是否可预约本区（eligible_roles）。 */
+        private Boolean eligible;
+
+        /** 不可预约时的提示文案。 */
+        private String ineligibleReason;
+
+        /** 有效单次时长上限（分钟）。 */
+        private Integer maxDurationMin;
+
+        /** 有效可提前预约天数。 */
+        private Integer advanceDays;
+
+        /** 是否允许暂离。 */
+        private Boolean leaveAllowed;
+
+        /** 单次暂离封顶（分钟）。 */
+        private Integer leaveMaxMin;
+
+        /** 是否仅整组预约。 */
+        private Boolean groupRequired;
+
+        /** 当前时段是否落在高峰窗口。 */
+        private Boolean peakFlag;
     }
 
     /**
@@ -105,6 +157,15 @@ public class SeatDTO {
 
         /** 时段标签。 */
         private String slotLabel;
+
+        /** 本次过滤的分区 ID，null 表示整层。 */
+        private Long zoneId;
+
+        /** 本次过滤的分区名称。 */
+        private String zoneName;
+
+        /** 该分区对当前用户的有效规则（含可见性与可预约性判定结果）。 */
+        private ZoneRuleVO zoneRules;
 
         /** 最大行号。 */
         private Integer maxRow;

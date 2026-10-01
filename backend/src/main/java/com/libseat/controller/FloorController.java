@@ -5,6 +5,7 @@ import com.libseat.dto.FloorDTO;
 import com.libseat.dto.SeatDTO;
 import com.libseat.service.FloorService;
 import com.libseat.service.RuleConfigService;
+import com.libseat.security.UserContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -61,17 +62,21 @@ public class FloorController {
     /**
      * ★ 座位平面图（响应不含任何占用人身份）。
      *
+     * <p>{@code zoneId} 可选：给定则只返回该分区座位，并附带该分区对当前角色的有效规则。
+     *
      * @param floorId 楼层 ID
      * @param date    日期，默认今天
      * @param slot    时段序号，默认当前时段
+     * @param zoneId  分区 ID，省略表示整层
      * @return 平面图
      */
     @GetMapping("/seats/map")
     public Result<SeatDTO.SeatMapVO> seatMap(
             @RequestParam Long floorId,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate date,
-            @RequestParam(required = false) Integer slot) {
-        return Result.ok(floorService.getSeatMap(floorId, date, slot));
+            @RequestParam(required = false) Integer slot,
+            @RequestParam(required = false) Long zoneId) {
+        return Result.ok(floorService.getSeatMap(floorId, date, slot, zoneId, UserContext.getRole()));
     }
 
     /**

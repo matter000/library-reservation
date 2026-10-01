@@ -256,7 +256,9 @@ class SecurityApiTest extends ApiTestBase {
             assertFalse(raw.contains(leak), "平面图响应泄漏了字段/内容：" + leak + " → " + raw.substring(0, Math.min(400, raw.length())));
         }
 
-        Set<String> allowed = Set.of("seatId", "seatNo", "rowNo", "colNo", "zone", "baseStatus", "displayStatus");
+        // zoneId / tableId 是空间归属属性（分区规则与桌位聚合所需），不含任何身份信息
+        Set<String> allowed = Set.of("seatId", "seatNo", "rowNo", "colNo", "zone", "baseStatus",
+                "displayStatus", "zoneId", "tableId");
         for (JsonNode seatNode : data(result).path("seats")) {
             Set<String> fields = new java.util.HashSet<>();
             seatNode.fieldNames().forEachRemaining(fields::add);

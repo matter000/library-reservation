@@ -97,6 +97,14 @@ public interface SeatRepository extends JpaRepository<Seat, Long>, JpaSpecificat
     List<Seat> findByZoneId(Long zoneId);
 
     /**
+     * 按行列排序查询某分区座位（平面图分区视图）。
+     *
+     * @param zoneId 分区 ID
+     * @return 座位列表
+     */
+    List<Seat> findByZoneIdOrderByRowNoAscColNoAsc(Long zoneId);
+
+    /**
      * 查询某楼层全部座位（分区回填与按分区聚合用）。
      *
      * @param floorId 楼层 ID

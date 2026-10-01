@@ -9,6 +9,7 @@ import com.libseat.entity.Reservation;
 import com.libseat.entity.ReservationSlot;
 import com.libseat.entity.Seat;
 import com.libseat.enums.ReservationStatus;
+import com.libseat.enums.UserRole;
 import com.libseat.repository.ReservationRepository;
 import com.libseat.repository.ReservationSlotRepository;
 import com.libseat.repository.SeatRepository;
@@ -44,6 +45,8 @@ public class ReservationService {
     private final ReservationSlotRepository reservationSlotRepository;
 
     private final SeatRepository seatRepository;
+
+    private final com.libseat.repository.ZoneRepository zoneRepository;
 
     private final UserRepository userRepository;
 
@@ -95,6 +98,27 @@ public class ReservationService {
             throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED, "该楼层暂不开放，请选择其他楼层");
         }
 
+        // ---------- 第 1b 步：分区资格与分区规则 ----------
+        // 资格判定必须在服务端：前端隐藏入口只是体验层，直接打接口就能绕过
+        com.libseat.entity.Zone seatZone = seat.getZoneId() == null ? null
+                : zoneRepository.findById(seat.getZoneId()).orElse(null);
+        if (seatZone != null) {
+            UserRole role = userRepository.findById(userId)
+                    .map(com.libseat.entity.User::getRole).orElse(null);
+            if (!ZoneService.containsRole(seatZone.getVisibleRoles(), role)
+                    || !ZoneService.containsRole(seatZone.getEligibleRoles(), role)) {
+                // 两种拒绝都指向同一事实「这个区不对你开放」；文案统一并点名分区，
+                // 因为用户是拿着 seatId 直接打接口的，说「不可见」会让人对着看得见的座位发懵
+                throw new BusinessException(ErrorCode.ROLE_NOT_ELIGIBLE,
+                        seatZone.getName() + " 仅对 "
+                                + seatZone.getEligibleRoles().replace(",", "、") + " 开放");
+            }
+            if (Boolean.TRUE.equals(seatZone.getGroupRequired())) {
+                throw new BusinessException(ErrorCode.GROUP_ONLY_ZONE,
+                        seatZone.getName() + " 仅支持整组预约");
+            }
+        }
+
         // ---------- 第 2 步：日期在 [今天, 今天 + advance-days - 1] ----------
         int advanceDays = ruleConfigService.advanceDays();
         if (date.isBefore(today) || date.isAfter(today.plusDays(advanceDays - 1L))) {
@@ -123,6 +147,17 @@ public class ReservationService {
         if (!allowedDurations.contains(duration)) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "时长只能选择 "
                     + String.join("/", allowedDurations.stream().map(String::valueOf).toList()) + " 小时");
+        }
+
+        // ---------- 第 4b 步：分区时长上限 ----------
+        // 分区上限以分钟表达，换算成小时再比较，避免「240 分钟 vs 4 小时」两套口径各写一遍
+        if (seatZone != null && seatZone.getMaxDurationMin() != null) {
+            int zoneMaxHours = Math.max(1, seatZone.getMaxDurationMin() / 60);
+            if (duration > zoneMaxHours) {
+                throw new BusinessException(ErrorCode.PARAM_ERROR,
+                        seatZone.getName() + " 单次最长 " + seatZone.getMaxDurationMin()
+                                + " 分钟，本次 " + duration + " 小时超限");
+            }
         }
 
         // ---------- 第 5 步：今天时起始时段未过期 ----------

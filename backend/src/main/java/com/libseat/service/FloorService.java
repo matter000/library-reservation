@@ -6,13 +6,17 @@ import com.libseat.common.ErrorCode;
 import com.libseat.dto.FloorDTO;
 import com.libseat.dto.SeatDTO;
 import com.libseat.entity.Floor;
+import com.libseat.entity.PeakWindow;
 import com.libseat.entity.Seat;
+import com.libseat.entity.Zone;
 import com.libseat.enums.FloorStatus;
 import com.libseat.enums.ReservationStatus;
 import com.libseat.enums.SeatDisplayStatus;
 import com.libseat.enums.SeatStatus;
+import com.libseat.enums.UserRole;
 import com.libseat.repository.FloorRepository;
 import com.libseat.repository.SeatRepository;
+import com.libseat.repository.ZoneRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +38,8 @@ public class FloorService {
     private final FloorRepository floorRepository;
 
     private final SeatRepository seatRepository;
+
+    private final ZoneRepository zoneRepository;
 
     private final OccupancyService occupancyService;
 
@@ -88,14 +94,28 @@ public class FloorService {
      * @return 平面图 VO
      */
     @Transactional(readOnly = true)
-    public SeatDTO.SeatMapVO getSeatMap(Long floorId, LocalDate date, Integer slot) {
+    public SeatDTO.SeatMapVO getSeatMap(Long floorId, LocalDate date, Integer slot, Long zoneId, UserRole role) {
         Floor floor = requireFloor(floorId);
         LocalDate targetDate = (date == null) ? LocalDate.now() : date;
         int targetSlot = (slot == null) ? currentSlot() : BizConstants.clampToSlotRange(slot);
         // 闭馆（日型整体闭馆或日历临时闭馆）与楼层关闭同样处理：整层座位转为不可用
         boolean floorClosed = floor.getStatus() == FloorStatus.CLOSED || openRuleService.isClosed(targetDate);
 
-        List<Seat> seats = seatRepository.findByFloorIdOrderByRowNoAscColNoAsc(floorId);
+        List<Seat> seats = (zoneId == null)
+                ? seatRepository.findByFloorIdOrderByRowNoAscColNoAsc(floorId)
+                : seatRepository.findByZoneIdOrderByRowNoAscColNoAsc(zoneId);
+        Zone zone = null;
+        if (zoneId != null) {
+            zone = zoneRepository.findById(zoneId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "分区不存在"));
+            if (!zone.getFloorId().equals(floorId)) {
+                throw new BusinessException(ErrorCode.PARAM_ERROR, "分区不属于该楼层");
+            }
+            // 不可见分区整体当作关闭处理：不返回座位，避免用平面图反推专区分布
+            if (!ZoneService.containsRole(zone.getVisibleRoles(), role)) {
+                floorClosed = true;
+            }
+        }
         Map<Long, ReservationStatus> occupiedMap = occupancyService.getOccupiedMap(targetDate, targetSlot);
 
         int maxRow = 0;
@@ -123,6 +143,8 @@ public class FloorService {
                     .rowNo(seat.getRowNo())
                     .colNo(seat.getColNo())
                     .zone(seat.getZone())
+                    .zoneId(seat.getZoneId())
+                    .tableId(seat.getTableId())
                     .baseStatus(seat.getStatus() == null ? SeatStatus.AVAILABLE.name() : seat.getStatus().name())
                     .displayStatus(display.name())
                     .build());
@@ -148,6 +170,9 @@ public class FloorService {
                 .date(BizConstants.formatDate(targetDate))
                 .slotIndex(targetSlot)
                 .slotLabel(BizConstants.slotLabel(targetSlot))
+                .zoneId(zone == null ? null : zone.getId())
+                .zoneName(zone == null ? null : zone.getName())
+                .zoneRules(zone == null ? null : buildZoneRules(zone, targetDate, targetSlot, role))
                 .maxRow(maxRow)
                 .maxCol(maxCol)
                 .seats(items)
@@ -156,7 +181,36 @@ public class FloorService {
     }
 
     /**
-     * 时段选项（固定 14 项 8~21）。
+     * 组装分区有效规则（服务端单点判定，前端不再重复实现）。
+     */
+    private SeatDTO.ZoneRuleVO buildZoneRules(Zone zone, LocalDate date, int slot, UserRole role) {
+        boolean eligible = ZoneService.containsRole(zone.getEligibleRoles(), role);
+        OpenRuleService.DayRule day = openRuleService.resolve(date);
+        PeakWindow peak = day.peakOf(slot);
+        Integer maxMin = zone.getMaxDurationMin();
+        if (peak != null && peak.getMaxDurationMin() != null
+                && (maxMin == null || peak.getMaxDurationMin() < maxMin)) {
+            maxMin = peak.getMaxDurationMin();
+        }
+        return SeatDTO.ZoneRuleVO.builder()
+                .zoneId(zone.getId())
+                .zoneName(zone.getName())
+                .zoneTypeText(zone.getZoneType().getText())
+                .eligible(eligible)
+                .ineligibleReason(eligible ? null
+                        : zone.getName() + " 仅对 "
+                        + zone.getEligibleRoles().replace(",", "、") + " 开放，当前角色不可预约")
+                .maxDurationMin(maxMin)
+                .advanceDays(zone.getAdvanceDays())
+                .leaveAllowed(zone.getAllowLeave())
+                .leaveMaxMin(zone.getLeaveMaxMin())
+                .groupRequired(zone.getGroupRequired())
+                .peakFlag(peak != null)
+                .build();
+    }
+
+    /**
+     * 时段选项（按当日开放窗口返回 30 分钟格）。
      *
      * @param date 日期，为空取今天
      * @return 时段选项列表

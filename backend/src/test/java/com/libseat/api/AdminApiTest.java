@@ -348,7 +348,8 @@ class AdminApiTest extends ApiTestBase {
     @Test
     @DisplayName("【使用情况】only=occupied / only=free 过滤与统计自洽")
     void usageFilters() throws Exception {
-        long seat = seatId(floor1, "A41");
+        // 取静音自习区的座位：A41 起属「研讨协作区」，该区 group_required=true，散客预约会被 4102 拒
+        long seat = seatId(floor1, "A11");
         reserveOk(newUser(), seat, dw(3), slot(10), 2);
 
         JsonNode all = data(exec(get("/api/admin/usage")
