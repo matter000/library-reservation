@@ -8,6 +8,7 @@ export const SEAT_DISPLAY_STATUS = {
   FREE: 'FREE',
   RESERVED: 'RESERVED',
   IN_USE: 'IN_USE',
+  ON_LEAVE: 'ON_LEAVE',
   UNAVAILABLE: 'UNAVAILABLE',
 };
 
@@ -16,11 +17,13 @@ export const SEAT_STATUS_META = {
   FREE: { text: '空闲', color: '#52c41a', clickable: true, marker: '' },
   RESERVED: { text: '已预约', color: '#faad14', clickable: false, marker: '●' },
   IN_USE: { text: '使用中', color: '#f5222d', clickable: false, marker: '●●' },
+  // 暂离仍算占用，只是人不在座位上；⌛ 是颜色之外的第二重标识（色盲可用）
+  ON_LEAVE: { text: '暂离中', color: '#1677ff', clickable: false, marker: '⌛' },
   UNAVAILABLE: { text: '不可用', color: '#bfbfbf', clickable: false, marker: '🔧' },
 };
 
 /** 图例顺序（常驻图例条按此顺序展示）。 */
-export const SEAT_LEGEND_ORDER = ['FREE', 'RESERVED', 'IN_USE', 'UNAVAILABLE'];
+export const SEAT_LEGEND_ORDER = ['FREE', 'RESERVED', 'IN_USE', 'ON_LEAVE', 'UNAVAILABLE'];
 
 /** 预约状态（后端 ReservationStatus）。 */
 export const RESERVATION_STATUS = {

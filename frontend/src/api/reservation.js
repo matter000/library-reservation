@@ -39,3 +39,13 @@ export function cancelReservation(id) {
 export function checkInReservation(id) {
   return request.post(`/reservations/${id}/check-in`);
 }
+
+/**
+ * 主动结束使用（V2）：提前释放座位，剩余使用时间不顺延退还。
+ *
+ * @param {number|string} id 预约 ID
+ * @returns {Promise<object>} 操作结果
+ */
+export function finishReservation(id) {
+  return request.post(`/reservations/${id}/finish`);
+}

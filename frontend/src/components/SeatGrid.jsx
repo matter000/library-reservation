@@ -60,6 +60,10 @@ export default function SeatGrid({ seats, maxRow, maxCol, selectedSeatId, onSele
             <span className="seat-cell-inner">
               <span className="seat-cell-no">{seat.seatNo}</span>
               {meta.marker ? <span className="seat-cell-marker">{meta.marker}</span> : null}
+              {/* 暂离把「预计返回」直接写进格子：文案优先于颜色（PRD §13.3），不能只靠 hover 才看到 */}
+              {seat.expectedReturnAt ? (
+                <span className="seat-cell-return">{seat.expectedReturnAt}</span>
+              ) : null}
             </span>
           );
 
@@ -69,7 +73,7 @@ export default function SeatGrid({ seats, maxRow, maxCol, selectedSeatId, onSele
               title={
                 clickable
                   ? `${seat.seatNo} · ${meta.text} · 点击预约`
-                  : `${seat.seatNo} · ${meta.text}`
+                  : `${seat.seatNo} · ${meta.text}${seat.expectedReturnAt ? ` · 预计 ${seat.expectedReturnAt} 返回` : ''}`
               }
             >
               {clickable ? (

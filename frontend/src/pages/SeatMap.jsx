@@ -352,6 +352,11 @@ export default function SeatMap() {
           <span className="stat-item">
             使用中<b style={{ color: '#f5222d' }}>{stats.inUse}</b>
           </span>
+          {stats.onLeave > 0 ? (
+            <span className="stat-item">
+              暂离中<b style={{ color: '#1677ff' }}>{stats.onLeave}</b>
+            </span>
+          ) : null}
           <span className="stat-item">
             不可用<b style={{ color: '#bfbfbf' }}>{stats.unavailable}</b>
           </span>

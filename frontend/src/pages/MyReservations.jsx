@@ -5,8 +5,11 @@ import {
   Card,
   Col,
   Empty,
+  Input,
+  Modal,
   Pagination,
   Row,
+  Select,
   Space,
   Tabs,
   Tag,
@@ -14,9 +17,12 @@ import {
   Typography,
   message,
 } from 'antd';
-import { CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import {
+  CheckCircleOutlined, CloseCircleOutlined, HourglassOutlined, LogoutOutlined,
+} from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { cancelReservation, checkInReservation, fetchMyReservations } from '../api/reservation';
+import { cancelReservation, checkInReservation, fetchMyReservations, finishReservation } from '../api/reservation';
+import { fetchLeaveReasons, returnLeave, startLeave } from '../api/leave';
 import StatusTag from '../components/StatusTag';
 import PageLoading from '../components/PageLoading';
 import { RESERVATION_STATUS } from '../constants';
@@ -32,6 +38,25 @@ const TABS = [
 
 /** 每页条数（与栅格每行 2 张卡片对齐，避免末行残缺）。 */
 const PAGE_SIZE = 12;
+
+/**
+ * 带说明按钮的包裹层。
+ *
+ * <p>★ 浏览器不会把鼠标事件派发给 disabled 的 button，Tooltip 直接挂在按钮上时
+ * 「置灰」与「给出原因」只能实现前一半；套一层非禁用 span 才能让说明弹出来。
+ *
+ * @param {object} props props
+ * @param {string} props.tip 说明文案
+ * @param {JSX.Element} props.children 按钮
+ * @returns {JSX.Element} 包裹后的按钮
+ */
+function HintedButton({ tip, children }) {
+  return (
+    <Tooltip title={tip}>
+      <span style={{ display: 'inline-block' }}>{children}</span>
+    </Tooltip>
+  );
+}
 
 /**
  * 我的预约页。
@@ -50,6 +75,11 @@ export default function MyReservations() {
   const [list, setList] = useState([]);
   const [error, setError] = useState('');
   const [actingId, setActingId] = useState(null);
+  const [leaveItem, setLeaveItem] = useState(null);
+  const [reasons, setReasons] = useState([]);
+  const [reasonCode, setReasonCode] = useState(null);
+  const [leaveNote, setLeaveNote] = useState('');
+  const [leaveSubmitting, setLeaveSubmitting] = useState(false);
 
   const load = useCallback(async (tab, currentPage) => {
     setLoading(true);
@@ -104,6 +134,90 @@ export default function MyReservations() {
     } finally {
       setActingId(null);
     }
+  };
+
+  /** 暂离剩余文案：超时就写超期，不粉饰成 0 分钟。 */
+  const leaveRemainText = (item) => (item.leaveRemainMin >= 0
+    ? `剩 ${item.leaveRemainMin} 分钟`
+    : `已超期 ${-item.leaveRemainMin} 分钟`);
+
+  /** 打开登记暂离弹窗：原因字典是配置，拉一次就够。 */
+  const openLeaveModal = async (item) => {
+    setLeaveItem(item);
+    setReasonCode(null);
+    setLeaveNote('');
+    if (reasons.length === 0) {
+      try {
+        const list = await fetchLeaveReasons();
+        setReasons(Array.isArray(list) ? list : []);
+      } catch (e) {
+        // 错误提示由拦截器统一弹出
+      }
+    }
+  };
+
+  /** 提交暂离。 */
+  const submitLeave = async () => {
+    if (!reasonCode) {
+      message.warning('请选择暂离原因');
+      return;
+    }
+    const reason = reasons.find((item) => item.code === reasonCode);
+    if (reason && reason.needNote && !leaveNote.trim()) {
+      message.warning(`「${reason.name}」需要填写事由`);
+      return;
+    }
+    setLeaveSubmitting(true);
+    try {
+      const vo = await startLeave({
+        reservationId: leaveItem.reservationId,
+        reasonCode,
+        note: leaveNote.trim() || undefined,
+      });
+      message.success(`已登记暂离，请在 ${vo.plannedEndTime} 前返回；剩余使用时间不顺延`);
+      setLeaveItem(null);
+      await load(activeTab, page);
+    } catch (e) {
+      // 校验失败（如次数已用完）由拦截器提示，保留弹窗便于换原因重试
+    } finally {
+      setLeaveSubmitting(false);
+    }
+  };
+
+  /** 我已返回：座位回到使用中，预约结束时刻不变。 */
+  const handleReturn = async (item) => {
+    setActingId(item.reservationId);
+    try {
+      const vo = await returnLeave(item.activeLeaveId);
+      message.success(`已返回座位，您还有到 ${vo.reservationEndTime} 的使用时间`);
+      await load(activeTab, page);
+    } catch (e) {
+      // 提示由拦截器弹出
+    } finally {
+      setActingId(null);
+    }
+  };
+
+  /** 主动结束使用：释放不可撤销，先确认。 */
+  const handleFinish = (item) => {
+    Modal.confirm({
+      title: '提前结束使用？',
+      content: `座位 ${item.seatNo} 将立即释放给他人，本次不计爽约。原时段 ${item.timeRange} 的剩余时间不顺延。`,
+      okText: '结束使用',
+      cancelText: '再想想',
+      onOk: async () => {
+        setActingId(item.reservationId);
+        try {
+          const result = await finishReservation(item.reservationId);
+          message.success(`已结束，连续主动结束 ${result.activeFinishStreak} 次`);
+          await load(activeTab, page);
+        } catch (e) {
+          // 提示由拦截器弹出
+        } finally {
+          setActingId(null);
+        }
+      },
+    });
   };
 
   /** 渲染单张预约卡片。 */
@@ -165,7 +279,7 @@ export default function MyReservations() {
 
           <div style={{ marginTop: 12 }}>
             <Space>
-              <Tooltip title={item.canCancel ? '' : item.checkInWindowText || '当前不可取消'}>
+              <HintedButton tip={item.canCancel ? '' : item.checkInWindowText || '当前不可取消'}>
                 <Button
                   danger
                   size="small"
@@ -176,8 +290,8 @@ export default function MyReservations() {
                 >
                   取消预约
                 </Button>
-              </Tooltip>
-              <Tooltip title={item.canCheckIn ? item.checkInWindowText : item.checkInWindowText || '不在签到窗口内'}>
+              </HintedButton>
+              <HintedButton tip={item.checkInWindowText || '不在签到窗口内'}>
                 <Button
                   type="primary"
                   size="small"
@@ -188,10 +302,46 @@ export default function MyReservations() {
                 >
                   签到
                 </Button>
-              </Tooltip>
-              {item.canCheckIn === false && item.status === 'CONFIRMED' ? (
-                <Tag>{item.checkInWindowText}</Tag>
+              </HintedButton>
+              {item.expectedReturnAt ? (
+                <Tag color="blue">
+                  {`暂离中 · 预计 ${item.expectedReturnAt} 返回（${leaveRemainText(item)}）`}
+                </Tag>
               ) : null}
+              <HintedButton tip={item.canLeave ? '离座前登记，座位继续为您保留' : item.leaveDisabledReason || '当前不可暂离'}>
+                <Button
+                  size="small"
+                  icon={<HourglassOutlined />}
+                  disabled={!item.canLeave}
+                  onClick={() => openLeaveModal(item)}
+                >
+                  登记暂离
+                </Button>
+              </HintedButton>
+              <HintedButton tip={item.canReturn ? '回到座位后点这里，剩余使用时间不顺延' : item.leaveDisabledReason || '当前不在暂离中'}>
+                <Button
+                  size="small"
+                  type="primary"
+                  ghost
+                  icon={<CheckCircleOutlined />}
+                  disabled={!item.canReturn}
+                  loading={actingId === item.reservationId}
+                  onClick={() => handleReturn(item)}
+                >
+                  我已返回
+                </Button>
+              </HintedButton>
+              <HintedButton tip={item.canFinish ? '用不完的时间提前释放给他人' : item.leaveDisabledReason || '当前不可结束'}>
+                <Button
+                  size="small"
+                  icon={<LogoutOutlined />}
+                  disabled={!item.canFinish}
+                  loading={actingId === item.reservationId}
+                  onClick={() => handleFinish(item)}
+                >
+                  结束使用
+                </Button>
+              </HintedButton>
             </Space>
           </div>
         </Card>
@@ -243,6 +393,44 @@ export default function MyReservations() {
           ),
         }))}
       />
+
+      <Modal
+        open={Boolean(leaveItem)}
+        title={leaveItem ? `登记暂离 · ${leaveItem.seatNo}（${leaveItem.timeRange}）` : '登记暂离'}
+        okText="确认暂离"
+        cancelText="取消"
+        confirmLoading={leaveSubmitting}
+        onOk={submitLeave}
+        onCancel={() => setLeaveItem(null)}
+        destroyOnClose
+      >
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="暂离期间座位仍归您使用，但剩余使用时间不会顺延"
+          description="超过「应返回时刻」仍未返回将记为违规并释放座位。"
+        />
+        <Select
+          style={{ width: '100%' }}
+          placeholder="选择暂离原因"
+          value={reasonCode}
+          onChange={setReasonCode}
+          options={reasons.map((item) => ({
+            value: item.code,
+            label: `${item.name}（最长 ${item.maxMin} 分钟${item.needNote ? ' · 需填事由' : ''}）`,
+          }))}
+        />
+        <Input.TextArea
+          style={{ marginTop: 12 }}
+          rows={2}
+          maxLength={100}
+          showCount
+          placeholder="事由（选填，标了「需填事由」的原因必填）"
+          value={leaveNote}
+          onChange={(e) => setLeaveNote(e.target.value)}
+        />
+      </Modal>
     </div>
   );
 }

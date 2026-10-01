@@ -61,6 +61,11 @@
   background: #f5222d;
 }
 
+/* 暂离中：蓝色 + ⌛，与「使用中」区分的是人在不在座，而不是是否占用 */
+.seat-swatch-on_leave {
+  background: #1677ff;
+}
+
 .seat-swatch-unavailable {
   background: #bfbfbf;
   background-image: repeating-linear-gradient(
@@ -145,6 +150,14 @@
   text-shadow: 0 0 2px rgba(255, 255, 255, 0.9);
 }
 
+/* 暂离格内的「预计返回」时刻：不依赖 hover 也能读到（PRD §13.3） */
+.seat-cell-return {
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
 .seat-cell-free {
   background: #52c41a;
 }
@@ -155,6 +168,11 @@
 
 .seat-cell-in_use {
   background: #f5222d;
+}
+
+.seat-cell-on_leave {
+  background: #1677ff;
+  border-style: dashed;
 }
 
 .seat-cell-unavailable {
