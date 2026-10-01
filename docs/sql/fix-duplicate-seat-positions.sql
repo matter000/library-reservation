@@ -1,0 +1,36 @@
+-- =====================================================================
+-- 遗留库重叠座位处置脚本（V5 建 uk_seat_pos 失败时使用）
+--
+-- 背景：V1 的 POST /api/admin/seats/batch 只校验 seat_no 唯一，不校验
+--   (floor_id, row_no, col_no) 占位，所以历史上会把新座位叠在已有座位上
+--   （回归实测：A01 / Z01 / Z488 同处 1 行 1 列）。
+--
+-- 本脚本**不删任何行**：把每个重叠组里 id 较大的座位顺延到该楼层底部的空行，
+-- 保留座位本身与其历史预约，只改坐标。跑完再重启让 V5 完成建索引。
+--
+-- 用法（H2 与 MySQL 8 通用；先跑 STEP 0 看有没有重叠，再决定是否执行 STEP 1）：
+-- =====================================================================
+
+-- STEP 0 · 体检：列出所有重叠的 (楼层, 行, 列)
+-- SELECT floor_id, row_no, col_no, COUNT(*) AS n,
+--        LISTAGG(id, ',') WITHIN GROUP (ORDER BY id) AS seat_ids   -- MySQL 用 GROUP_CONCAT(id)
+-- FROM t_seat
+-- GROUP BY floor_id, row_no, col_no
+-- HAVING COUNT(*) > 1;
+
+-- STEP 1 · 顺延：同组内 id 不是最小者，行号加到「该楼层最大行号 + 1」之后，
+--          列号改用组内序号，确保互不重复。
+-- WITH ranked AS (
+--     SELECT s.id,
+--            s.floor_id,
+--            ROW_NUMBER() OVER (PARTITION BY s.floor_id, s.row_no, s.col_no ORDER BY s.id) AS rn_in_group,
+--            (SELECT MAX(x.row_no) FROM t_seat x WHERE x.floor_id = s.floor_id) AS max_row
+--     FROM t_seat s
+-- )
+-- UPDATE t_seat
+-- SET row_no = (SELECT max_row + rn_in_group FROM ranked r WHERE r.id = t_seat.id),
+--     col_no = (SELECT rn_in_group    FROM ranked r WHERE r.id = t_seat.id),
+--     remark = COALESCE(remark, '') || ' | V5 去重顺延'
+-- WHERE id IN (SELECT id FROM ranked WHERE rn_in_group > 1);
+
+-- STEP 2 · 复核：STEP 0 应返回 0 行；随后重启应用，V5 应正常完成。

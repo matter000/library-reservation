@@ -71,6 +71,14 @@ public class Seat {
     @Column(name = "zone_id")
     private Long zoneId;
 
+    /**
+     * 所属桌位（组队预约的最小单位）。
+     *
+     * <p>非组队区（电子阅览、休闲阅览）不建模桌位，此处为 null。
+     */
+    @Column(name = "table_id")
+    private Long tableId;
+
     /** 基础状态。 */
     @Builder.Default
     @Enumerated(EnumType.STRING)

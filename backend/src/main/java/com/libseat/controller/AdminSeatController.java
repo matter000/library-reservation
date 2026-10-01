@@ -111,4 +111,15 @@ public class AdminSeatController {
     public Result<SeatDTO.SeatBatchResultVO> batch(@Valid @RequestBody SeatDTO.SeatBatchRequest request) {
         return Result.ok(adminSeatService.batch(request));
     }
+
+    /**
+     * ★ 批量生成冲突预览（不落库），返回将冲突的编号与坐标清单。
+     *
+     * @param request 批量请求
+     * @return 预览结果
+     */
+    @PostMapping("/seats/batch-preview")
+    public Result<SeatDTO.SeatBatchResultVO> batchPreview(@Valid @RequestBody SeatDTO.SeatBatchRequest request) {
+        return Result.ok(adminSeatService.previewBatch(request));
+    }
 }

@@ -64,12 +64,19 @@ class AdminApiTest extends ApiTestBase {
     }
 
     private JsonNode batch(long floorId, String prefix, int rows, int cols, int startNo) throws Exception {
+        return batch(floorId, prefix, rows, cols, startNo, 1, 1);
+    }
+
+    private JsonNode batch(long floorId, String prefix, int rows, int cols, int startNo,
+                           int rowFrom, int colFrom) throws Exception {
         Map<String, Object> body = new HashMap<>();
         body.put("floorId", floorId);
         body.put("prefix", prefix);
         body.put("rows", rows);
         body.put("cols", cols);
         body.put("startNo", startNo);
+        body.put("rowFrom", rowFrom);
+        body.put("colFrom", colFrom);
         MvcResult result = exec(post("/api/admin/seats/batch")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json(body))
@@ -188,7 +195,7 @@ class AdminApiTest extends ApiTestBase {
     // ==================== 批量生成 ====================
 
     @Test
-    @DisplayName("【批量生成】重复编号应跳过并正确计数（created / skipped / skippedSeatNos）")
+    @DisplayName("【批量生成】编号与坐标两类冲突都要跳过并分别列出（V1 只查编号，会叠座）")
     void batchCreate() throws Exception {
         long floorId = createFloor("QA 批量层", randomCode("B")).path("floorId").asLong();
 
@@ -205,9 +212,20 @@ class AdminApiTest extends ApiTestBase {
         second.path("skippedSeatNos").forEach(node -> skipped.add(node.asText()));
         assertEquals(List.of("Z01", "Z02", "Z03"), skipped, "skippedSeatNos 应列出被跳过的编号");
 
+        // ★ V1 缺陷点：换个起始编号就绕过编号校验，Z04 会被叠在 Z03 的 (1,3) 上。
+        //   现在坐标校验必须兜住它 —— 期望 created=0 而不是 1。
         JsonNode third = batch(floorId, "Z", 1, 3, 2);
-        assertEquals(1, third.path("created").asInt(), "从 2 开始应只新增 Z04");
-        assertEquals(2, third.path("skipped").asInt());
+        assertEquals(0, third.path("created").asInt(),
+                "Z02/Z03 撞编号、Z04 撞 (1,3) 坐标，一颗都不该生成");
+        assertEquals(3, third.path("skipped").asInt());
+        List<String> pos = new ArrayList<>();
+        third.path("skippedPositions").forEach(node -> pos.add(node.asText()));
+        assertEquals(List.of("(1,3)"), pos, "只有 Z04 是纯坐标冲突，应单独列出坐标");
+
+        // 要新增第 4 个座位，必须显式给出未占用的列起点
+        JsonNode fourth = batch(floorId, "Z", 1, 3, 2, 1, 4);
+        assertEquals(1, fourth.path("created").asInt(), "从第 4 列起应新增 Z04");
+        assertEquals(2, fourth.path("skipped").asInt(), "Z02/Z03 仍撞编号");
 
         assertEquals(4L, jdbc.queryForObject("select count(*) from t_seat where floor_id = ?",
                 Long.class, floorId), "楼层最终应有 4 个座位");
@@ -218,6 +236,13 @@ class AdminApiTest extends ApiTestBase {
         assertEquals("Z01", page.path("list").get(0).path("seatNo").asText());
         assertEquals(1, page.path("list").get(0).path("rowNo").asInt());
         assertEquals(1, page.path("list").get(0).path("colNo").asInt());
+
+        // 同格不得有第二个座位 —— uk_seat_pos 的不变量
+        Long dup = jdbc.queryForObject(
+                "select count(*) from (select floor_id, row_no, col_no from t_seat where floor_id = ? "
+                        + "group by floor_id, row_no, col_no having count(*) > 1)",
+                Long.class, floorId);
+        assertEquals(0L, dup, "★ 该楼层不应存在任何重叠坐标");
 
         deleteFloor(floorId);
     }

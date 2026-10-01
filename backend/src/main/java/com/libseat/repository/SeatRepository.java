@@ -73,6 +73,22 @@ public interface SeatRepository extends JpaRepository<Seat, Long>, JpaSpecificat
     long countByZoneId(Long zoneId);
 
     /**
+     * 统计某桌位的座位数（与 t_table.seat_count 声明值对账）。
+     *
+     * @param tableId 桌位 ID
+     * @return 座位数量
+     */
+    long countByTableId(Long tableId);
+
+    /**
+     * 查询某桌位的全部座位。
+     *
+     * @param tableId 桌位 ID
+     * @return 座位列表
+     */
+    List<Seat> findByTableId(Long tableId);
+
+    /**
      * 查询某分区全部座位。
      *
      * @param zoneId 分区 ID

@@ -124,13 +124,21 @@ Show '13. 使用情况（1F 今天）' (Invoke-Api GET "/api/admin/usage?floorId
 # ---------- 14. 管理员：预约记录 ----------
 Show '14. 预约记录' (Invoke-Api GET '/api/admin/reservations?page=1&size=5' $null $admToken).data.total
 
-# ---------- 15. 管理员：批量生成（重复执行应全跳过；起始号随运行随机，保证脚本可重复执行） ----------
+# ---------- 15. 管理员：批量生成（重复执行应全跳过；起始号随机 + 行起点避开已占用行） ----------
+# rowFrom=9 是关键：楼层 1~6 行被种子座位占满，不设行起点时新座位会整批撞坐标被跳过
+# （V2 修掉的正是「只校验编号、不校验坐标」导致的同格叠座）。
 $batchStart = Get-Random -Minimum 100 -Maximum 900
-Show "15a. 批量生成 1x3（Z$batchStart 起）" (Invoke-Api POST '/api/admin/seats/batch' @{
+Show "15a. 批量生成 1x3 @第9行（Z$batchStart 起）" (Invoke-Api POST '/api/admin/seats/batch' @{
     floorId = $floorId; rows = 1; cols = 3; prefix = 'Z'; startNo = $batchStart; zone = 'Z区'
+    rowFrom = 9; colFrom = 1
 } $admToken).data
-Show '15b. 再执行一次（期望 created=0, skipped=3）' (Invoke-Api POST '/api/admin/seats/batch' @{
+Show '15b. 再执行一次（期望 created=0, skippedPositions=3）' (Invoke-Api POST '/api/admin/seats/batch' @{
     floorId = $floorId; rows = 1; cols = 3; prefix = 'Z'; startNo = $batchStart; zone = 'Z区'
+    rowFrom = 9; colFrom = 1
+} $admToken).data
+Show '15c. 冲突预览（不落库）' (Invoke-Api POST '/api/admin/seats/batch-preview' @{
+    floorId = $floorId; rows = 1; cols = 3; prefix = 'Z'; startNo = $batchStart
+    rowFrom = 9; colFrom = 1
 } $admToken).data
 
 # ---------- 16. 管理员：用户列表（手机号脱敏） ----------

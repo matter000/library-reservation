@@ -259,10 +259,28 @@ public class SeatDTO {
 
         /** 初始状态，默认 AVAILABLE。 */
         private String status;
+
+        /** 起始行号，默认 1。★ 没有它，任何非空楼层上的批量生成都会整批撞第一行。 */
+        @Min(value = 1, message = "起始行号至少为 1")
+        @Max(value = 200, message = "起始行号不能超过 200")
+        private Integer rowFrom;
+
+        /** 起始列号，默认 1。 */
+        @Min(value = 1, message = "起始列号至少为 1")
+        @Max(value = 200, message = "起始列号不能超过 200")
+        private Integer colFrom;
+
+        /** 归属分区 ID（V2 起座位必须有归属；为空表示由服务端按区域名推断）。 */
+        private Long zoneId;
+
+        /** 归属桌位 ID，可空（非组队区不建模桌位）。 */
+        private Long tableId;
     }
 
     /**
      * 批量生成结果。
+     *
+     * <p>{@code previewOnly=true} 时为冲突预览结果，未写入任何数据。
      */
     @Data
     @Builder
@@ -270,16 +288,22 @@ public class SeatDTO {
     @AllArgsConstructor
     public static class SeatBatchResultVO {
 
-        /** 成功生成数。 */
+        /** 成功生成数（预览时=可生成的数量）。 */
         private Integer created;
 
-        /** 跳过数（编号重复）。 */
+        /** 跳过数（编号或坐标冲突）。 */
         private Integer skipped;
 
         /** 被跳过的座位编号。 */
         private List<String> skippedSeatNos;
 
+        /** 被跳过的坐标，形如 {@code (1,1)} —— V1 只报编号，看不出同格重叠。 */
+        private List<String> skippedPositions;
+
         /** 请求生成总数。 */
         private Integer totalRequested;
+
+        /** 是否为预览（不落库）。 */
+        private Boolean previewOnly;
     }
 }

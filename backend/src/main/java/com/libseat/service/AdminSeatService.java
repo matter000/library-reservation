@@ -9,10 +9,14 @@ import com.libseat.dto.SeatDTO;
 import com.libseat.entity.Floor;
 import com.libseat.entity.Reservation;
 import com.libseat.entity.Seat;
+import com.libseat.entity.SeatTable;
+import com.libseat.entity.Zone;
 import com.libseat.enums.SeatStatus;
 import com.libseat.repository.ReservationRepository;
 import com.libseat.repository.ReservationSlotRepository;
 import com.libseat.repository.SeatRepository;
+import com.libseat.repository.SeatTableRepository;
+import com.libseat.repository.ZoneRepository;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -41,6 +45,10 @@ public class AdminSeatService {
     private static final int DEFAULT_PAGE_SIZE = 20;
 
     private final SeatRepository seatRepository;
+
+    private final SeatTableRepository seatTableRepository;
+
+    private final ZoneRepository zoneRepository;
 
     private final ReservationRepository reservationRepository;
 
@@ -202,11 +210,39 @@ public class AdminSeatService {
     /**
      * ★ 批量生成座位：行优先递增，编号 = 前缀 + 补零序号（宽度至少 2 位）。
      *
+     * <p>V1 只校验 {@code seat_no} 唯一，同格叠座从未被拦下；这里同时按
+     * 「编号」与「(楼层,行,列) 坐标」去重，坐标冲突也计入 skipped。
+     *
      * @param request 批量请求
      * @return 生成结果
      */
     @Transactional
     public SeatDTO.SeatBatchResultVO batch(SeatDTO.SeatBatchRequest request) {
+        Plan plan = plan(request, false);
+        seatRepository.saveAll(plan.seats());
+        seatRepository.flush();
+        return plan.toVO(false);
+    }
+
+    /**
+     * ★ 批量生成冲突预览：跑同一套计划逻辑但不落库，返回将冲突的坐标清单。
+     *
+     * @param request 批量请求
+     * @return 预览结果（{@code previewOnly=true}）
+     */
+    @Transactional(readOnly = true)
+    public SeatDTO.SeatBatchResultVO previewBatch(SeatDTO.SeatBatchRequest request) {
+        return plan(request, false).toVO(true);
+    }
+
+    /**
+     * 批量生成的落库前计划。
+     *
+     * @param request       批量请求
+     * @param requireZone   是否强制要求分区
+     * @return 计划
+     */
+    private Plan plan(SeatDTO.SeatBatchRequest request, boolean requireZone) {
         Floor floor = adminFloorService.requireFloor(request.getFloorId());
         int rows = request.getRows();
         int cols = request.getCols();
@@ -218,35 +254,123 @@ public class AdminSeatService {
         int lastNo = startNo + totalRequested - 1;
         int width = Math.max(2, String.valueOf(lastNo).length());
         String pattern = prefix + "%0" + width + "d";
+        int rowFrom = request.getRowFrom() == null ? 1 : request.getRowFrom();
+        int colFrom = request.getColFrom() == null ? 1 : request.getColFrom();
+
+        Long zoneId = request.getZoneId();
+        if (zoneId == null) {
+            zoneId = inheritZoneId(floor.getId(), request.getZone());
+        } else {
+            requireZoneOfFloor(zoneId, floor.getId());
+        }
+        if (requireZone && zoneId == null) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "请先选择归属分区");
+        }
+        if (request.getTableId() != null) {
+            requireTableOfZone(request.getTableId(), zoneId);
+        }
+
+        // 一次性取该楼层既有座位，避免逐座查库；坐标与编号两套占用集合
+        List<Seat> existing = seatRepository.findByFloorIdOrderByRowNoAscColNoAsc(floor.getId());
+        Set<String> usedSeatNos = new HashSet<>();
+        Set<String> usedPositions = new HashSet<>();
+        for (Seat seat : existing) {
+            usedSeatNos.add(seat.getSeatNo());
+            usedPositions.add(positionKey(seat.getRowNo(), seat.getColNo()));
+        }
 
         List<Seat> toSave = new ArrayList<>(totalRequested);
         List<String> skippedSeatNos = new ArrayList<>();
+        List<String> skippedPositions = new ArrayList<>();
         for (int i = 0; i < totalRequested; i++) {
-            int row = i / cols + 1;
-            int col = i % cols + 1;
+            int row = rowFrom + i / cols;
+            int col = colFrom + i % cols;
             String seatNo = String.format(pattern, startNo + i);
-            if (seatRepository.existsByFloorIdAndSeatNo(floor.getId(), seatNo)) {
+            String position = positionKey(row, col);
+            // 两类冲突分开记账：编号冲突说明撞名，坐标冲突说明撞位（V1 漏掉的正是后者）
+            if (usedSeatNos.contains(seatNo)) {
                 skippedSeatNos.add(seatNo);
                 continue;
             }
+            if (usedPositions.contains(position)) {
+                skippedPositions.add("(" + row + "," + col + ")");
+                continue;
+            }
+            usedSeatNos.add(seatNo);
+            usedPositions.add(position);
             toSave.add(Seat.builder()
                     .floorId(floor.getId())
                     .seatNo(seatNo)
                     .rowNo(row)
                     .colNo(col)
                     .zone(request.getZone())
+                    .zoneId(zoneId)
+                    .tableId(request.getTableId())
                     .status(status)
                     .build());
         }
-        seatRepository.saveAll(toSave);
-        seatRepository.flush();
+        return new Plan(toSave, skippedSeatNos, skippedPositions, totalRequested);
+    }
 
-        return SeatDTO.SeatBatchResultVO.builder()
-                .created(toSave.size())
-                .skipped(skippedSeatNos.size())
-                .skippedSeatNos(skippedSeatNos)
-                .totalRequested(totalRequested)
-                .build();
+    private static String positionKey(int row, int col) {
+        return row + ":" + col;
+    }
+
+    /**
+     * 按旧的「区域名」文本推断分区：命中该楼层同名分区则沿用，否则落到兜底分区。
+     *
+     * <p>V1 的批量入口只有 {@code zone} 文本没有 {@code zoneId}，为保证老调用方
+     * 生成出的座位仍然有归属（分区规则依赖 zone_id），这里做一次性映射。
+     */
+    private Long inheritZoneId(Long floorId, String zoneText) {
+        List<Zone> zones = zoneRepository.findByFloorIdOrderBySortOrderAscIdAsc(floorId);
+        if (zones.isEmpty()) {
+            return null;
+        }
+        if (zoneText != null && !zoneText.isBlank()) {
+            for (Zone zone : zones) {
+                if (zone.getName().equals(zoneText.trim()) || zone.getCode().equals(zoneText.trim())) {
+                    return zone.getId();
+                }
+            }
+        }
+        return zones.stream()
+                .filter(z -> ZoneService.DEFAULT_ZONE_CODE.equals(z.getCode()))
+                .map(Zone::getId)
+                .findFirst()
+                .orElse(zones.get(0).getId());
+    }
+
+    private void requireZoneOfFloor(Long zoneId, Long floorId) {
+        Zone zone = zoneRepository.findById(zoneId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "分区不存在"));
+        if (!zone.getFloorId().equals(floorId)) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "分区不属于该楼层");
+        }
+    }
+
+    private void requireTableOfZone(Long tableId, Long zoneId) {
+        SeatTable table = seatTableRepository.findById(tableId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "桌位不存在"));
+        if (zoneId != null && !table.getZoneId().equals(zoneId)) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "桌位不属于该分区");
+        }
+    }
+
+    /** 批量计划：待保存座位 + 两类冲突清单。 */
+    private record Plan(List<Seat> seats, List<String> skippedSeatNos,
+                        List<String> skippedPositions, int totalRequested) {
+
+        SeatDTO.SeatBatchResultVO toVO(boolean previewOnly) {
+            return SeatDTO.SeatBatchResultVO.builder()
+                    .created(seats.size())
+                    .skipped(skippedSeatNos.size() + skippedPositions.size())
+                    .skippedSeatNos(skippedSeatNos)
+                    .skippedPositions(skippedPositions)
+                    .totalRequested(totalRequested)
+                    .previewOnly(previewOnly)
+                    .build();
+        }
     }
 
     /**
