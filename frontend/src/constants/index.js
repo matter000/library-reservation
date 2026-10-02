@@ -130,6 +130,53 @@ export const DAY_TYPE_OPTIONS = [
   { value: 'HOLIDAY', label: '节假日' },
 ];
 
+/**
+ * 违规类型 → 文案 + Tag 颜色（与后端 ViolationType 对齐）。
+ *
+ * ★ 列表里的文案一律用后端返回的 typeText / statusText，本表的 text 只用于筛选下拉：
+ * 扣分口径与状态名都可能在后端演进，两处各写一份就会出现「页面上写的和后端判的不一样」。
+ */
+export const VIOLATION_TYPE_META = {
+  NO_SHOW: { text: '爽约', color: 'red' },
+  LEAVE_TIMEOUT: { text: '暂离未归', color: 'volcano' },
+  GROUP_ABSENT: { text: '组队缺席', color: 'orange' },
+  LEADER_ABSENT: { text: '组长缺席', color: 'magenta' },
+  ON_SITE_OCCUPY: { text: '现场占座', color: 'purple' },
+};
+
+/** 违规状态（与后端 ViolationStatus 对齐）。 */
+export const VIOLATION_STATUS_META = {
+  ACTIVE: { text: '生效中', color: 'red' },
+  APPEALING: { text: '申诉中', color: 'gold' },
+  REVOKED: { text: '已撤销', color: 'green' },
+};
+
+/** 申诉状态（与后端 AppealStatus 对齐）。 */
+export const APPEAL_STATUS_META = {
+  PENDING: { text: '待复核', color: 'gold' },
+  APPROVED: { text: '申诉成立', color: 'green' },
+  REJECTED: { text: '申诉驳回', color: 'red' },
+  ESCALATED: { text: '已升级终审', color: 'blue' },
+  FINAL_JUDGED: { text: '已终审', color: 'purple' },
+};
+
+/** 信用流水类型（与后端 CreditLogKind 对齐）。 */
+export const CREDIT_LOG_KIND_META = {
+  INIT: { text: '初始分', color: 'default' },
+  PENALTY: { text: '违规扣分', color: 'red' },
+  STREAK_BONUS: { text: '良好使用奖励', color: 'green' },
+  WEEKLY_BONUS: { text: '周恢复奖励', color: 'green' },
+  RESTORE: { text: '申诉回补', color: 'blue' },
+};
+
+/** 违规状态下拉项。 */
+export const VIOLATION_STATUS_OPTIONS = Object.entries(VIOLATION_STATUS_META)
+  .map(([value, meta]) => ({ value, label: meta.text }));
+
+/** 申诉状态下拉项。 */
+export const APPEAL_STATUS_OPTIONS = Object.entries(APPEAL_STATUS_META)
+  .map(([value, meta]) => ({ value, label: meta.text }));
+
 /** localStorage key。 */
 export const STORAGE_KEYS = {
   token: 'lsr_token',

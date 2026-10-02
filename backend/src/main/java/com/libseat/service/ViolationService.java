@@ -202,6 +202,7 @@ public class ViolationService {
     private AppealDTO.ViolationVO toVO(Violation violation, Appeal appeal, Long subjectUserId, LocalDateTime now) {
         Integer remainHours = remainHours(violation, appeal, now);
         String disabled = disabledReason(violation, appeal, now);
+        String revokeDisabled = revokeDisabledReason(violation, appeal);
         return AppealDTO.ViolationVO.builder()
                 .violationId(violation.getId())
                 .userId(violation.getUserId())
@@ -227,7 +228,24 @@ public class ViolationService {
                 .appealRemainHours(remainHours)
                 .canEscalate(appeal != null && appeal.getStatus().escalatable()
                         && (subjectUserId == null || subjectUserId.equals(appeal.getUserId())))
+                .canRevoke(revokeDisabled == null)
+                .revokeDisabledReason(revokeDisabled)
                 .build();
+    }
+
+    /**
+     * 「这条能不能从馆员撤销入口处理」—— 与 {@link #revoke} 的入口校验同一套规则。
+     *
+     * @return null 表示可以撤销
+     */
+    private String revokeDisabledReason(Violation violation, Appeal appeal) {
+        if (violation.getStatus() == ViolationStatus.REVOKED) {
+            return "该违规已撤销，无需重复操作";
+        }
+        if (appeal != null && appeal.getStatus().judgeable()) {
+            return "该违规正在申诉流程中，请到申诉队列裁定";
+        }
+        return null;
     }
 
     /**

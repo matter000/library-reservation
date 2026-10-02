@@ -21,6 +21,9 @@ public enum CreditLogKind {
     /** 连续主动结束加分。 */
     STREAK_BONUS("良好使用奖励"),
 
+    /** 上一自然周无违规的恢复加分（DESIGN §6.4）。 */
+    WEEKLY_BONUS("周恢复奖励"),
+
     /** 申诉成立后的回补。 */
     RESTORE("申诉回补");
 

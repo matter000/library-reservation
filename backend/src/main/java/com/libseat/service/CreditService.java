@@ -145,6 +145,42 @@ public class CreditService {
     }
 
     /**
+     * 周恢复加分（DESIGN §6.4：上一自然周无新增违规 → +5，上限 100）。
+     *
+     * <p>★ 同一周期只发一次：判定用「本周起点之后有没有 WEEKLY_BONUS 流水」，
+     * 于是任务被手动补跑、或实例重启后再次触发，都不会重复加分 —— 账本只追加，
+     * 幂等必须由写入方保证，不能指望调度器只跑一次。
+     *
+     * @param userId    用户 ID
+     * @param weekStart 上一自然周的起点（本周一 00:00 再往前一周）
+     * @param weekEnd   上一自然周的终点（本周一 00:00，开区间）
+     * @return 本次是否加了分
+     */
+    @Transactional
+    public boolean awardWeeklyBonus(Long userId, LocalDateTime weekStart, LocalDateTime weekEnd) {
+        User user = requireUser(userId);
+        int score = user.getCreditScore() == null ? ruleConfigService.creditInitScore() : user.getCreditScore();
+        if (score >= BizConstants.CREDIT_MAX_SCORE) {
+            // 已经满分的用户不必发奖：否则只会留下一条 delta=0 的噪音流水
+            return false;
+        }
+        if (creditLogRepository.countByUserIdAndKindAndCreateTimeGreaterThanEqual(
+                userId, CreditLogKind.WEEKLY_BONUS, weekStart) > 0) {
+            return false;
+        }
+        if (violationRepository.countByUserIdAndCreateTimeGreaterThanEqualAndCreateTimeLessThan(
+                userId, weekStart, weekEnd) > 0) {
+            return false;
+        }
+        int bonus = BizConstants.CREDIT_WEEKLY_BONUS;
+        moveScore(user, CreditLogKind.WEEKLY_BONUS, bonus, "WEEKLY", null,
+                "上一自然周无违规 +" + bonus);
+        int balance = user.getCreditScore();
+        penaltyService.syncLadder(userId, balance, "周恢复奖励后信用分 " + balance, LocalDateTime.now());
+        return true;
+    }
+
+    /**
      * 预约闸门：处罚与单日累计（DESIGN §8.3 的两步）。
      *
      * <p>★ {@code credit.enforce_enabled=false} 时只记录不限制，是演示环境的逃生阀，
@@ -183,6 +219,20 @@ public class CreditService {
                     "该分区单日累计上限 " + dailyCapMin + " 分钟，已用 " + usedToday
                             + " 分钟，本次 " + durationMin + " 分钟超出");
         }
+    }
+
+    /**
+     * 某人账本（正序）。
+     *
+     * <p>学生端「信用流水」与对账排查都读这一份：账本是分数的可追溯来源，
+     * 只暴露余额就等于让用户对着一个无法解释的数字。
+     *
+     * @param userId 用户 ID
+     * @return 流水列表
+     */
+    @Transactional(readOnly = true)
+    public List<CreditLog> ledger(Long userId) {
+        return creditLogRepository.findByUserIdOrderByCreateTimeAscIdAsc(userId);
     }
 
     /**
@@ -240,7 +290,7 @@ public class CreditService {
     private int moveScore(User user, CreditLogKind kind, int delta,
                           String refType, Long refId, String reason) {
         int current = user.getCreditScore() == null ? ruleConfigService.creditInitScore() : user.getCreditScore();
-        int balance = Math.max(0, Math.min(100, current + delta));
+        int balance = Math.max(0, Math.min(BizConstants.CREDIT_MAX_SCORE, current + delta));
         user.setCreditScore(balance);
         userRepository.save(user);
         creditLogRepository.save(CreditLog.builder()

@@ -1,6 +1,8 @@
 import React from 'react';
 import { Avatar, Button, Layout, Menu, Typography } from 'antd';
-import { BookOutlined, LogoutOutlined, UserOutlined } from '@ant-design/icons';
+import {
+  BookOutlined, LogoutOutlined, SafetyCertificateOutlined, UserOutlined,
+} from '@ant-design/icons';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/AuthContext';
 import { USER_ROLE } from '../constants';
@@ -20,6 +22,7 @@ export default function MainLayout() {
   const menuItems = [
     { key: '/floors', icon: <BookOutlined />, label: '楼层' },
     { key: '/my/reservations', icon: <UserOutlined />, label: '我的预约' },
+    { key: '/credit', icon: <SafetyCertificateOutlined />, label: '信用与违规' },
   ];
   if (hasRole(USER_ROLE.SYS_ADMIN)) {
     menuItems.push({ key: '/admin/statistics', icon: <UserOutlined />, label: '系统管理' });
@@ -28,7 +31,11 @@ export default function MainLayout() {
     menuItems.push({ key: '/staff', icon: <UserOutlined />, label: '馆员工作台' });
   }
 
-  const selectedKey = location.pathname.startsWith('/my') ? '/my/reservations' : '/floors';
+  // 高亮按前缀匹配取第一个命中项（与 AdminLayout 同一套做法）：
+  // 写死的三元表达式每加一个路由就会漏一个，而「取最长前缀」在等长时会退回第一项
+  const selectedKey = menuItems
+    .map((item) => item.key)
+    .find((key) => location.pathname.startsWith(key)) || '/floors';
 
   return (
     <Layout className="main-layout">

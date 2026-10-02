@@ -132,6 +132,28 @@ class CreditPenaltyApiTest extends ApiTestBase {
         return active(id).stream().map(Penalty::getType).toList();
     }
 
+    /**
+     * 阶梯的全部输入（处罚表原样 + 阈值 + 天数）。
+     *
+     * <p>★ 「跌破 50 该有 7 天禁约」这类断言一旦失败，只报 expected/actual 是查不出原因的：
+     * 到底是没生成、生成了但判活被过滤、还是阈值被别的用例改掉了，看得到输入才知道。
+     *
+     * @param id 用户 ID
+     * @return 诊断文本
+     */
+    private String ladderInputs(Long id) {
+        String rows = penaltyRepository.findAll().stream()
+                .filter(p -> p.getUserId().equals(id))
+                .map(p -> p.getType() + "/" + p.getStatus() + " start=" + p.getStartTime()
+                        + " end=" + p.getEndTime())
+                .collect(java.util.stream.Collectors.joining(" | "));
+        return "处罚表=[" + rows + "] 阈值 90/70/50/1 实为 "
+                + ruleConfigService.creditPeakBanUnder() + "/" + ruleConfigService.creditBan3dUnder()
+                + "/" + ruleConfigService.creditBan7dUnder() + "/" + ruleConfigService.creditSemesterUnder()
+                + " 天数 3d=" + ruleConfigService.creditBan3dDays() + " 7d=" + ruleConfigService.creditBan7dDays()
+                + " now=" + LocalDateTime.now();
+    }
+
     private JsonNode zones(long floorId) throws Exception {
         return data(exec(get("/api/zones")
                 .param("floorId", String.valueOf(floorId))
@@ -287,7 +309,7 @@ class CreditPenaltyApiTest extends ApiTestBase {
         creditService.applyViolation(id, ViolationType.NO_SHOW, null, evidence(), null, null);
         assertEquals(65, score(id));
         assertEquals(List.of(PenaltyType.BOOK_BAN_3D), types(id),
-                "★ 升档时旧档要解除：留两条 ACTIVE 会让「还能不能约」翻多条记录才知道");
+                "★ 升档时旧档要解除：留两条 ACTIVE 会让「还能不能约」翻多条记录才知道｜" + ladderInputs(id));
         Penalty first3d = penaltyRepository.findByUserIdAndStatusOrderByIdDesc(id, PenaltyStatus.ACTIVE).get(0);
         assertNotNull(first3d.getEndTime(), "3 天禁约必须有恢复时刻");
 
@@ -301,7 +323,8 @@ class CreditPenaltyApiTest extends ApiTestBase {
 
         creditService.applyViolation(id, ViolationType.LEADER_ABSENT, null, evidence(), null, null);
         assertEquals(35, score(id));
-        assertEquals(List.of(PenaltyType.BOOK_BAN_7D), types(id), "跌破 50 → 7 天禁约");
+        assertEquals(List.of(PenaltyType.BOOK_BAN_7D), types(id),
+                "跌破 50 → 7 天禁约｜" + ladderInputs(id));
 
         creditService.applyViolation(id, ViolationType.LEADER_ABSENT, -50, evidence(), null, null);
         assertEquals(0, score(id), "分数只夹到 0，不做负数");

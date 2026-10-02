@@ -110,8 +110,10 @@ public class WebConfig implements WebMvcConfigurer {
                 "/floors",
                 "/floors/{floorId}/seats",
                 "/my/reservations",
+                "/credit",
                 "/profile",
                 "/staff",
+                "/staff/appeals",
                 "/admin",
                 "/admin/floors",
                 "/admin/floors/{floorId}/seats",
@@ -120,6 +122,7 @@ public class WebConfig implements WebMvcConfigurer {
                 "/admin/statistics",
                 "/admin/users",
                 "/admin/rules",
+                "/admin/violations",
                 "/admin/zones",
                 "/admin/tables",
                 "/admin/open"

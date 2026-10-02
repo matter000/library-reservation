@@ -392,9 +392,13 @@ class ReservationRuleApiTest extends ApiTestBase {
         LocalDateTime now = LocalDateTime.now();
         int minute = now.getMinute();
         int targetSlot;
-        if (minute <= 15 && now.getHour() >= 8 && now.getHour() <= 21) {
+        // ★ 窗口边界要留余量：这一格的签到窗口是「开始时刻 ~ +15 分钟」，
+        //   若按 minute <= 15 取整点格，跑过 HH:15 之后再来签到就会被**正确地**判为超窗（4093），
+        //   表现为「用例只在某个 15 分钟里是绿的」。取 <= 10 就给后续请求留下 5 分钟余量。
+        if (minute <= 10 && now.getHour() >= 8 && now.getHour() <= 21) {
             targetSlot = slot(now.getHour());
         } else if (minute >= 45 && now.getHour() + 1 >= 8 && now.getHour() + 1 <= 21) {
+            // 下一格的窗口从 HH:45 开到 HH+1:15，此刻刚开，余量充足
             targetSlot = slot(now.getHour() + 1);
         } else {
             // 当前时刻不在任何签到窗口内（如 10:30），该用例跳过

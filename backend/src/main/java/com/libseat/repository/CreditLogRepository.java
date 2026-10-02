@@ -1,11 +1,13 @@
 package com.libseat.repository;
 
 import com.libseat.entity.CreditLog;
+import com.libseat.enums.CreditLogKind;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -21,6 +23,16 @@ public interface CreditLogRepository extends JpaRepository<CreditLog, Long> {
      * @return 流水列表
      */
     List<CreditLog> findByUserIdOrderByCreateTimeAscIdAsc(Long userId);
+
+    /**
+     * 某人在某时刻之后拿过几笔某类流水 —— 周恢复的幂等判定用它。
+     *
+     * @param userId 用户 ID
+     * @param kind   流水类型
+     * @param from   周期起点（含）
+     * @return 条数
+     */
+    long countByUserIdAndKindAndCreateTimeGreaterThanEqual(Long userId, CreditLogKind kind, LocalDateTime from);
 
     /**
      * ★ 对账用：流水变化量之和。无流水时为 null，由调用方折算成 0。

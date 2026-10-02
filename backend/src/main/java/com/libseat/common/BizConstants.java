@@ -88,6 +88,22 @@ public final class BizConstants {
     public static final int CREDIT_STREAK_SIZE = 5;
 
     /**
+     * 信用分天花板（DESIGN §6.4「周恢复上限 100」）。
+     *
+     * <p>与 {@link #CREDIT_INIT_SCORE} 数值相同但含义不同：一个是起点，一个是天花板，
+     * 分成两个常量才不会将来改初始分时把上限一起改掉。
+     */
+    public static final int CREDIT_MAX_SCORE = 100;
+
+    /**
+     * 上一自然周无新增违规的恢复加分（DESIGN §6.4）。
+     *
+     * <p>没有做成规则键：V8 已经把 CREDIT 组的键定稿并落库，加一个键就得再开一次迁移，
+     * 而设计文档把它写在「固定 +5」的口径里而不是运营可调表格（§9.3 只有阈值与天数可调）。
+     */
+    public static final int CREDIT_WEEKLY_BONUS = 5;
+
+    /**
      * 申诉时限（小时）：违规发生后 24 小时内可提交（PRD §9.4）。
      *
      * <p>是流程口径而不是运营旋钮，所以走常量而不是规则中心；超时一律 4108，

@@ -8,6 +8,7 @@ import Register from '../pages/Register';
 import FloorList from '../pages/FloorList';
 import SeatMap from '../pages/SeatMap';
 import MyReservations from '../pages/MyReservations';
+import Credit from '../pages/Credit';
 import Profile from '../pages/Profile';
 import FloorManage from '../pages/admin/FloorManage';
 import SeatManage from '../pages/admin/SeatManage';
@@ -19,7 +20,9 @@ import RuleManage from '../pages/admin/RuleManage';
 import ZoneManage from '../pages/admin/ZoneManage';
 import TableManage from '../pages/admin/TableManage';
 import OpenRuleManage from '../pages/admin/OpenRuleManage';
+import ViolationManage from '../pages/admin/ViolationManage';
 import StaffHome from '../pages/staff/StaffHome';
+import AppealQueue from '../pages/staff/AppealQueue';
 import { useAuth } from '../store/AuthContext';
 import { USER_ROLE, roleHomePath } from '../constants';
 
@@ -56,6 +59,7 @@ export default function AppRoutes() {
         <Route path="/floors" element={<FloorList />} />
         <Route path="/floors/:floorId/seats" element={<SeatMap />} />
         <Route path="/my/reservations" element={<MyReservations />} />
+        <Route path="/credit" element={<Credit />} />
         <Route path="/profile" element={<Profile />} />
       </Route>
 
@@ -65,6 +69,14 @@ export default function AppRoutes() {
         element={
           <RequireAuth roles={[USER_ROLE.LIBRARIAN, USER_ROLE.SYS_ADMIN]}>
             <StaffHome />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/staff/appeals"
+        element={
+          <RequireAuth roles={[USER_ROLE.LIBRARIAN, USER_ROLE.SYS_ADMIN]}>
+            <AppealQueue />
           </RequireAuth>
         }
       />
@@ -86,6 +98,7 @@ export default function AppRoutes() {
         <Route path="reservations" element={<ReservationList />} />
         <Route path="users" element={<UserList />} />
         <Route path="rules" element={<RuleManage />} />
+        <Route path="violations" element={<ViolationManage />} />
         <Route path="zones" element={<ZoneManage />} />
         <Route path="tables" element={<TableManage />} />
         <Route path="open" element={<OpenRuleManage />} />

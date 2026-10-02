@@ -3,10 +3,12 @@ import {
   Alert,
   Button,
   Card,
+  Col,
   Descriptions,
   Form,
   Input,
   Modal,
+  Row,
   Spin,
   Statistic,
   Tag,
@@ -16,6 +18,7 @@ import {
 import { LockOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { changePassword, fetchMe } from '../api/auth';
+import { fetchMyCredit } from '../api/credit';
 import { useAuth } from '../store/AuthContext';
 import { USER_ROLE_META, roleText } from '../constants';
 
@@ -33,6 +36,7 @@ export default function Profile() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState(cachedUser);
+  const [credit, setCredit] = useState(null);
 
   const [pwdOpen, setPwdOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -47,6 +51,8 @@ export default function Profile() {
       })
       .catch((e) => setError(e.message || '加载个人信息失败'))
       .finally(() => setLoading(false));
+    // 信用分是另一块数据：读失败就显示「—」，不该把整个个人中心变成错误态
+    fetchMyCredit().then(setCredit).catch(() => setCredit(null));
   }, []);
 
   /** 关闭改密弹窗并清空表单。 */
@@ -98,17 +104,33 @@ export default function Profile() {
                 </Descriptions.Item>
               </Descriptions>
 
-              <div style={{ marginTop: 20 }}>
-                <Statistic
-                  title="超时未签到次数（违约次数）"
-                  value={info.noShowCount || 0}
-                  suffix="次"
-                  valueStyle={{ color: (info.noShowCount || 0) > 0 ? '#faad14' : '#52c41a' }}
-                />
-                <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
-                  预约开始后 15 分钟内未签到将自动记为未签到，并累计违约次数。
-                </Typography.Paragraph>
-              </div>
+              <Row gutter={16} style={{ marginTop: 20 }}>
+                <Col xs={24} sm={12}>
+                  <Statistic
+                    title="超时未签到次数（违约次数）"
+                    value={info.noShowCount || 0}
+                    suffix="次"
+                    valueStyle={{ color: (info.noShowCount || 0) > 0 ? '#faad14' : '#52c41a' }}
+                  />
+                </Col>
+                <Col xs={24} sm={12}>
+                  <Statistic
+                    title="信用分"
+                    value={credit ? credit.creditScore : '—'}
+                    suffix={credit ? '分' : ''}
+                    valueStyle={{
+                      // 按「有没有正在生效的处罚」上色：这是事实，不复制后端的分数阈值
+                      color: credit && credit.penalties.length > 0 ? '#fa8c16' : '#52c41a',
+                    }}
+                  />
+                </Col>
+              </Row>
+              <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
+                预约开始后 15 分钟内未签到将自动记为未签到，并累计违约次数。
+                <Button type="link" size="small" onClick={() => navigate('/credit')}>
+                  查看违规明细与申诉
+                </Button>
+              </Typography.Paragraph>
 
               <div style={{ marginTop: 20 }}>
                 <Button icon={<LockOutlined />} onClick={() => setPwdOpen(true)}>

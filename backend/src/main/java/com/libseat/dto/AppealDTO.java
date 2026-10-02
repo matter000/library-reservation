@@ -163,6 +163,18 @@ public class AppealDTO {
 
         /** 是否可升级为终审（只有被驳回的申诉可以）。 */
         private Boolean canEscalate;
+
+        /**
+         * 馆员能否从这里直接撤销（F8）。
+         *
+         * <p>正在申诉流程中的违规必须回申诉队列裁定 —— 两个入口都能补分时，
+         * 同一笔扣分有被回补两次的风险，所以这条判定和 {@code ViolationService.revoke}
+         * 的入口校验保持同一套规则，前端不自己推断。
+         */
+        private Boolean canRevoke;
+
+        /** 不能撤销的原因。 */
+        private String revokeDisabledReason;
     }
 
     /**

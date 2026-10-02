@@ -182,6 +182,16 @@ class AppealApiTest extends ApiTestBase {
         throw new AssertionError("队列里找不到申诉 " + appealId + "，实际：" + body(result));
     }
 
+    /** 在馆员违规列表里按违规 ID 取一行（取不到就直接失败，不给空转断言留机会）。 */
+    private JsonNode staffRow(JsonNode rows, long violationId) {
+        for (JsonNode node : rows) {
+            if (node.path("violationId").asLong() == violationId) {
+                return node;
+            }
+        }
+        throw new AssertionError("馆员违规列表里找不到 " + violationId + "，实际：" + rows);
+    }
+
     // ==================== 用例 ====================
 
     @Test
@@ -247,6 +257,12 @@ class AppealApiTest extends ApiTestBase {
         assertEquals(90, credit.path("creditScore").asInt(), "信用概览必须读得到分数（否则下面的断言是空的）");
         assertEquals(0, credit.path("penalties").size(),
                 "★ 回分到 90 后高峰禁约必须自动解除（阶梯是当前分数的函数，不是历史的累计）");
+        List<String> ledgerKinds = new java.util.ArrayList<>();
+        credit.path("logs").forEach(node -> ledgerKinds.add(node.path("kind").asText()));
+        assertEquals(List.of("INIT", "PENALTY", "PENALTY", "RESTORE"), ledgerKinds,
+                "学生必须能在「我的信用」里逐笔看到分数来源（T-V2-14 验收 2「在流水中可见」）");
+        assertEquals(90, credit.path("logs").get(3).path("balanceAfter").asInt(),
+                "最后一笔余额必须等于当前分");
 
         assertEquals(STATUS_NOT_ALLOWED, code(judge(staff, appealId, true, "再补一次")),
                 "已裁定的申诉不得重复裁定，否则同一笔扣分会被回补两次");
@@ -403,6 +419,19 @@ class AppealApiTest extends ApiTestBase {
         assertEquals(0, code(revoked), "超时误判要能从馆员侧救济：" + body(revoked));
         assertEquals("REVOKED", data(revoked).path("status").asText());
         assertEquals(90, score(id), "现场占座的 15 分原额回补（75 → 90）");
+
+        // 撤销入口的可用性同样由后端算（馆员面列表），不能只靠点下去拿 4093 才知道
+        JsonNode staffRows = data(exec(get("/api/staff/violations")
+                .param("userId", String.valueOf(id))
+                .header("Authorization", bearer(staff))));
+        assertEquals("该违规正在申诉流程中，请到申诉队列裁定",
+                staffRow(staffRows, inAppeal.getId()).path("revokeDisabledReason").asText());
+        assertFalse(staffRow(staffRows, inAppeal.getId()).path("canRevoke").asBoolean(),
+                "申诉中的违规在列表里就该显示不可撤销");
+        assertFalse(staffRow(staffRows, stale.getId()).path("canRevoke").asBoolean(),
+                "已撤销的违规不得再显示可撤销（重复撤销会二次回补）");
+        assertTrue(staffRow(staffRows, stale.getId()).path("evidenceItems").size() > 0,
+                "馆员面列表也要带证据可读视图，否则裁定无从下手");
         assertEquals(0, data(exec(get("/api/admin/rules/consistency")
                 .header("Authorization", bearer(admin)))).size(), "撤销后账本仍要对平");
 

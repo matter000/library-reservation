@@ -11,6 +11,7 @@ import {
   SettingOutlined,
   TableOutlined,
   TeamOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/AuthContext';
@@ -24,6 +25,7 @@ const MENU_ITEMS = [
   { key: '/admin/tables', icon: <TableOutlined />, label: '桌位管理' },
   { key: '/admin/usage', icon: <AppstoreOutlined />, label: '使用情况' },
   { key: '/admin/reservations', icon: <ProfileOutlined />, label: '预约记录' },
+  { key: '/admin/violations', icon: <WarningOutlined />, label: '违规管理' },
   { key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' },
   { key: '/admin/rules', icon: <SettingOutlined />, label: '规则配置' },
   { key: '/admin/open', icon: <ClockCircleOutlined />, label: '开放时间' },

@@ -13,7 +13,6 @@ import {
   Space,
   Tabs,
   Tag,
-  Tooltip,
   Typography,
   message,
 } from 'antd';
@@ -24,6 +23,7 @@ import { useNavigate } from 'react-router-dom';
 import { cancelReservation, checkInReservation, fetchMyReservations, finishReservation } from '../api/reservation';
 import { fetchLeaveReasons, returnLeave, startLeave } from '../api/leave';
 import StatusTag from '../components/StatusTag';
+import HintedButton from '../components/HintedButton';
 import PageLoading from '../components/PageLoading';
 import { RESERVATION_STATUS } from '../constants';
 import { friendlyDate } from '../utils/datetime';
@@ -38,25 +38,6 @@ const TABS = [
 
 /** 每页条数（与栅格每行 2 张卡片对齐，避免末行残缺）。 */
 const PAGE_SIZE = 12;
-
-/**
- * 带说明按钮的包裹层。
- *
- * <p>★ 浏览器不会把鼠标事件派发给 disabled 的 button，Tooltip 直接挂在按钮上时
- * 「置灰」与「给出原因」只能实现前一半；套一层非禁用 span 才能让说明弹出来。
- *
- * @param {object} props props
- * @param {string} props.tip 说明文案
- * @param {JSX.Element} props.children 按钮
- * @returns {JSX.Element} 包裹后的按钮
- */
-function HintedButton({ tip, children }) {
-  return (
-    <Tooltip title={tip}>
-      <span style={{ display: 'inline-block' }}>{children}</span>
-    </Tooltip>
-  );
-}
 
 /**
  * 我的预约页。

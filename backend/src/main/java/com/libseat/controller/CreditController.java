@@ -44,6 +44,7 @@ public class CreditController {
                 .penalties(penaltyService.activePenalties(userId, LocalDateTime.now()).stream()
                         .map(PenaltyDTO.PenaltyVO::of)
                         .toList())
+                .logs(creditService.ledger(userId).stream().map(PenaltyDTO.CreditLogVO::of).toList())
                 .build());
     }
 }
