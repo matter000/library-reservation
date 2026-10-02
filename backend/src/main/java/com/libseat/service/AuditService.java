@@ -73,6 +73,18 @@ public class AuditService {
     /** 动作码：删除开放日历覆盖。 */
     public static final String ACTION_OPEN_RULE_DELETE = "OPEN_RULE_DELETE";
 
+    /** 动作码：学生提交申诉（DESIGN §6.3）。 */
+    public static final String ACTION_APPEAL_SUBMIT = "APPEAL_SUBMIT";
+
+    /** 动作码：学生把驳回的申诉升级为终审。 */
+    public static final String ACTION_APPEAL_ESCALATE = "APPEAL_ESCALATE";
+
+    /** 动作码：馆员复核 / 系统管理员终审。 */
+    public static final String ACTION_APPEAL_JUDGE = "APPEAL_JUDGE";
+
+    /** 动作码：馆员直接撤销违规（超过申诉时限后的唯一救济入口）。 */
+    public static final String ACTION_VIOLATION_REVOKE = "VIOLATION_REVOKE";
+
     /** 动作码 → 中文文案（唯一来源，前端直接展示，不在两处写映射）。 */
     private static final Map<String, String> ACTION_TEXT = Map.ofEntries(
             Map.entry(ACTION_RULE_UPDATE, "修改规则配置"),
@@ -85,7 +97,11 @@ public class AuditService {
             Map.entry(ACTION_TABLE_SAVE, "维护桌位"),
             Map.entry(ACTION_TABLE_DELETE, "删除桌位"),
             Map.entry(ACTION_OPEN_RULE_SAVE, "维护开放时间"),
-            Map.entry(ACTION_OPEN_RULE_DELETE, "删除开放日历覆盖")
+            Map.entry(ACTION_OPEN_RULE_DELETE, "删除开放日历覆盖"),
+            Map.entry(ACTION_APPEAL_SUBMIT, "提交申诉"),
+            Map.entry(ACTION_APPEAL_ESCALATE, "申诉升级终审"),
+            Map.entry(ACTION_APPEAL_JUDGE, "申诉裁定"),
+            Map.entry(ACTION_VIOLATION_REVOKE, "撤销违规")
     );
 
     private final AuditLogRepository auditLogRepository;

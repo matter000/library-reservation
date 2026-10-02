@@ -87,6 +87,14 @@ public final class BizConstants {
     /** 连续主动结束多少档算一次奖励。 */
     public static final int CREDIT_STREAK_SIZE = 5;
 
+    /**
+     * 申诉时限（小时）：违规发生后 24 小时内可提交（PRD §9.4）。
+     *
+     * <p>是流程口径而不是运营旋钮，所以走常量而不是规则中心；超时一律 4108，
+     * 让「事后翻案」回到馆员撤销（F8）那条有审计的入口，而不是申诉队列。
+     */
+    public static final int APPEAL_WINDOW_HOURS = 24;
+
     /** 日期格式。 */
     public static final String DATE_PATTERN = "yyyy-MM-dd";
 

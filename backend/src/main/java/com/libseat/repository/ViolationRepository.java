@@ -23,6 +23,13 @@ public interface ViolationRepository extends JpaRepository<Violation, Long> {
     List<Violation> findByUserIdOrderByIdDesc(Long userId);
 
     /**
+     * 全馆违规列表（新→旧），供馆员面「违规查询」（F8）使用。
+     *
+     * @return 违规列表
+     */
+    List<Violation> findAllByOrderByIdDesc();
+
+    /**
      * 某人某时间窗内的违规数（周恢复任务判定「上一自然周有无新增违规」）。
      *
      * @param userId 用户 ID

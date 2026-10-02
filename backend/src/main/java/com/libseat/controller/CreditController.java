@@ -13,13 +13,17 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.LocalDateTime;
 
 /**
- * 用户端·我的信用接口。
+ * 用户端·我的信用接口（DESIGN §12.1 S10）。
+ *
+ * <p>★ 路径落在 {@code /api/me/**} 家族里（本片 S11 的 {@code /api/me/violations} 是同一族），
+ * 不用 {@code /api/credit/me}：DESIGN §12.1 把「我自己的」这一类端点统一排在 {@code /api/me/} 下，
+ * 学生面只有一种写法，前端与权限矩阵才不会各按各的猜。
  *
  * <p>「我为什么被禁、什么时候恢复」必须能自己看到 —— 只给一个 4100 而不给恢复时间，
  * 等于把用户推向申诉窗口外的猜测。
  */
 @RestController
-@RequestMapping("/api/credit")
+@RequestMapping("/api/me")
 @RequiredArgsConstructor
 public class CreditController {
 
@@ -32,7 +36,7 @@ public class CreditController {
      *
      * @return 信用概览
      */
-    @GetMapping("/me")
+    @GetMapping("/credit")
     public Result<PenaltyDTO.CreditSummaryVO> me() {
         Long userId = UserContext.getUserId();
         return Result.ok(PenaltyDTO.CreditSummaryVO.builder()
