@@ -111,6 +111,18 @@ public final class BizConstants {
      */
     public static final int APPEAL_WINDOW_HOURS = 24;
 
+    /** 队伍在开始前多久锁定（分钟，DESIGN §7.2：此后禁止增减成员）。 */
+    public static final int GROUP_LOCK_BEFORE_MIN = 30;
+
+    /** 邀请码有效期（分钟）。 */
+    public static final int GROUP_INVITE_TTL_MIN = 10;
+
+    /** 成团最少人数（组长自己算一个）。 */
+    public static final int GROUP_MIN_MEMBERS = 2;
+
+    /** 邀请码位数。 */
+    public static final int GROUP_INVITE_CODE_LENGTH = 6;
+
     /** 日期格式。 */
     public static final String DATE_PATTERN = "yyyy-MM-dd";
 

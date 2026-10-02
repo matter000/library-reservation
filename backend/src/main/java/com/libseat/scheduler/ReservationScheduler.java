@@ -1,12 +1,16 @@
 package com.libseat.scheduler;
 
 import com.libseat.common.BizConstants;
+import com.libseat.entity.Group;
 import com.libseat.entity.LeaveRecord;
 import com.libseat.entity.Reservation;
+import com.libseat.enums.GroupStatus;
 import com.libseat.enums.LeaveStatus;
 import com.libseat.enums.ReservationStatus;
+import com.libseat.repository.GroupRepository;
 import com.libseat.repository.LeaveRecordRepository;
 import com.libseat.repository.ReservationRepository;
+import com.libseat.service.GroupService;
 import com.libseat.service.LeaveStateService;
 import com.libseat.service.ReservationStateService;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +49,10 @@ public class ReservationScheduler {
     private final LeaveStateService leaveStateService;
 
     private final com.libseat.service.RuleConfigService ruleConfigService;
+
+    private final GroupRepository groupRepository;
+
+    private final GroupService groupService;
 
     /**
      * 扫描超时未签到。
@@ -144,6 +152,34 @@ public class ReservationScheduler {
         }
         if (count > 0) {
             log.info("定时任务：{} 条暂离超时，预约归档为 VIOLATED 并释放座位", count);
+        }
+    }
+
+    /**
+     * 扫描到点未锁定的队伍（DESIGN §7.2）：到 {@code lock_time} 即冻结成员并按桌下单。
+     *
+     * <p>★ 逐队 try-catch 且判定交给 {@link GroupService#lockAndOrder}（独立 Bean 的事务代理）：
+     * 一支队伍因座位被抢而 4091 回滚，不能连带打断同轮其他队伍的下单。
+     * 幂等靠状态判断 —— 成功变 RESERVED、不足变 FAILED，下一轮都选不到 {@code FORMING} 之外的队。
+     * 失败的队伍留在 {@code FORMING} 每分钟重试，直到开会时刻由缺席链路收尾；
+     * 「组长为什么没成」的告知属于 T-V2-20 通知中心，这里先只保证不打扰别人。
+     */
+    @Scheduled(fixedRate = 60_000L, initialDelay = 35_000L)
+    public void scanGroupLock() {
+        LocalDateTime now = LocalDateTime.now();
+        List<Group> due = groupRepository.findDueForLock(GroupStatus.FORMING, now);
+        int count = 0;
+        for (Group group : due) {
+            try {
+                if (groupService.lockAndOrder(group.getId())) {
+                    count++;
+                }
+            } catch (Exception e) {
+                log.error("队伍锁定下单失败，下一轮重试：groupId={}", group.getId(), e);
+            }
+        }
+        if (count > 0) {
+            log.info("定时任务：{} 支队伍已锁定并完成整桌下单", count);
         }
     }
 }

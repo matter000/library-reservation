@@ -79,6 +79,15 @@ public class Reservation {
     @Column(name = "admin_cancel_reason", length = 100)
     private String adminCancelReason;
 
+    /**
+     * 所属队伍（整桌下单时写入，个人预约为 null）。
+     *
+     * <p>★ 只是「这批预约属于同一次下单」的关联键，<b>不参与任何占用判定</b>：
+     * 占用永远只看 slot 行与预约状态，组队不另立第二套占用真相（DESIGN §7.2）。
+     */
+    @Column(name = "group_id")
+    private Long groupId;
+
     /** 创建时间。 */
     @Column(name = "create_time", nullable = false)
     private LocalDateTime createTime;

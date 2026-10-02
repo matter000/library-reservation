@@ -81,6 +81,26 @@ public class ReservationService {
     @Transactional
     public ReservationDTO.ReservationCreateVO createReservation(Long userId,
                                                                 ReservationDTO.ReservationCreateRequest request) {
+        return createReservation(userId, request, null);
+    }
+
+    /**
+     * 提交预约，并可把它挂到一次组队下单上。
+     *
+     * <p>★ 组队刻意<b>复用这条校验链</b>而不是另写一套：七步里有五步（资格、开放日、时段窗口、
+     * 时长上限、信用闸门与单日累计）对个人和队伍同样成立，复制一份迟早会有一边漏改。
+     * 唯一的差别是 {@code group_required} 分区：它拒的是「个人散约」，整组下单正是它存在的理由，
+     * 所以 {@code groupId != null} 时跳过该拒。
+     *
+     * @param userId  下单人
+     * @param request 预约请求
+     * @param groupId 所属队伍；null 表示个人预约
+     * @return 创建结果
+     */
+    @Transactional
+    public ReservationDTO.ReservationCreateVO createReservation(Long userId,
+                                                                ReservationDTO.ReservationCreateRequest request,
+                                                                Long groupId) {
         LocalDate today = LocalDate.now();
         LocalDateTime now = LocalDateTime.now();
         Long seatId = request.getSeatId();
@@ -125,7 +145,8 @@ public class ReservationService {
                         seatZone.getName() + " 仅对 "
                                 + seatZone.getEligibleRoles().replace(",", "、") + " 开放");
             }
-            if (Boolean.TRUE.equals(seatZone.getGroupRequired())) {
+            if (Boolean.TRUE.equals(seatZone.getGroupRequired()) && groupId == null) {
+                // 只拒「个人散约」：整组下单就是这类分区存在的理由，不能再被同一条规则挡在门外
                 throw new BusinessException(ErrorCode.GROUP_ONLY_ZONE,
                         seatZone.getName() + " 仅支持整组预约");
             }
@@ -206,6 +227,7 @@ public class ReservationService {
                 .startSlot(startSlot)
                 .endSlot(endSlot)
                 .status(ReservationStatus.CONFIRMED)
+                .groupId(groupId)
                 .build();
         Reservation saved = reservationRepository.saveAndFlush(reservation);
 
