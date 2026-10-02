@@ -123,6 +123,9 @@ public final class BizConstants {
     /** 邀请码位数。 */
     public static final int GROUP_INVITE_CODE_LENGTH = 6;
 
+    /** 组长签到后，成员确认入座的宽限（分钟），超时记「组队缺席」。 */
+    public static final int GROUP_ATTEND_GRACE_MIN = 30;
+
     /** 日期格式。 */
     public static final String DATE_PATTERN = "yyyy-MM-dd";
 

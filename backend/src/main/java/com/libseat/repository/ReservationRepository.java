@@ -168,6 +168,14 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long>,
                            @Param("statuses") Collection<ReservationStatus> statuses);
 
     /**
+     * 一次组队下单产生的全部预约（签到与缺席处理按这支队伍整体操作）。
+     *
+     * @param groupId 队伍 ID
+     * @return 预约列表
+     */
+    List<Reservation> findByGroupId(Long groupId);
+
+    /**
      * 查询某楼层的全部预约（删除楼层时级联清理）。
      *
      * @param floorId 楼层 ID

@@ -119,4 +119,26 @@ public class GroupController {
     public Result<GroupDTO.GroupVO> cancel(@PathVariable Long id) {
         return Result.ok(groupService.cancel(id, UserContext.getUserId()));
     }
+
+    /**
+     * 组长签到 = 全队签到（S18）。
+     *
+     * @param id 队伍 ID
+     * @return 队伍视图
+     */
+    @PostMapping("/{id}/check-in")
+    public Result<GroupDTO.GroupVO> checkInByLeader(@PathVariable Long id) {
+        return Result.ok(groupService.checkInByLeader(id, UserContext.getUserId()));
+    }
+
+    /**
+     * 成员现场确认入座（S19）。
+     *
+     * @param id 队伍 ID
+     * @return 队伍视图
+     */
+    @PostMapping("/{id}/attend")
+    public Result<GroupDTO.GroupVO> attend(@PathVariable Long id) {
+        return Result.ok(groupService.confirmAttend(id, UserContext.getUserId()));
+    }
 }

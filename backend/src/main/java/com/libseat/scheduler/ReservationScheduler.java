@@ -2,6 +2,7 @@ package com.libseat.scheduler;
 
 import com.libseat.common.BizConstants;
 import com.libseat.entity.Group;
+import com.libseat.entity.GroupMember;
 import com.libseat.entity.LeaveRecord;
 import com.libseat.entity.Reservation;
 import com.libseat.enums.GroupStatus;
@@ -11,6 +12,7 @@ import com.libseat.repository.GroupRepository;
 import com.libseat.repository.LeaveRecordRepository;
 import com.libseat.repository.ReservationRepository;
 import com.libseat.service.GroupService;
+import com.libseat.service.GroupStateService;
 import com.libseat.service.LeaveStateService;
 import com.libseat.service.ReservationStateService;
 import lombok.RequiredArgsConstructor;
@@ -53,6 +55,8 @@ public class ReservationScheduler {
     private final GroupRepository groupRepository;
 
     private final GroupService groupService;
+
+    private final GroupStateService groupStateService;
 
     /**
      * 扫描超时未签到。
@@ -180,6 +184,50 @@ public class ReservationScheduler {
         }
         if (count > 0) {
             log.info("定时任务：{} 支队伍已锁定并完成整桌下单", count);
+        }
+    }
+
+    /**
+     * 扫描队伍签到与缺席（DESIGN §7.2）：两类判定同轮处理。
+     *
+     * <ol>
+     *   <li>队伍已签到但成员过了宽限期仍未确认入座 → {@code ABSENT} + 违规 −10，
+     *       <b>座位不释放</b>（整桌是一个使用单元）；</li>
+     *   <li>队伍已订座但组长错过签到窗口 → 整队取消 + 释放座位 + 组长 −20，成员不记违规。</li>
+     * </ol>
+     *
+     * <p>★ 逐队逐人 try-catch 且写操作走 {@link GroupStateService} 的事务代理：
+     * 一条脏数据不能挡住同轮其他队伍，而「改预约 + 删 slot + 记违规」必须同事务，
+     * 否则会出现队伍取消了但座位还占着。幂等靠状态本身：成员离开 {@code UNKNOWN}、
+     * 队伍离开 {@code RESERVED}，下一轮都选不到同一条。
+     */
+    @Scheduled(fixedRate = 60_000L, initialDelay = 40_000L)
+    public void scanGroupAttendance() {
+        LocalDateTime now = LocalDateTime.now();
+        int absent = 0;
+        for (Group group : groupRepository.findByStatus(GroupStatus.CHECKED_IN)) {
+            for (GroupMember member : groupStateService.overdueAbsentMembers(group, now)) {
+                try {
+                    groupStateService.markMemberAbsent(member, group, now);
+                    absent++;
+                } catch (Exception e) {
+                    log.error("成员缺席处理失败：groupId={}, userId={}",
+                            group.getId(), member.getUserId(), e);
+                }
+            }
+        }
+        int cancelled = 0;
+        for (Group group : groupRepository.findByStatus(GroupStatus.RESERVED)) {
+            try {
+                if (groupStateService.leaderMissedCheckIn(group, now)) {
+                    cancelled += groupStateService.cancelForLeaderAbsence(group, now);
+                }
+            } catch (Exception e) {
+                log.error("组长缺席整队取消失败：groupId={}", group.getId(), e);
+            }
+        }
+        if (absent > 0 || cancelled > 0) {
+            log.info("定时任务：{} 名组队成员记为未入座，{} 条预约因组长未签到被取消", absent, cancelled);
         }
     }
 }

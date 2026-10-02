@@ -11,6 +11,7 @@ import com.libseat.entity.Seat;
 import com.libseat.entity.SeatTable;
 import com.libseat.entity.User;
 import com.libseat.entity.Zone;
+import com.libseat.enums.AttendStatus;
 import com.libseat.enums.FloorStatus;
 import com.libseat.enums.GroupStatus;
 import com.libseat.enums.InviteStatus;
@@ -76,6 +77,8 @@ public class GroupService {
     private final RuleConfigService ruleConfigService;
 
     private final OpenRuleService openRuleService;
+
+    private final GroupStateService groupStateService;
 
     // ==================== 建队 ====================
 
@@ -395,6 +398,76 @@ public class GroupService {
         log.info("整桌下单成功：groupId={}, {} 人，首个座位 {}",
                 groupId, assigned.size(), seats.get(0).getSeatNo());
         return true;
+    }
+
+    // ==================== 签到与入座（T-V2-16） ====================
+
+    /**
+     * 组长签到 = 全队签到（DESIGN §7.2、S18）。
+     *
+     * <p>★ 超过签到窗口后不给「补签」：那时扫描器马上要按组长缺席整队取消，
+     * 让他补签成功等于把 4 个座位在无人到场的情况下占住整段时间。
+     *
+     * @param groupId 队伍
+     * @param userId  操作人（必须组长）
+     * @return 队伍视图
+     */
+    @Transactional
+    public GroupDTO.GroupVO checkInByLeader(Long groupId, Long userId) {
+        Group group = requireGroup(groupId);
+        requireLeader(group, userId);
+        if (group.getStatus() != GroupStatus.RESERVED) {
+            throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED,
+                    "队伍当前是「" + group.getStatus().getText() + "」，不能签到");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime start = BizConstants.slotStart(group.getReserveDate(), group.getStartSlot());
+        LocalDateTime windowFrom = start.minusMinutes(ruleConfigService.checkInBeforeMin());
+        LocalDateTime windowTo = start.plusMinutes(ruleConfigService.checkInAfterMin());
+        if (now.isBefore(windowFrom)) {
+            throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED,
+                    "未到签到窗口，" + BizConstants.formatDateTime(windowFrom) + " 起可签到");
+        }
+        if (now.isAfter(windowTo)) {
+            throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED,
+                    "已超过签到窗口（截止 " + BizConstants.formatDateTime(windowTo) + "），队伍将被取消");
+        }
+        groupStateService.checkInAll(group, now);
+        return view(requireGroup(groupId), userId);
+    }
+
+    /**
+     * 成员现场确认入座（S19）。
+     *
+     * <p>组长签到只把预约点开，「谁真的坐下了」必须本人确认 —— 否则一次签到就给全桌人
+     * 做了不在场证明，缺席风控形同虚设。
+     *
+     * @param groupId 队伍
+     * @param userId  确认人
+     * @return 队伍视图
+     */
+    @Transactional
+    public GroupDTO.GroupVO confirmAttend(Long groupId, Long userId) {
+        Group group = requireGroup(groupId);
+        if (group.getStatus() != GroupStatus.CHECKED_IN) {
+            throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED, "组长签到之后才能确认入座");
+        }
+        GroupMember member = groupMemberRepository.findByGroupIdAndUserId(groupId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "你不在该队伍中"));
+        if (!member.getInviteStatus().counted()) {
+            throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED,
+                    "当前是「" + member.getInviteStatus().getText() + "」，不能确认入座");
+        }
+        if (member.getAttendStatus() == AttendStatus.PRESENT) {
+            throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED, "已经确认过入座了");
+        }
+        if (member.getAttendStatus() == AttendStatus.ABSENT) {
+            throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED,
+                    "已记缺席，需要现场处理请到馆员台或让组长调整");
+        }
+        member.setAttendStatus(AttendStatus.PRESENT);
+        groupMemberRepository.save(member);
+        return view(requireGroup(groupId), userId);
     }
 
     // ==================== 查询 ====================
