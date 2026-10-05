@@ -42,11 +42,15 @@ export function slotText(slotIndex) {
 /**
  * 时段标签，如 14:00-14:30。
  *
+ * <p>★ 一格就是 30 分钟，和后端 `/config/slots`、平面图响应里的 `slotLabel` 同一口径。
+ * 这里原来写的是 `buildTimeRange(slotIndex, 1)`（1 是<b>小时</b>），于是所有「服务端标签缺失时
+ * 的兜底」都显示成 14:00-15:00 —— 与同一页面上来自后端的 14:00-14:30 自相矛盾。
+ *
  * @param {number} slotIndex 时段序号
  * @returns {string} 标签
  */
 export function slotLabel(slotIndex) {
-  return buildTimeRange(slotIndex, 1);
+  return `${slotText(slotIndex)}-${slotText(slotIndex + 1)}`;
 }
 
 /**

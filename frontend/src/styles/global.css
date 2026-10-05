@@ -203,3 +203,284 @@ body {
 .text-muted {
   color: rgba(0, 0, 0, 0.45);
 }
+
+/* ============ 移动优先壳（T-V2-23） ============ */
+.m-layout {
+  min-height: 100vh;
+  background: #f5f5f5;
+}
+
+.m-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 52px;
+  line-height: 52px;
+  padding: 0 12px;
+}
+
+.m-header-title {
+  color: #fff;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.m-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.m-header-pc {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 12px;
+  text-decoration: underline;
+}
+
+.m-header-user {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  max-width: 96px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 底部留出 tab bar 的高度 + iPhone 安全区，否则最后一张卡永远点不到 */
+.m-content {
+  padding: 12px 12px calc(72px + env(safe-area-inset-bottom));
+}
+
+.m-page {
+  display: block;
+}
+
+.m-gap {
+  margin-bottom: 12px;
+}
+
+.m-tabs {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  background: #fff;
+  border-top: 1px solid #f0f0f0;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.m-tab {
+  flex: 1 1 0;
+  /* 手机上「一按就中」的底线是 44px（PRD §13.1），这里给到 56 还含文字高度 */
+  min-height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  color: rgba(0, 0, 0, 0.55);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.m-tab-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.m-tab-active {
+  color: #1677ff;
+  font-weight: 600;
+}
+
+.m-chip-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 0 8px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.m-chip {
+  flex: 0 0 auto;
+  /* 44px 是触摸热区的底线（PRD §13.1），分区/楼层 chip 是主流程上的控件，不能比座位方块更小 */
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 20px;
+  border: 1px solid #d9d9d9;
+  background: #fff;
+  color: rgba(0, 0, 0, 0.75);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.m-chip-active {
+  border-color: #1677ff;
+  color: #1677ff;
+  background: #e6f4ff;
+  font-weight: 600;
+}
+
+.m-filter-row {
+  margin-bottom: 8px;
+}
+
+.m-floor-numbers {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+  color: rgba(0, 0, 0, 0.65);
+  font-size: 13px;
+}
+
+.m-free {
+  color: #52c41a;
+  font-size: 20px;
+}
+
+.m-zone-list {
+  margin-top: 8px;
+}
+
+.m-zone-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  line-height: 24px;
+}
+
+.m-zone-name {
+  max-width: 62%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.m-zone-peak {
+  margin-left: 4px;
+}
+
+.m-zone-free {
+  color: #52c41a;
+}
+
+.m-zone-full {
+  color: #ff4d4f;
+}
+
+.m-primary-button {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 10px;
+  border: none;
+  border-radius: 8px;
+  background: #1677ff;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.m-primary-button:disabled {
+  background: #b8cfe4;
+}
+
+.m-secondary-button {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 8px;
+  border: 1px solid #1677ff;
+  border-radius: 8px;
+  background: #fff;
+  color: #1677ff;
+  font-size: 15px;
+}
+
+.m-link-button {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 4px;
+  border: none;
+  background: transparent;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 14px;
+}
+
+.m-note {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+/* 底部抽屉：不用 antd Drawer 是为了让「点遮罩关闭 + 焦点仍在按钮上」这套行为可控 */
+.m-sheet-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+}
+
+.m-sheet {
+  width: 100%;
+  padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 时长选择是主流程上的控件，antd Segmented 默认只有 28px 高 —— 手机上按不准 */
+.m-sheet .ant-segmented-item {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+.m-sheet-title {
+  font-size: 17px;
+}
+
+/* ============ 无障碍（PRD §13.6） ============ */
+/* 键盘走查时「现在在哪」必须看得出来，antd 自带的 outline 在自定义按钮上会被抹掉 */
+/* 手机壳里所有可操作元素都靠 outline 说「你在这儿」：antd 自带的 focus 样式在
+   自定义 button 与链接上会被抹平，键盘走查时看不出焦点就等于不可用（PRD §13.6）。
+   这里只加 outline，不改布局宽度，避免为了焦点环把 44px 热区挤掉。 */
+.m-layout :is(a, button, .ant-select-selector, .ant-segmented-item, input, textarea, select):focus-visible,
+.seat-cell-clickable:focus-visible {
+  outline: 3px solid #1677ff;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seat-cell,
+  .seat-cell:hover {
+    transition: none;
+    transform: none;
+    box-shadow: none;
+  }
+
+  .ant-card-hoverable:hover {
+    transform: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,7 +1,8 @@
 import React from 'react';
 import { Avatar, Button, Layout, Menu, Typography } from 'antd';
 import {
-  BookOutlined, HourglassOutlined, LogoutOutlined, SafetyCertificateOutlined, TeamOutlined, UserOutlined,
+  BookOutlined, HourglassOutlined, LogoutOutlined, MobileOutlined, SafetyCertificateOutlined,
+  TeamOutlined, UserOutlined,
 } from '@ant-design/icons';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/AuthContext';
@@ -63,6 +64,14 @@ export default function MainLayout() {
           <Typography.Text type="secondary" style={{ color: 'rgba(255,255,255,0.65)' }}>
             {user ? `（${user.username}）` : ''}
           </Typography.Text>
+          <Button
+            type="text"
+            icon={<MobileOutlined />}
+            style={{ color: '#fff' }}
+            onClick={() => navigate('/m/home')}
+          >
+            手机版
+          </Button>
           <Button
             type="text"
             icon={<LogoutOutlined />}

@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import MainLayout from '../layouts/MainLayout';
 import AdminLayout from '../layouts/AdminLayout';
 import StaffLayout from '../layouts/StaffLayout';
+import MobileLayout from '../layouts/MobileLayout';
 import RequireAuth from './RequireAuth';
 import Login from '../pages/Login';
 import Register from '../pages/Register';
@@ -31,6 +32,8 @@ import StaffHome from '../pages/staff/StaffHome';
 import PatrolBoard from '../pages/staff/PatrolBoard';
 import Dashboard from '../pages/staff/Dashboard';
 import AppealQueue from '../pages/staff/AppealQueue';
+import MobileHome from '../pages/mobile/Home';
+import MobileSeat from '../pages/mobile/Seat';
 import { useAuth } from '../store/AuthContext';
 import { USER_ROLE, roleHomePath } from '../constants';
 
@@ -87,6 +90,23 @@ export default function AppRoutes() {
         <Route path="patrol" element={<PatrolBoard />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="appeals" element={<AppealQueue />} />
+      </Route>
+
+      {/* 移动优先壳（T-V2-23）：底部 Tab 五格，「我的座位 / 信用 / 我的」直接复用 PC 组件，避免同一业务出现两份实现 */}
+      <Route
+        path="/m"
+        element={
+          <RequireAuth>
+            <MobileLayout />
+          </RequireAuth>
+        }
+      >
+        <Route index element={<Navigate to="/m/home" replace />} />
+        <Route path="home" element={<MobileHome />} />
+        <Route path="seat" element={<MobileSeat />} />
+        <Route path="my" element={<MyReservations />} />
+        <Route path="credit" element={<Credit />} />
+        <Route path="me" element={<Profile />} />
       </Route>
 
       {/* 系统管理面 */}
