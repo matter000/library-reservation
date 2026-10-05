@@ -17,7 +17,7 @@ import {
   message,
 } from 'antd';
 import {
-  CheckCircleOutlined, CloseCircleOutlined, HourglassOutlined, LogoutOutlined,
+  CheckCircleOutlined, CloseCircleOutlined, HourglassOutlined, LogoutOutlined, TeamOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { cancelReservation, checkInReservation, fetchMyReservations, finishReservation } from '../api/reservation';
@@ -260,30 +260,46 @@ export default function MyReservations() {
 
           <div style={{ marginTop: 12 }}>
             <Space>
-              <HintedButton tip={item.canCancel ? '' : item.checkInWindowText || '当前不可取消'}>
-                <Button
-                  danger
-                  size="small"
-                  icon={<CloseCircleOutlined />}
-                  disabled={!item.canCancel}
-                  loading={actingId === item.reservationId}
-                  onClick={() => handleCancel(item)}
-                >
-                  取消预约
-                </Button>
-              </HintedButton>
-              <HintedButton tip={item.checkInWindowText || '不在签到窗口内'}>
-                <Button
-                  type="primary"
-                  size="small"
-                  icon={<CheckCircleOutlined />}
-                  disabled={!item.canCheckIn}
-                  loading={actingId === item.reservationId}
-                  onClick={() => handleCheckIn(item)}
-                >
-                  签到
-                </Button>
-              </HintedButton>
+              {item.groupId ? (
+                <>
+                  <Tag color="purple">组队预约</Tag>
+                  <Typography.Text type="secondary">{item.groupManagedHint}</Typography.Text>
+                  <Button
+                    size="small"
+                    icon={<TeamOutlined />}
+                    onClick={() => navigate(`/groups?groupId=${item.groupId}`)}
+                  >
+                    去队伍页操作
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <HintedButton tip={item.canCancel ? '' : item.checkInWindowText || '当前不可取消'}>
+                    <Button
+                      danger
+                      size="small"
+                      icon={<CloseCircleOutlined />}
+                      disabled={!item.canCancel}
+                      loading={actingId === item.reservationId}
+                      onClick={() => handleCancel(item)}
+                    >
+                      取消预约
+                    </Button>
+                  </HintedButton>
+                  <HintedButton tip={item.checkInWindowText || '不在签到窗口内'}>
+                    <Button
+                      type="primary"
+                      size="small"
+                      icon={<CheckCircleOutlined />}
+                      disabled={!item.canCheckIn}
+                      loading={actingId === item.reservationId}
+                      onClick={() => handleCheckIn(item)}
+                    >
+                      签到
+                    </Button>
+                  </HintedButton>
+                </>
+              )}
               {item.expectedReturnAt ? (
                 <Tag color="blue">
                   {`暂离中 · 预计 ${item.expectedReturnAt} 返回（${leaveRemainText(item)}）`}

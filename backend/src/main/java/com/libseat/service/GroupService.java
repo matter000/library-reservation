@@ -400,6 +400,35 @@ public class GroupService {
         return true;
     }
 
+    /**
+     * 一直没能下单的队伍，到开会时刻就收尾成「未成团」。
+     *
+     * <p>★ 每分钟重试是留给「座位刚好被抢、下一轮又空出来」这类瞬时冲突的；
+     * 一旦过了开会时刻就不可能再成功（个人预约链会直接拒「不能预约已过去的时段」，
+     * 信用闸门也会长期拦着被封禁的成员），留在 {@code FORMING} 就是让全桌人盯一个
+     * 再也不会走的倒计时 —— 缺席链路只处理 RESERVED/CHECKED_IN，救不了它。
+     *
+     * @param groupId 队伍
+     * @param now     当前时刻
+     * @return 本次是否完成了收尾
+     */
+    @Transactional
+    public boolean abandonIfExpired(Long groupId, LocalDateTime now) {
+        Group group = requireGroup(groupId);
+        if (group.getStatus() != GroupStatus.FORMING) {
+            return false;
+        }
+        LocalDateTime start = BizConstants.slotStart(group.getReserveDate(), group.getStartSlot());
+        if (start.isAfter(now)) {
+            return false;
+        }
+        group.setStatus(GroupStatus.FAILED);
+        groupRepository.save(group);
+        log.warn("队伍未能在开会时刻 {} 前完成整桌下单，置为未成团：groupId={}, 桌位={}",
+                start, groupId, group.getTableId());
+        return true;
+    }
+
     // ==================== 签到与入座（T-V2-16） ====================
 
     /**
@@ -416,22 +445,11 @@ public class GroupService {
     public GroupDTO.GroupVO checkInByLeader(Long groupId, Long userId) {
         Group group = requireGroup(groupId);
         requireLeader(group, userId);
-        if (group.getStatus() != GroupStatus.RESERVED) {
-            throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED,
-                    "队伍当前是「" + group.getStatus().getText() + "」，不能签到");
+        String reason = checkInDisabledReason(group, LocalDateTime.now());
+        if (reason != null) {
+            throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED, reason);
         }
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime start = BizConstants.slotStart(group.getReserveDate(), group.getStartSlot());
-        LocalDateTime windowFrom = start.minusMinutes(ruleConfigService.checkInBeforeMin());
-        LocalDateTime windowTo = start.plusMinutes(ruleConfigService.checkInAfterMin());
-        if (now.isBefore(windowFrom)) {
-            throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED,
-                    "未到签到窗口，" + BizConstants.formatDateTime(windowFrom) + " 起可签到");
-        }
-        if (now.isAfter(windowTo)) {
-            throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED,
-                    "已超过签到窗口（截止 " + BizConstants.formatDateTime(windowTo) + "），队伍将被取消");
-        }
         groupStateService.checkInAll(group, now);
         return view(requireGroup(groupId), userId);
     }
@@ -449,21 +467,13 @@ public class GroupService {
     @Transactional
     public GroupDTO.GroupVO confirmAttend(Long groupId, Long userId) {
         Group group = requireGroup(groupId);
-        if (group.getStatus() != GroupStatus.CHECKED_IN) {
-            throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED, "组长签到之后才能确认入座");
-        }
         GroupMember member = groupMemberRepository.findByGroupIdAndUserId(groupId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "你不在该队伍中"));
-        if (!member.getInviteStatus().counted()) {
-            throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED,
-                    "当前是「" + member.getInviteStatus().getText() + "」，不能确认入座");
-        }
-        if (member.getAttendStatus() == AttendStatus.PRESENT) {
-            throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED, "已经确认过入座了");
-        }
-        if (member.getAttendStatus() == AttendStatus.ABSENT) {
-            throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED,
-                    "已记缺席，需要现场处理请到馆员台或让组长调整");
+        String reason = attendDisabledReason(member,
+                shownStatus(member, LocalDateTime.now().minusMinutes(BizConstants.GROUP_INVITE_TTL_MIN)),
+                group);
+        if (reason != null) {
+            throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED, reason);
         }
         member.setAttendStatus(AttendStatus.PRESENT);
         groupMemberRepository.save(member);
@@ -523,14 +533,27 @@ public class GroupService {
     }
 
     private void requireMutable(Group group) {
+        String reason = mutableDisabledReason(group);
+        if (reason != null) {
+            throw new BusinessException(ErrorCode.GROUP_LOCKED, reason);
+        }
+    }
+
+    /**
+     * 「还能不能增减成员」的单一判定：{@code confirm} / {@code quit} / {@code invite} 与
+     * 前端的按钮可用性都读它，避免出现「按钮说能点、接口说不能点」。
+     *
+     * @param group 队伍
+     * @return 不能操作的理由，可操作返回 null
+     */
+    private String mutableDisabledReason(Group group) {
         if (!group.getStatus().memberMutable()) {
-            throw new BusinessException(ErrorCode.GROUP_LOCKED,
-                    "队伍已" + group.getStatus().getText() + "，不能再增减成员");
+            return "队伍已" + group.getStatus().getText() + "，不能再增减成员";
         }
         if (group.getLockTime().isBefore(LocalDateTime.now())) {
-            throw new BusinessException(ErrorCode.GROUP_LOCKED,
-                    "已过锁定时刻（" + BizConstants.formatDateTime(group.getLockTime()) + "），不能再增减成员");
+            return "已过锁定时刻（" + BizConstants.formatDateTime(group.getLockTime()) + "），不能再增减成员";
         }
+        return null;
     }
 
     private List<Seat> freeSeats(Long tableId) {
@@ -650,6 +673,7 @@ public class GroupService {
             User user = userRepository.findById(member.getUserId()).orElse(null);
             Seat seat = member.getSeatId() == null ? null
                     : seatRepository.findById(member.getSeatId()).orElse(null);
+            boolean self = member.getUserId().equals(viewerId);
             memberVOS.add(GroupDTO.MemberVO.builder()
                     .memberId(member.getId())
                     .userId(member.getUserId())
@@ -659,19 +683,24 @@ public class GroupService {
                     .memberRoleText("LEADER".equals(member.getMemberRole()) ? "组长" : "成员")
                     .inviteStatus(status.name())
                     .inviteStatusText(status.getText())
+                    .self(self)
                     .confirmTime(BizConstants.formatDateTime(member.getConfirmTime()))
                     .seatId(member.getSeatId())
                     .seatNo(seat == null ? null : seat.getSeatNo())
                     .attendStatus(member.getAttendStatus().name())
                     .attendStatusText(member.getAttendStatus().getText())
-                    .canConfirm(status == InviteStatus.INVITED && actionsOpen(group))
-                    .confirmDisabledReason(confirmDisabledReason(status, group))
-                    .canQuit(status.counted() && !"LEADER".equals(member.getMemberRole()) && actionsOpen(group))
-                    .quitDisabledReason(quitDisabledReason(member, status, group))
+                    .canConfirm(self && status == InviteStatus.INVITED && actionsOpen(group))
+                    .confirmDisabledReason(self ? confirmDisabledReason(status, group) : null)
+                    .canQuit(self && status.counted()
+                            && !"LEADER".equals(member.getMemberRole()) && actionsOpen(group))
+                    .quitDisabledReason(self ? quitDisabledReason(member, status, group) : null)
+                    .canAttend(self && attendDisabledReason(member, status, group) == null)
+                    .attendDisabledReason(self ? attendDisabledReason(member, status, group) : null)
                     .build());
         }
         int duration = BizConstants.hoursOfSlots(group.getEndSlot() - group.getStartSlot());
         String cancelReason = cancelDisabledReason(group);
+        String checkInReason = checkInDisabledReason(group, LocalDateTime.now());
         Zone zone = zoneRepository.findById(group.getZoneId()).orElse(null);
         SeatTable table = seatTableRepository.findById(group.getTableId()).orElse(null);
         return GroupDTO.GroupVO.builder()
@@ -703,6 +732,10 @@ public class GroupService {
                 .leader(leader)
                 .canCancel(cancelReason == null)
                 .cancelDisabledReason(cancelReason)
+                .canCheckIn(leader && checkInReason == null)
+                .checkInDisabledReason(leader ? checkInReason : null)
+                .canInvite(leader && actionsOpen(group))
+                .inviteDisabledReason(leader ? mutableDisabledReason(group) : null)
                 .myInviteStatus(findMember(members, viewerId)
                         .map(m -> shownStatus(m, deadline).getText()).orElse(null))
                 .members(memberVOS)
@@ -710,7 +743,7 @@ public class GroupService {
     }
 
     private boolean actionsOpen(Group group) {
-        return group.getStatus().memberMutable() && group.getLockTime().isAfter(LocalDateTime.now());
+        return mutableDisabledReason(group) == null;
     }
 
     private String confirmDisabledReason(InviteStatus status, Group group) {
@@ -754,6 +787,55 @@ public class GroupService {
         }
         if (group.getStatus() != GroupStatus.FORMING) {
             return "队伍已" + group.getStatus().getText() + "，取消请在「我的预约」逐条处理";
+        }
+        return null;
+    }
+
+    /**
+     * 组长签到可用性：与 {@link #checkInByLeader} 共用同一段判定。
+     *
+     * <p>★ 判成一份而不是两处各写一遍，否则「按钮说能点、接口说不能点」迟早会出现。
+     *
+     * @param group 队伍
+     * @param now   当前时刻
+     * @return 不可签到的理由，可签到返回 null
+     */
+    private String checkInDisabledReason(Group group, LocalDateTime now) {
+        if (group.getStatus() != GroupStatus.RESERVED) {
+            return "队伍当前是「" + group.getStatus().getText() + "」，不能签到";
+        }
+        LocalDateTime start = BizConstants.slotStart(group.getReserveDate(), group.getStartSlot());
+        LocalDateTime windowFrom = start.minusMinutes(ruleConfigService.checkInBeforeMin());
+        LocalDateTime windowTo = start.plusMinutes(ruleConfigService.checkInAfterMin());
+        if (now.isBefore(windowFrom)) {
+            return "未到签到窗口，" + BizConstants.formatDateTime(windowFrom) + " 起可签到";
+        }
+        if (now.isAfter(windowTo)) {
+            return "已超过签到窗口（截止 " + BizConstants.formatDateTime(windowTo) + "），队伍将被取消";
+        }
+        return null;
+    }
+
+    /**
+     * 成员确认入座可用性：与 {@link #confirmAttend} 共用同一段判定。
+     *
+     * @param member 成员行
+     * @param status 显示用邀请状态
+     * @param group  队伍
+     * @return 不可确认的理由，可确认返回 null
+     */
+    private String attendDisabledReason(GroupMember member, InviteStatus status, Group group) {
+        if (group.getStatus() != GroupStatus.CHECKED_IN) {
+            return "组长签到之后才能确认入座";
+        }
+        if (!status.counted()) {
+            return "当前是「" + status.getText() + "」，不能确认入座";
+        }
+        if (member.getAttendStatus() == AttendStatus.PRESENT) {
+            return "已经确认过入座了";
+        }
+        if (member.getAttendStatus() == AttendStatus.ABSENT) {
+            return "已记缺席，需要现场处理请到馆员台或让组长调整";
         }
         return null;
     }

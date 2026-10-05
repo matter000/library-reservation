@@ -12,12 +12,17 @@ import { SEAT_STATUS_META } from '../constants';
  * @param {number} props.maxRow 最大行号
  * @param {number} props.maxCol 最大列号
  * @param {number} props.selectedSeatId 当前选中的座位（Drawer 打开的那个）
+ * @param {Array<number>} props.selectedTableIds 整桌预览下被选中的座位（同一桌全部高亮）
+ * @param {boolean} props.tableMode 整桌选择模式（点击的是「桌」，不是单个座位）
  * @param {Function} props.onSelect 点击回调（仅空闲座位触发）
  * @returns {JSX.Element} 网格
  */
-export default function SeatGrid({ seats, maxRow, maxCol, selectedSeatId, onSelect }) {
+export default function SeatGrid({
+  seats, maxRow, maxCol, selectedSeatId, selectedTableIds, tableMode, onSelect,
+}) {
   const safeMaxRow = maxRow && maxRow > 0 ? maxRow : 1;
   const safeMaxCol = maxCol && maxCol > 0 ? maxCol : 1;
+  const tableSeatIds = selectedTableIds || [];
 
   const rows = Array.from({ length: safeMaxRow }, (_, i) => i + 1);
   const cols = Array.from({ length: safeMaxCol }, (_, i) => i + 1);
@@ -48,7 +53,7 @@ export default function SeatGrid({ seats, maxRow, maxCol, selectedSeatId, onSele
         {seats.map((seat) => {
           const meta = SEAT_STATUS_META[seat.displayStatus] || SEAT_STATUS_META.UNAVAILABLE;
           const clickable = Boolean(meta.clickable);
-          const selected = selectedSeatId === seat.seatId;
+          const selected = selectedSeatId === seat.seatId || tableSeatIds.includes(seat.seatId);
           const className = [
             'seat-cell',
             `seat-cell-${(seat.displayStatus || '').toLowerCase()}`,
@@ -72,7 +77,7 @@ export default function SeatGrid({ seats, maxRow, maxCol, selectedSeatId, onSele
               key={seat.seatId}
               title={
                 clickable
-                  ? `${seat.seatNo} · ${meta.text} · 点击预约`
+                  ? `${seat.seatNo} · ${meta.text} · ${tableMode ? '点击选择整桌' : '点击预约'}`
                   : `${seat.seatNo} · ${meta.text}${seat.expectedReturnAt ? ` · 预计 ${seat.expectedReturnAt} 返回` : ''}`
               }
             >

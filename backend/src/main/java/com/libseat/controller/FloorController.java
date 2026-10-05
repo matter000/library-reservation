@@ -1,5 +1,6 @@
 package com.libseat.controller;
 
+import com.libseat.common.BizConstants;
 import com.libseat.common.Result;
 import com.libseat.dto.FloorDTO;
 import com.libseat.dto.SeatDTO;
@@ -104,6 +105,12 @@ public class FloorController {
                 .defaultDuration(ruleConfigService.defaultDuration())
                 .checkInBeforeMin(ruleConfigService.checkInBeforeMin())
                 .checkInAfterMin(ruleConfigService.checkInAfterMin())
+                // ★ 组队口径也走这里：前端要写「开始前 30 分钟锁定」就必须从服务端取，
+                //   两处各写一份数字，改值后页面就成了假说明。
+                .groupLockBeforeMin(BizConstants.GROUP_LOCK_BEFORE_MIN)
+                .groupInviteTtlMin(BizConstants.GROUP_INVITE_TTL_MIN)
+                .groupMinMembers(BizConstants.GROUP_MIN_MEMBERS)
+                .groupAttendGraceMin(BizConstants.GROUP_ATTEND_GRACE_MIN)
                 .build());
     }
 }

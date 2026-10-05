@@ -3,6 +3,7 @@ import {
   Alert,
   Breadcrumb,
   Button,
+  Checkbox,
   DatePicker,
   Descriptions,
   Drawer,
@@ -61,6 +62,10 @@ export default function SeatMap() {
   const [selectedSeat, setSelectedSeat] = useState(null);
   const [duration, setDuration] = useState(DEFAULT_DURATION);
   const [submitting, setSubmitting] = useState(false);
+
+  // 整桌选择模式：groupRequired 分区强制开启，allowGroup 分区由用户勾选
+  const [groupPick, setGroupPick] = useState(false);
+  const [selectedTableId, setSelectedTableId] = useState(null);
 
   const timerRef = useRef(null);
   const pollInFlightRef = useRef(false);
@@ -195,13 +200,33 @@ export default function SeatMap() {
   /** 分区有效规则：全部由服务端算好，这里只做展示与置灰。 */
   const zoneRules = (mapData && mapData.zoneRules) || null;
 
+  /** 本区是否接受组队（allowGroup 或 groupRequired），两者都由服务端判定。 */
+  const zoneGroupable = Boolean(zoneRules
+    && (zoneRules.groupRequired === true || zoneRules.allowGroup === true));
+
+  /**
+   * 整桌选择模式是否生效。
+   *
+   * <p>★ groupRequired 分区强制生效：那里单座预约会被后端 4102 拒掉，
+   * 若还让用户点单座，就是在明知会被拒的地方摆一个按钮。
+   */
+  const tableMode = zoneGroupable && (zoneRules.groupRequired === true || groupPick);
+
   /** 时长选项再按分区上限裁一刀（后端仍会二次校验）。 */
   const selectableDurations = zoneRules && zoneRules.maxDurationMin
     ? durationOptions.filter((option) => option.value * 60 <= zoneRules.maxDurationMin)
     : durationOptions;
 
-  /** 点击空闲座位 → 打开 Drawer。 */
+  /** 点击空闲座位：整桌模式下选中的是「桌」，个人模式下才打开预约抽屉。 */
   const handleSelectSeat = (seat) => {
+    if (tableMode) {
+      if (!seat.tableId) {
+        message.warning('这个座位还不属于任何桌位，请先在馆员台将本区座位并入桌位');
+        return;
+      }
+      setSelectedTableId(seat.tableId);
+      return;
+    }
     setSelectedSeat(seat);
     setDuration(defaultDuration);
     setDrawerOpen(true);
@@ -237,6 +262,44 @@ export default function SeatMap() {
   const seats = mapData && mapData.seats ? mapData.seats : [];
   const stats = mapData ? mapData.stats : null;
   const floorClosed = mapData ? mapData.floorStatus === FLOOR_STATUS.CLOSED : false;
+
+  /** 选中桌的实时汇总：每轮轮询按最新占用重算，桌位消失则回到未选状态。 */
+  const selectedTable = useMemo(() => {
+    if (!selectedTableId) {
+      return null;
+    }
+    const same = seats.filter((item) => item.tableId === selectedTableId);
+    if (same.length === 0) {
+      return null;
+    }
+    return {
+      tableId: selectedTableId,
+      tableNo: same[0].tableNo,
+      seatIds: same.map((item) => item.seatId),
+      usable: same.filter((item) => item.baseStatus === 'AVAILABLE').length,
+      free: same.filter((item) => item.displayStatus === 'FREE').length,
+    };
+  }, [seats, selectedTableId]);
+
+  /** 换楼层 / 换分区 / 换日期时段都要重看余量，旧选择一律作废。 */
+  useEffect(() => {
+    setSelectedTableId(null);
+    setSelectedSeat(null);
+    setDrawerOpen(false);
+    setGroupPick(false);
+  }, [floorId, date, slot, zoneId]);
+
+  /** 带着当前筛选条件去建队页，用户不必重选一遍。 */
+  const goCreateGroup = () => {
+    const query = new URLSearchParams({
+      floorId: String(floorId),
+      zoneId: String(zoneId),
+      tableId: String(selectedTable.tableId),
+      date,
+      slot: String(slot),
+    });
+    navigate(`/groups/create?${query.toString()}`);
+  };
 
   return (
     <div>
@@ -306,6 +369,40 @@ export default function SeatMap() {
         <Typography.Text type="secondary">上次更新 {lastUpdated || '--:--:--'}</Typography.Text>
       </div>
 
+      {zoneGroupable ? (
+        <div className="toolbar">
+          {zoneRules.groupRequired === true ? (
+            <Tag color="purple">本区仅整组预约 · 点座位即选整桌</Tag>
+          ) : (
+            <Checkbox
+              checked={groupPick}
+              onChange={(e) => {
+                setGroupPick(e.target.checked);
+                setSelectedTableId(null);
+                setSelectedSeat(null);
+              }}
+            >
+              整桌选择（组队学习）
+            </Checkbox>
+          )}
+          {selectedTable ? (
+            <>
+              <Typography.Text strong>
+                {`已选 ${selectedTable.tableNo || `桌 ${selectedTable.tableId}`}：共 ${selectedTable.seatIds.length} 座，`
+                  + `可用 ${selectedTable.usable}，当前时段空闲 ${selectedTable.free}`}
+              </Typography.Text>
+              <Button type="primary" onClick={goCreateGroup} disabled={floorClosed}>
+                用这张桌建队
+              </Button>
+            </>
+          ) : (
+            <Typography.Text type="secondary">
+              点击任意空闲座位即可选中它所在的整桌，再点「用这张桌建队」
+            </Typography.Text>
+          )}
+        </div>
+      ) : null}
+
       {floorClosed ? (
         <Alert type="warning" showIcon message="该楼层已关闭，暂不开放预约" style={{ marginBottom: 12 }} />
       ) : null}
@@ -325,7 +422,7 @@ export default function SeatMap() {
           message={`${zoneRules.zoneName}（${zoneRules.zoneTypeText}）：`
             + `单次最长 ${zoneRules.maxDurationMin} 分钟 · 提前 ${zoneRules.advanceDays} 天`
             + ` · ${zoneRules.leaveAllowed ? `可暂离 ${zoneRules.leaveMaxMin} 分钟` : '不支持暂离'}`
-            + (zoneRules.groupRequired ? ' · 仅整组预约' : '')
+            + (zoneRules.groupRequired ? ' · 仅整组预约' : (zoneRules.allowGroup ? ' · 可组队' : ''))
             + (zoneRules.peakFlag ? ' · 当前时段为高峰' : '')}
         />
       ) : null}
@@ -385,6 +482,8 @@ export default function SeatMap() {
             maxRow={mapData.maxRow}
             maxCol={mapData.maxCol}
             selectedSeatId={selectedSeat ? selectedSeat.seatId : null}
+            selectedTableIds={selectedTable ? selectedTable.seatIds : []}
+            tableMode={tableMode}
             onSelect={handleSelectSeat}
           />
         ) : (
@@ -393,7 +492,11 @@ export default function SeatMap() {
       </Spin>
 
       {/* 5. 底部提示 */}
-      <div className="seat-map-tip">点击空闲（绿色）座位即可预约；页面每 30 秒自动刷新。</div>
+      <div className="seat-map-tip">
+        {tableMode
+          ? '整桌模式：点空闲（绿色）座位选中它所在的整桌，座位在队伍锁定时刻才真正占下。页面每 30 秒自动刷新。'
+          : '点击空闲（绿色）座位即可预约；页面每 30 秒自动刷新。'}
+      </div>
 
       {/* 预约抽屉 */}
       <Drawer

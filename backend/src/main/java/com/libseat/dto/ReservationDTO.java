@@ -146,6 +146,12 @@ public class ReservationDTO {
         /** 签到窗口提示文本（后端计算）。 */
         private String checkInWindowText;
 
+        /** 所属队伍 ID（个人预约为 null；前端据此给出「去组队页」入口）。 */
+        private Long groupId;
+
+        /** 队伍统一管理提示（非队伍预约为 null）：说明为什么个人签到 / 取消按钮是灰的。 */
+        private String groupManagedHint;
+
         /** 是否可登记暂离（后端算，前端只置灰）。 */
         private Boolean canLeave;
 

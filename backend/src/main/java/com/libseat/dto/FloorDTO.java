@@ -121,6 +121,18 @@ public class FloorDTO {
 
         /** 签到窗口：开始后多少分钟。 */
         private Integer checkInAfterMin;
+
+        /** 组队：距时段开始多少分钟锁定队伍并整桌下单。 */
+        private Integer groupLockBeforeMin;
+
+        /** 组队：邀请码有效时长（分钟）。 */
+        private Integer groupInviteTtlMin;
+
+        /** 组队：成团最少人数。 */
+        private Integer groupMinMembers;
+
+        /** 组队：组长签到后成员确认入座的宽限（分钟）。 */
+        private Integer groupAttendGraceMin;
     }
 
     /**

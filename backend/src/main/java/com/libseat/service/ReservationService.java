@@ -43,6 +43,17 @@ public class ReservationService {
 
     private static final DateTimeFormatter HM_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
 
+    /**
+     * 组队预约的统一管理提示。
+     *
+     * <p>★ 队伍是一个使用单元：个人入口若允许单独签到或取消，就会出现
+     * 「组长还没签，成员先把自己点开」和「取消一个人、桌上其他人还占着」两种破口，
+     * 而 {@code scanGroupAttendance} 的缺席判定整套都建立在「全队同进同出」上。
+     */
+    public static final String GROUP_MANAGED_HINT
+            = "这是组队队伍的预约：签到由组长在「组队学习」完成（组长签到＝全队签到），"
+            + "不再占用请退出队伍或由组长取消队伍";
+
     private final ReservationRepository reservationRepository;
 
     private final ReservationSlotRepository reservationSlotRepository;
@@ -337,6 +348,10 @@ public class ReservationService {
         ReservationStatus status = reservation.getStatus();
         LocalDateTime now = LocalDateTime.now();
 
+        if (reservation.getGroupId() != null) {
+            throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED, GROUP_MANAGED_HINT);
+        }
+
         if (status == ReservationStatus.CHECKED_IN) {
             throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED, "已签到后不可取消");
         }
@@ -431,6 +446,10 @@ public class ReservationService {
         ReservationStatus status = reservation.getStatus();
         LocalDateTime now = LocalDateTime.now();
 
+        if (reservation.getGroupId() != null) {
+            throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED, GROUP_MANAGED_HINT);
+        }
+
         if (status == ReservationStatus.CHECKED_IN) {
             throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED, "已签到，无需重复签到");
         }
@@ -523,9 +542,10 @@ public class ReservationService {
         LocalDateTime openAt = start.minusMinutes(ruleConfigService.checkInBeforeMin());
         LocalDateTime closeAt = start.plusMinutes(ruleConfigService.checkInAfterMin());
 
-        boolean canCancel = status == ReservationStatus.CONFIRMED && now.isBefore(start);
+        boolean groupManaged = reservation.getGroupId() != null;
+        boolean canCancel = status == ReservationStatus.CONFIRMED && now.isBefore(start) && !groupManaged;
         boolean canCheckIn = status == ReservationStatus.CONFIRMED
-                && !now.isBefore(openAt) && !now.isAfter(closeAt);
+                && !now.isBefore(openAt) && !now.isAfter(closeAt) && !groupManaged;
 
         String windowText;
         if (status != ReservationStatus.CONFIRMED) {
@@ -536,6 +556,10 @@ public class ReservationService {
             windowText = "签到已截止（窗口 " + openAt.format(HM_FORMATTER) + "-" + closeAt.format(HM_FORMATTER) + "）";
         } else {
             windowText = "签到窗口 " + openAt.format(HM_FORMATTER) + "-" + closeAt.format(HM_FORMATTER);
+        }
+        if (groupManaged && status == ReservationStatus.CONFIRMED) {
+            // ★ 不能给队伍成员显示个人签到窗口：那一按就绕过了「组长签到＝全队签到」
+            windowText = "组队预约：请到「组队学习」由组长签到";
         }
 
         int duration = BizConstants.hoursOfSlots(reservation.getEndSlot() - reservation.getStartSlot());
@@ -564,6 +588,8 @@ public class ReservationService {
                 .canCancel(canCancel)
                 .canCheckIn(canCheckIn)
                 .checkInWindowText(windowText)
+                .groupId(reservation.getGroupId())
+                .groupManagedHint(groupManaged ? GROUP_MANAGED_HINT : null)
                 .build();
     }
 

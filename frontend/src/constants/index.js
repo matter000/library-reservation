@@ -169,6 +169,54 @@ export const CREDIT_LOG_KIND_META = {
   RESTORE: { text: '申诉回补', color: 'blue' },
 };
 
+/**
+ * 队伍状态（与后端 GroupStatus 对齐）。
+ *
+ * ★ 文案一律用后端返回的 statusText，本表只提供配色：状态机在 FORMING 之后
+ * 还会插入 LOCKED（已锁定、正在下单）这一瞬时态，两处各写一份就会漏。
+ */
+export const GROUP_STATUS_META = {
+  FORMING: { text: '组队中', color: 'blue' },
+  LOCKED: { text: '已锁定', color: 'processing' },
+  RESERVED: { text: '已订座', color: 'cyan' },
+  CHECKED_IN: { text: '使用中', color: 'red' },
+  COMPLETED: { text: '已完成', color: 'green' },
+  CANCELLED: { text: '已取消', color: 'default' },
+  FAILED: { text: '未成团', color: 'orange' },
+};
+
+/** 邀请状态（与后端 InviteStatus 对齐）。 */
+export const INVITE_STATUS_META = {
+  INVITED: { text: '待确认', color: 'gold' },
+  CONFIRMED: { text: '已确认', color: 'green' },
+  DECLINED: { text: '已婉拒', color: 'default' },
+  EXPIRED: { text: '已过期', color: 'orange' },
+};
+
+/** 入座状态（与后端 AttendStatus 对齐；只有组长签到后才会离开 UNKNOWN）。 */
+export const ATTEND_STATUS_META = {
+  UNKNOWN: { text: '待确认入座', color: 'default' },
+  PRESENT: { text: '已入座', color: 'green' },
+  ABSENT: { text: '未入座', color: 'red' },
+};
+
+/**
+ * 组队规则兜底值（真实值取自 /api/config/booking，与后端 BizConstants 同源）。
+ *
+ * <p>这些数字只用于「表单提示与倒计时展示」，判定全在服务端；兜底写错也拦不住越权，
+ * 但服务端返回值到手后必须覆盖它。
+ */
+export const GROUP_LOCK_BEFORE_MIN = 30;
+
+export const GROUP_INVITE_TTL_MIN = 10;
+
+export const GROUP_MIN_MEMBERS = 2;
+
+export const GROUP_ATTEND_GRACE_MIN = 30;
+
+/** 组队页轮询间隔：锁定与邀请过期都按分钟推进，30 秒会让倒计时看起来「卡住」。 */
+export const GROUP_POLL_INTERVAL = 15000;
+
 /** 违规状态下拉项。 */
 export const VIOLATION_STATUS_OPTIONS = Object.entries(VIOLATION_STATUS_META)
   .map(([value, meta]) => ({ value, label: meta.text }));

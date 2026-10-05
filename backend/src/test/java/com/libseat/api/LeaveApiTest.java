@@ -8,6 +8,7 @@ import com.libseat.entity.ReservationSlot;
 import com.libseat.enums.LeaveStatus;
 import com.libseat.enums.ReservationStatus;
 import com.libseat.repository.LeaveRecordRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
@@ -57,24 +59,50 @@ class LeaveApiTest extends ApiTestBase {
     private static final int LEAVE_LIMIT_EXCEEDED = 4096;
     private static final int LEAVE_ALREADY_OPEN = 4097;
 
+    /** 开放窗口末尾格（22:00）：合法预约的 endSlot 不会越过它。 */
+    private static final int DAY_LAST_SLOT = BizConstants.SLOT_INDEX_MAX + 1;
+
     @Autowired
     private LeaveRecordRepository leaveRecordRepository;
+
+    /**
+     * ★ 本类每个用例都以「此刻这一格」搭现场，而库区开放窗口是 08:00-22:00（合法格号 16~43）。
+     *
+     * <p>22:00 一过，{@code slotOf(now)} 变成 44：平面图查询会把它夹回 43，于是出现
+     * 「明明签到了却显示空闲」；两张 fixture 又都往 44 格写占用行，直接撞
+     * {@code uk_slot_seat_date_idx}。那是时刻的问题而不是实现的问题 —— 越界一律跳过，
+     * 不去伪造一个产品里不可能存在的数据。
+     */
+    @BeforeEach
+    void skipOutsideOpenWindow() {
+        int nowSlot = BizConstants.slotOf(LocalTime.now());
+        assumeTrue(nowSlot >= BizConstants.SLOT_INDEX_MIN && nowSlot <= BizConstants.SLOT_INDEX_MAX,
+                "当前时刻 " + LocalTime.now() + " 已不在开放时段内（slotOf=" + nowSlot
+                        + "，合法区间 " + BizConstants.SLOT_INDEX_MIN + "~" + BizConstants.SLOT_INDEX_MAX
+                        + "），暂离用例都以「此刻这一格」搭现场，跳过");
+    }
 
     /** 直插一条「使用中」预约，并同步写占用明细（平面图只认 t_reservation_slot）。 */
     private Reservation checkedIn(Long userId, long seatId, long floorId, LocalDate date,
                                   int startSlot, int slotCount) {
+        // ★ 预约不出当天：产品里开放窗口是 08:00-22:00，任何合法预约的 endSlot 都 ≤ 44。
+        //   fixture 若跨过当天末尾（如 21:30 起连 6 格），endSlot 会落到 49，
+        //   而 BizConstants.slotEnd 的契约要求「跨 24:00 的边界由调用方保证」——
+        //   于是「预约结束时刻」绕回<b>当天</b> 00:30，暂离剩余分钟变成负一千多，
+        //   看起来是实现错了，其实是现场搭出了产品不可能产生的数据。
+        int safeCount = Math.max(1, Math.min(slotCount, DAY_LAST_SLOT - startSlot));
         Reservation reservation = Reservation.builder()
                 .userId(userId)
                 .seatId(seatId)
                 .floorId(floorId)
                 .reserveDate(date)
                 .startSlot(startSlot)
-                .endSlot(startSlot + slotCount)
+                .endSlot(startSlot + safeCount)
                 .status(ReservationStatus.CHECKED_IN)
                 .checkInTime(BizConstants.slotStart(date, startSlot))
                 .build();
         Reservation saved = reservationRepository.saveAndFlush(reservation);
-        for (int i = 0; i < slotCount; i++) {
+        for (int i = 0; i < safeCount; i++) {
             reservationSlotRepository.saveAndFlush(ReservationSlot.builder()
                     .reservation(saved)
                     .seatId(seatId)
@@ -599,7 +627,9 @@ class LeaveApiTest extends ApiTestBase {
         MvcResult blocked = finish(me, another.getId());
         assertEquals(STATUS_NOT_ALLOWED, code(blocked),
                 "暂离中应先返回，实际：" + body(blocked));
-        assertEquals(6, slotRowCount(another.getId()), "被拒的结束不能删掉 slot 行");
+        assertEquals(another.getEndSlot() - another.getStartSlot(), slotRowCount(another.getId()),
+                "★ 被拒的结束一条 slot 行都不能删；条数按预约本身的格数算，而不是写死一个数字"
+                        + "（fixture 的格数会因开放窗口末尾而收缩，写死就成了测现场搭建）");
 
         // 非本人的预约 → 4040（防水平越权，沿用 V1 语义）
         MvcResult foreign = start(u1, another.getId(), "PHONE", null);

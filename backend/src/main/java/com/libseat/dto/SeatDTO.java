@@ -60,6 +60,14 @@ public class SeatDTO {
 
         /** 所属桌位 ID（非组队区为 null）。 */
         private Long tableId;
+
+        /**
+         * 所属桌号（非组队区为 null）。
+         *
+         * <p>组队的下单单位是「桌」，平面图必须能把同一桌的座位说成一组；
+         * 只给 tableId 的话前端只能显示「桌 7」这种内部编号。
+         */
+        private String tableNo;
     }
 
     /**
@@ -103,6 +111,9 @@ public class SeatDTO {
 
         /** 是否仅整组预约。 */
         private Boolean groupRequired;
+
+        /** 是否支持组队预约（groupRequired 为真时必然支持；为假时决定平面图要不要提供选桌入口）。 */
+        private Boolean allowGroup;
 
         /** 当前时段是否落在高峰窗口。 */
         private Boolean peakFlag;

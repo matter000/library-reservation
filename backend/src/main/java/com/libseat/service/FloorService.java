@@ -8,6 +8,7 @@ import com.libseat.dto.SeatDTO;
 import com.libseat.entity.Floor;
 import com.libseat.entity.PeakWindow;
 import com.libseat.entity.Seat;
+import com.libseat.entity.SeatTable;
 import com.libseat.entity.Zone;
 import com.libseat.enums.FloorStatus;
 import com.libseat.enums.ReservationStatus;
@@ -16,6 +17,7 @@ import com.libseat.enums.SeatStatus;
 import com.libseat.enums.UserRole;
 import com.libseat.repository.FloorRepository;
 import com.libseat.repository.SeatRepository;
+import com.libseat.repository.SeatTableRepository;
 import com.libseat.repository.ZoneRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -27,6 +29,8 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * 用户端楼层服务：楼层列表（含空闲数）、楼层详情、座位平面图、时段选项。
@@ -40,6 +44,8 @@ public class FloorService {
     private final SeatRepository seatRepository;
 
     private final ZoneRepository zoneRepository;
+
+    private final SeatTableRepository seatTableRepository;
 
     private final OccupancyService occupancyService;
 
@@ -118,6 +124,8 @@ public class FloorService {
         }
         Map<Long, OccupancyService.SeatOccupancy> occupiedMap =
                 occupancyService.getOccupancy(targetDate, targetSlot);
+        // 桌号用于「整桌一组」的平面图渲染；只在页面里确实有桌位座位时才多查一次
+        Map<Long, String> tableNoMap = loadTableNos(seats);
 
         int maxRow = 0;
         int maxCol = 0;
@@ -148,6 +156,7 @@ public class FloorService {
                     .zone(seat.getZone())
                     .zoneId(seat.getZoneId())
                     .tableId(seat.getTableId())
+                    .tableNo(seat.getTableId() == null ? null : tableNoMap.get(seat.getTableId()))
                     .baseStatus(seat.getStatus() == null ? SeatStatus.AVAILABLE.name() : seat.getStatus().name())
                     .displayStatus(display.name())
                     // 「暂离中 · 预计 14:35 返回」的文案由数据支撑；只给时刻，不含任何占用人身份
@@ -212,8 +221,30 @@ public class FloorService {
                 .leaveAllowed(zone.getAllowLeave())
                 .leaveMaxMin(zone.getLeaveMaxMin())
                 .groupRequired(zone.getGroupRequired())
+                .allowGroup(zone.getAllowGroup())
                 .peakFlag(peak != null)
                 .build();
+    }
+
+    /**
+     * 批量取本页座位涉及的桌号。
+     *
+     * <p>逐座查表会把平面图变成 N+1 查询；非组队区一个 tableId 都没有，直接省掉这次查询。
+     *
+     * @param seats 本页座位
+     * @return tableId → 桌号
+     */
+    private Map<Long, String> loadTableNos(List<Seat> seats) {
+        List<Long> tableIds = seats.stream()
+                .map(Seat::getTableId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (tableIds.isEmpty()) {
+            return Map.of();
+        }
+        return seatTableRepository.findAllById(tableIds).stream()
+                .collect(Collectors.toMap(SeatTable::getId, SeatTable::getTableNo));
     }
 
     /**
@@ -221,8 +252,7 @@ public class FloorService {
      *
      * @param date 日期，为空取今天
      * @return 时段选项列表
-     */
-    @Transactional(readOnly = true)
+     */    @Transactional(readOnly = true)
     public List<FloorDTO.SlotOptionVO> getSlotOptions(LocalDate date) {
         LocalDate targetDate = (date == null) ? LocalDate.now() : date;
         LocalDateTime now = LocalDateTime.now();

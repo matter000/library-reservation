@@ -73,6 +73,11 @@ public class ReservationScheduler {
         int checkInAfterMin = ruleConfigService.checkInAfterMin();
         int count = 0;
         for (Reservation reservation : candidates) {
+            if (reservation.getGroupId() != null) {
+                // ★ 队伍预约不走个人 NO_SHOW：签到窗口一过，个人扫描会给全桌每人记一次爽约，
+                //   而同一轮的 scanGroupAttendance 还要按「组长缺席」再处理一次 —— 两套判定只能有一套。
+                continue;
+            }
             LocalDateTime start = BizConstants.slotStart(reservation.getReserveDate(), reservation.getStartSlot());
             if (!start.plusMinutes(checkInAfterMin).isBefore(now)) {
                 continue;
@@ -165,7 +170,9 @@ public class ReservationScheduler {
      * <p>★ 逐队 try-catch 且判定交给 {@link GroupService#lockAndOrder}（独立 Bean 的事务代理）：
      * 一支队伍因座位被抢而 4091 回滚，不能连带打断同轮其他队伍的下单。
      * 幂等靠状态判断 —— 成功变 RESERVED、不足变 FAILED，下一轮都选不到 {@code FORMING} 之外的队。
-     * 失败的队伍留在 {@code FORMING} 每分钟重试，直到开会时刻由缺席链路收尾；
+     * 下单失败的队伍留在 {@code FORMING} 每分钟重试，但<b>过了开会时刻就由
+     * {@link GroupService#abandonIfExpired} 收尾成 FAILED</b>：那时重试永远不可能成功，
+     * 而缺席链路只处理 RESERVED/CHECKED_IN，救不了一支从没下成单的队。
      * 「组长为什么没成」的告知属于 T-V2-20 通知中心，这里先只保证不打扰别人。
      */
     @Scheduled(fixedRate = 60_000L, initialDelay = 35_000L)
@@ -179,7 +186,12 @@ public class ReservationScheduler {
                     count++;
                 }
             } catch (Exception e) {
-                log.error("队伍锁定下单失败，下一轮重试：groupId={}", group.getId(), e);
+                log.error("队伍锁定下单失败：groupId={}", group.getId(), e);
+                try {
+                    groupService.abandonIfExpired(group.getId(), now);
+                } catch (Exception ex) {
+                    log.error("队伍收尾失败：groupId={}", group.getId(), ex);
+                }
             }
         }
         if (count > 0) {

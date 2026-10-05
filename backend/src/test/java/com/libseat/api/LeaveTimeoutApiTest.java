@@ -10,6 +10,7 @@ import com.libseat.enums.ReservationStatus;
 import com.libseat.repository.LeaveRecordRepository;
 import com.libseat.repository.ReservationSlotRepository;
 import com.libseat.scheduler.ReservationScheduler;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +23,7 @@ import java.time.LocalTime;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
@@ -113,6 +115,20 @@ class LeaveTimeoutApiTest extends ApiTestBase {
     /** 当前所处的 30 分钟格。 */
     private int nowSlot() {
         return BizConstants.slotOf(LocalTime.now());
+    }
+
+    /**
+     * ★ 本类现场都以「此刻这一格」为基准，而开放窗口是 08:00-22:00（合法格号 16~43）。
+     *
+     * <p>过了 22:00，{@code slotOf(now)} 给出 44：平面图查询把它夹回 43，取到的「空闲座」
+     * 与实际要写入的格子不再是同一格，多条 fixture 于是撞 {@code uk_slot_seat_date_idx}。
+     * 越界时刻跳过用例，别拿一个产品里不存在的现场去判实现。
+     */
+    @BeforeEach
+    void skipOutsideOpenWindow() {
+        int nowSlot = nowSlot();
+        assumeTrue(nowSlot >= BizConstants.SLOT_INDEX_MIN && nowSlot <= BizConstants.SLOT_INDEX_MAX,
+                "当前时刻 " + LocalTime.now() + " 已不在开放时段内（slotOf=" + nowSlot + "），跳过");
     }
 
     private int noShowCount(long uid) {

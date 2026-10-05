@@ -119,6 +119,14 @@ public class GroupDTO {
         /** 邀请状态文案。 */
         private String inviteStatusText;
 
+        /**
+         * 这一行是不是当前调用方本人。
+         *
+         * <p>★ 没有它，组长看到的成员表就会在别人那一行上渲染出「确认 / 退出」按钮，
+         * 而 {@code confirm}、{@code quit} 作用的都是<b>调用者自己</b>——点下去改的是组长的状态。
+         */
+        private Boolean self;
+
         /** 确认时刻。 */
         private String confirmTime;
 
@@ -145,6 +153,12 @@ public class GroupDTO {
 
         /** 不能退出的原因。 */
         private String quitDisabledReason;
+
+        /** 本人现在能否确认入座（组长签到之后）。 */
+        private Boolean canAttend;
+
+        /** 不能确认入座的原因。 */
+        private String attendDisabledReason;
     }
 
     /**
@@ -239,6 +253,18 @@ public class GroupDTO {
 
         /** 不能取消的原因。 */
         private String cancelDisabledReason;
+
+        /** 组长现在能否签到（签到窗口由服务端判定）。 */
+        private Boolean canCheckIn;
+
+        /** 不能签到的原因。 */
+        private String checkInDisabledReason;
+
+        /** 组长现在能否邀请成员（锁定后成员冻结）。 */
+        private Boolean canInvite;
+
+        /** 不能邀请的原因。 */
+        private String inviteDisabledReason;
 
         /** 当前调用方可做的动作提示（无队伍可操作时为空）。 */
         private String myInviteStatus;

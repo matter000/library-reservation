@@ -8,6 +8,7 @@ import com.libseat.entity.ReservationSlot;
 import com.libseat.enums.ReservationStatus;
 import com.libseat.repository.GroupRepository;
 import com.libseat.scheduler.ReservationScheduler;
+import com.libseat.service.RuleConfigService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
@@ -20,6 +21,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -65,6 +67,10 @@ abstract class GroupTestSupport extends ApiTestBase {
 
     @Autowired
     protected ReservationScheduler scheduler;
+
+    /** 签到窗口等规则以规则中心的实时值为准，用例不复制常量。 */
+    @Autowired
+    protected RuleConfigService ruleConfigService;
 
     /** 1F 研讨协作区（种子中唯一的 group_required 分区）。 */
     protected long seminarZoneId() throws Exception {
@@ -191,19 +197,37 @@ abstract class GroupTestSupport extends ApiTestBase {
     /**
      * 把整支队伍的事件整体挪到「此刻正好落在签到窗口内」，返回新的起始格。
      *
-     * <p>建队要求距开始 ≥ 30 分钟（要留出入队时间），而签到窗口是开始前 15 分钟到开始后 15 分钟，
-     * 两者不可能同时满足 —— 用例只能移动事件，而不是让测试睡 15 分钟。
+     * <p>窗口边界取<b>规则中心的实时值</b>，不是 BizConstants 的默认常量：管理员把
+     * {@code book.check-in-after-min} 改掉之后，合法的签到时刻就跟着变了；用例若还按默认
+     * 15 分钟挑格子，会在同一时刻出现「接口说能签、用例说没窗口」的分裂。
      *
-     * <p>★ 必须连预约与 slot 行一起挪：签到窗口按队伍行算，平面图按 slot 行算，
+     * <p>★ 连预约与 slot 行一起挪：签到窗口按队伍行算，平面图按 slot 行算，
      * 只挪一边会出现「窗口内能签到但座位显示空闲」的自相矛盾现场，用例就成了测 fixture。
+     *
+     * <p>★ 开放窗口 08:00-22:00（合法格号 16~43）之外没有任何窗口罩得住「此刻」，
+     * 这时明确跳过：把队伍挪到 44 格看似能签到，平面图查询会把 slot 夹回 43，
+     * 用例就会看到「明明签到了却还显示空闲」——那是现场搭出了产品里不存在的数据。
+     *
+     * @param groupId 队伍
+     * @return 挪动后的起始格
      */
     protected int alignGroupToNow(long groupId) {
-        java.time.LocalTime clock = java.time.LocalTime.now();
-        int baseSlot = BizConstants.slotOf(clock);
-        int minuteInSlot = (clock.getHour() * 60 + clock.getMinute()) % BizConstants.SLOT_MINUTES;
-        // 本格的窗口（开始 + 15 分钟）已经过去时，下一格的窗口从 15 分钟前就已打开
-        final int slot = minuteInSlot > BizConstants.CHECK_IN_AFTER_MIN ? baseSlot + 1 : baseSlot;
-        LocalDate today = LocalDate.now();
+        LocalDateTime clock = LocalDateTime.now();
+        LocalDate today = clock.toLocalDate();
+        int before = ruleConfigService.checkInBeforeMin();
+        int after = ruleConfigService.checkInAfterMin();
+        int chosen = -1;
+        for (int candidate = BizConstants.SLOT_INDEX_MIN; candidate <= BizConstants.SLOT_INDEX_MAX; candidate++) {
+            LocalDateTime start = BizConstants.slotStart(today, candidate);
+            if (!clock.isBefore(start.minusMinutes(before)) && !clock.isAfter(start.plusMinutes(after))) {
+                // 取最后一个（起始时刻最晚的）仍开着的窗口，等价于「此刻这一格」
+                chosen = candidate;
+            }
+        }
+        assumeTrue(chosen > 0, "当前时刻 " + clock.toLocalTime() + " 没有任何签到窗口是开着的（规则 "
+                + "before=" + before + " / after=" + after + "，开放时段 08:00-22:00），"
+                + "跳过而不是把队伍挪到越界时段");
+        final int slot = chosen;
         groupRepository.findById(groupId).ifPresent(group -> {
             group.setReserveDate(today);
             group.setStartSlot(slot);

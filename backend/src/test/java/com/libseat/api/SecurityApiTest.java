@@ -256,10 +256,11 @@ class SecurityApiTest extends ApiTestBase {
             assertFalse(raw.contains(leak), "平面图响应泄漏了字段/内容：" + leak + " → " + raw.substring(0, Math.min(400, raw.length())));
         }
 
-        // zoneId / tableId 是空间归属属性（分区规则与桌位聚合所需），不含任何身份信息；
-        // expectedReturnAt 是「暂离中 · 预计 HH:mm 返回」的时刻（PRD §13.3 要求文案优先），同样不含身份
+        // zoneId / tableId / tableNo 是空间归属属性（分区规则与桌位聚合所需，选桌模式要能显示桌号），
+        // 不含任何身份信息；expectedReturnAt 是「暂离中 · 预计 HH:mm 返回」的时刻
+        // （PRD §13.3 要求文案优先），同样不含身份
         Set<String> allowed = Set.of("seatId", "seatNo", "rowNo", "colNo", "zone", "baseStatus",
-                "displayStatus", "zoneId", "tableId", "expectedReturnAt");
+                "displayStatus", "zoneId", "tableId", "tableNo", "expectedReturnAt");
         for (JsonNode seatNode : data(result).path("seats")) {
             Set<String> fields = new java.util.HashSet<>();
             seatNode.fieldNames().forEachRemaining(fields::add);
