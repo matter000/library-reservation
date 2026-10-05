@@ -50,6 +50,9 @@ public class LeaveService {
     /** 时刻文案格式（全站时段文案单点，见 B2 约定）。 */
     private static final DateTimeFormatter HM = DateTimeFormatter.ofPattern("HH:mm");
 
+    /** 分区没配次数时的兜底 = PRD §6.2「每日 ≤3 次」（t_zone.leave_daily_limit 的 DDL 默认值同为 3）。 */
+    private static final int DAILY_LIMIT_FALLBACK = 3;
+
     private final LeaveRecordRepository leaveRecordRepository;
 
     private final LeaveReasonRepository leaveReasonRepository;
@@ -65,12 +68,23 @@ public class LeaveService {
     /**
      * 原因字典（前端选择器用，只返回启用项）。
      *
+     * <p>★ 带上「今天这个原因已用几次」：原因各自有每日次数（就餐 2 次），
+     * 而列表页的「暂离」按钮只看分区总数，选择器是用户唯一能看到原因级限制的地方。
+     * 不在这里给 exhausted，用户就会选一个必然被拒的原因 —— 又回到「按钮亮着、提交被拒」。
+     *
+     * @param userId 当前用户（用于统计本人当日各原因次数）
      * @return 原因列表
      */
     @Transactional(readOnly = true)
-    public List<LeaveDTO.ReasonVO> reasons() {
+    public List<LeaveDTO.ReasonVO> reasons(Long userId) {
+        Map<String, Long> usedByReason = new HashMap<>();
+        if (userId != null) {
+            LocalDateTime dayStart = LocalDate.now().atStartOfDay();
+            leaveRecordRepository.countTodayByReason(userId, dayStart, dayStart.plusDays(1))
+                    .forEach(row -> usedByReason.put((String) row[0], (Long) row[1]));
+        }
         return leaveReasonRepository.findByEnabledTrueOrderBySortOrderAscCodeAsc().stream()
-                .map(this::toReasonVO)
+                .map(reason -> toReasonVO(reason, usedByReason.getOrDefault(reason.getCode(), 0L)))
                 .toList();
     }
 
@@ -107,17 +121,29 @@ public class LeaveService {
                 .filter(r -> Boolean.TRUE.equals(r.getEnabled()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.PARAM_ERROR, "暂离原因不存在或已停用"));
 
-        // 4. 当日次数：分区上限与原因上限取较小值
+        // 4. 当日次数：两条独立的计数口径（PRD §6.2 核心约束 1 与该节的表）——
+        //    ①「每日总次数」挂在**分区**上（静音区 3、考研专座放宽至 5）；
+        //    ②「该原因各自每日次数」挂在**原因表**上（就餐 2 次、接听/短休 3 次）。
+        //    以前这里是 min(原因, 分区) 当总数用：六个原因都种成 3，
+        //    于是考研专座的 5 永远打不开（PRD §12-13 落空），就餐的 2 次也从未生效，
+        //    而「我的预约」按钮只看分区值 —— 第 4 次点亮着按钮提交却被拒，正是本类注释里
+        //    禁止的「按钮亮着、提交被拒」口径分裂。拆分判定后两处口径同源（见 #dailyLimitOf）。
         LocalDateTime dayStart = LocalDate.now().atStartOfDay();
+        LocalDateTime dayEnd = dayStart.plusDays(1);
+        int totalLimit = dailyLimitOf(zone);
         long usedToday = leaveRecordRepository
-                .countByUserIdAndStartTimeGreaterThanEqualAndStartTimeLessThan(userId, dayStart, dayStart.plusDays(1));
-        int dailyLimit = reason.getDailyLimit() == null ? Integer.MAX_VALUE : reason.getDailyLimit();
-        if (zone != null && zone.getLeaveDailyLimit() != null) {
-            dailyLimit = Math.min(dailyLimit, zone.getLeaveDailyLimit());
-        }
-        if (usedToday >= dailyLimit) {
+                .countByUserIdAndStartTimeGreaterThanEqualAndStartTimeLessThan(userId, dayStart, dayEnd);
+        if (usedToday >= totalLimit) {
             throw new BusinessException(ErrorCode.LEAVE_LIMIT_EXCEEDED,
-                    "今日暂离次数已用完（上限 " + dailyLimit + " 次）");
+                    "今日暂离次数已用完（上限 " + totalLimit + " 次）");
+        }
+        int reasonLimit = reason.getDailyLimit() == null ? Integer.MAX_VALUE : reason.getDailyLimit();
+        long usedReasonToday = leaveRecordRepository
+                .countByUserIdAndReasonCodeAndStartTimeGreaterThanEqualAndStartTimeLessThan(
+                        userId, reason.getCode(), dayStart, dayEnd);
+        if (usedReasonToday >= reasonLimit) {
+            throw new BusinessException(ErrorCode.LEAVE_LIMIT_EXCEEDED,
+                    "「" + reason.getName() + "」今日已用完 " + reasonLimit + " 次，请换一个原因");
         }
 
         // 5. 需要事由的原因必须写清楚
@@ -281,9 +307,9 @@ public class LeaveService {
             } else if (zone != null && !Boolean.TRUE.equals(zone.getAllowLeave())) {
                 vo.setCanLeave(false);
                 vo.setLeaveDisabledReason(zone.getName() + " 不支持暂离（离座即释放）");
-            } else if (zone != null && zone.getLeaveDailyLimit() != null && usedToday >= zone.getLeaveDailyLimit()) {
+            } else if (usedToday >= dailyLimitOf(zone)) {
                 vo.setCanLeave(false);
-                vo.setLeaveDisabledReason("今日暂离次数已用完（上限 " + zone.getLeaveDailyLimit() + " 次）");
+                vo.setLeaveDisabledReason("今日暂离次数已用完（上限 " + dailyLimitOf(zone) + " 次）");
             } else {
                 vo.setCanLeave(true);
                 vo.setLeaveDisabledReason(null);
@@ -325,13 +351,31 @@ public class LeaveService {
         return StringUtils.hasText(note) ? note.trim() : null;
     }
 
-    private LeaveDTO.ReasonVO toReasonVO(LeaveReason reason) {
+    /**
+     * 当日暂离总次数上限：分区是这条规则的载体（考研专座放宽到 5），
+     * 座位没有分区时用全局默认值，保证「无分区旧数据」不会因为缺列而被夹成 0。
+     */
+    private int dailyLimitOf(Zone zone) {
+        if (zone == null || zone.getLeaveDailyLimit() == null) {
+            return DAILY_LIMIT_FALLBACK;
+        }
+        return zone.getLeaveDailyLimit();
+    }
+
+    private LeaveDTO.ReasonVO toReasonVO(LeaveReason reason, long usedToday) {
+        int limit = reason.getDailyLimit() == null ? Integer.MAX_VALUE : reason.getDailyLimit();
+        boolean exhausted = usedToday >= limit;
         return LeaveDTO.ReasonVO.builder()
                 .code(reason.getCode())
                 .name(reason.getName())
                 .maxMin(reason.getMaxMin())
                 .dailyLimit(reason.getDailyLimit())
                 .needNote(Boolean.TRUE.equals(reason.getNeedNote()))
+                .todayUsed((int) usedToday)
+                .exhausted(exhausted)
+                .exhaustedReason(exhausted
+                        ? "「" + reason.getName() + "」今日 " + limit + " 次已用完，请换一个原因"
+                        : null)
                 .build();
     }
 

@@ -39,6 +39,35 @@ public interface LeaveRecordRepository extends JpaRepository<LeaveRecord, Long> 
     long countByUserIdAndStartTimeGreaterThanEqualAndStartTimeLessThan(Long userId, LocalDateTime from, LocalDateTime to);
 
     /**
+     * 某人在某自然日内、按原因各自的次数（PRD §6.2 表：就餐每日 2 次、接听/短休每日 3 次）。
+     *
+     * <p>与「分区总数上限」是两条独立规则，不要再拿它去夹总数（V15 的说明）。
+     *
+     * @param userId     用户 ID
+     * @param reasonCode 原因码
+     * @param from       当日起点（含）
+     * @param to         次日起点（不含）
+     * @return 次数
+     */
+    long countByUserIdAndReasonCodeAndStartTimeGreaterThanEqualAndStartTimeLessThan(
+            Long userId, String reasonCode, LocalDateTime from, LocalDateTime to);
+
+    /**
+     * 某人某日内各原因已用次数（原因字典一次问完，不在原因循环里逐条 count）。
+     *
+     * @param userId 用户 ID
+     * @param from   当日起点（含）
+     * @param to     次日起点（不含）
+     * @return 每行 {@code [reasonCode, count]}
+     */
+    @Query("select l.reasonCode, count(l) from LeaveRecord l "
+            + "where l.userId = :userId and l.startTime >= :from and l.startTime < :to "
+            + "group by l.reasonCode")
+    List<Object[]> countTodayByReason(@Param("userId") Long userId,
+                                      @Param("from") LocalDateTime from,
+                                      @Param("to") LocalDateTime to);
+
+    /**
      * ★ 占用派生用：取「某日期某时段」上仍处于 OPEN 的暂离。
      *
      * <p>与 {@code findOccupiedByDateAndSlot} 同样一次查完，平面图整层只需两次查询；

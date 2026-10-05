@@ -260,7 +260,7 @@ CREATE TABLE IF NOT EXISTS t_leave_reason (
     code        VARCHAR(30)  NOT NULL PRIMARY KEY,     -- MEAL/CLASS/PHONE/REST/PICKUP/OTHER
     name        VARCHAR(50)  NOT NULL,
     max_min     INT          NOT NULL,                 -- 就餐60/上课60/接电20/短休20/取物15/其他15
-    daily_limit INT          NOT NULL DEFAULT 3,       -- 全局每日次数
+    daily_limit INT          NOT NULL DEFAULT 3,       -- 该原因各自的每日次数（PRD §6.2：就餐 2，其余 3）
     need_note   BOOLEAN      NOT NULL DEFAULT FALSE,   -- 上课/会议需填事由
     enabled     BOOLEAN      NOT NULL DEFAULT TRUE,
     sort_order  INT          NOT NULL DEFAULT 0
@@ -294,10 +294,23 @@ CREATE INDEX IF NOT EXISTS idx_leave_status    ON t_leave_record (status, planne
 1. 预约存在且 `user_id` 为本人，状态 = `CHECKED_IN` → 否则 `4093`；
 2. 所属分区 `allow_leave=TRUE` → 否则 `4095 该分区不支持暂离（离座即释放）`；
 3. 本人无 `OPEN` 暂离 → 否则 `4097 当前已在暂离中`；
-4. **当日暂离次数** < `min(zone.leave_daily_limit, reason.daily_limit)`（考研专座 5）→ 否则 `4096 今日暂离次数已用完`；
+4. **当日暂离次数**：两条**独立**规则，不要合成一个 `min()`——
+   ① 总次数 < `zone.leave_daily_limit`（静音区 3、**考研专座放宽至 5**；座位无分区时兜底 3）→ 否则 `4096 今日暂离次数已用完（上限 N 次）`；
+   ② 该原因各自次数 < `reason.daily_limit`（PRD §6.2 表：就餐 2、其余 3）→ 否则 `4096「就餐」今日已用完 2 次，请换一个原因`。
+   早期版本写成 `min(原因, 分区)` 当总数用：六个原因都种成 3，考研专座的 5 因此永远不可达（PRD §12-13 落空），
+   就餐的 2 次也从未生效，而「我的预约」的按钮只看分区值 —— 第 4 次点亮着按钮提交却被拒。
+   拆分后 `LeaveService#dailyLimitOf` 是提交与按钮的**同一处**判定（V15 数据 + 代码同步，用例 `dailyTotalLimitFollowsZone`）；
 5. `need_note` 的原因必须填事由 → 否则 `4001`；
 6. `planned_end = min(now + reason.max_min, zone.leave_max_min 封顶, reservation 结束时间)` —— **剩余不足按剩余封顶，不报错**（PRD §6.2-4）；
+   ★ 分区在这里是**天花板**而不是放宽倍数：考研专座的 120 只有在原因本身允许得更久时才生效
+   （六个种子原因最长 60，所以日常看到的仍是 60）。用例 `zoneLeaveCeilingIsLiveConstraint`
+   把某原因临时放宽到 180 来证明 120 与静音区 60 的差别真实存在。
+   「就餐在考研专座是否应直接给满 120」是产品口径问题，见 `.workbuddy/regression-v2-s7/S7-24-GATE.md` 的 B8；
 7. 写记录（`status=OPEN, open_flag=1`）+ 写站内通知（暂离到期前 5 分钟提醒）。
+
+**原因字典** `GET /api/leaves/reasons` 除配置项外还带本人当日各原因计数
+（`todayUsed / exhausted / exhaustedReason`）：原因级的次数只在提交时才判，
+如果字典里不告诉前端，用户就会选到一个必然被拒的原因（PRD §13「不可用必须说明原因」）。
 
 **返回**：`LeaveVO{leaveId, reasonText, plannedEndTime:"14:35", remainMin, returned:false}`。
 `LeaveService.returnBack`：置 `RETURNED`、`open_flag=NULL`、`actual_return_time=now`；**剩余使用时间不顺延**（PRD §6.2-7，界面必须讲清楚）。

@@ -341,6 +341,25 @@ class AdminApiTest extends ApiTestBase {
         JsonNode detail = data(detailResult);
         assertEquals("ADMIN_CANCELLED", detail.path("status").asText());
         assertEquals("设备检修", detail.path("adminCancelReason").asText());
+
+        // ★ PRD §12-26「强制释放必填原因并通知学生」：通知由释放这一唯一入口发出。
+        //   以前只有巡查处置路径会 push，馆员台直接释放时学生的座位没了却查不到是谁、为什么放的。
+        JsonNode notices = data(exec(get("/api/me/notices")
+                .header("Authorization", bearer(owner))));
+        JsonNode releasedNotice = null;
+        for (JsonNode node : notices.path("list")) {
+            if ("SEAT_RELEASED".equals(node.path("type").asText())
+                    && node.path("refId").asLong() == reservationId) {
+                releasedNotice = node;
+            }
+        }
+        assertNotNull(releasedNotice, "管理端直接释放也必须给学生一条带原因的站内通知（收口偏差 C1）");
+        assertEquals("座位已被释放", releasedNotice.path("title").asText());
+        assertEquals("RESERVATION", releasedNotice.path("refType").asText());
+        assertTrue(releasedNotice.path("content").asText().contains("设备检修"),
+                "正文必须写清释放原因，实际：" + releasedNotice.path("content").asText());
+        assertEquals("/my/reservations", releasedNotice.path("link").asText(),
+                "通知要能跳到「我的预约」，学生点进去就能看到原因与状态");
     }
 
     // ==================== 使用情况 ====================

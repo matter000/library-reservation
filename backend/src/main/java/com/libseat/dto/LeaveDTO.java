@@ -109,5 +109,14 @@ public class LeaveDTO {
 
         /** 是否必须填事由。 */
         private Boolean needNote;
+
+        /** 本人今日已用该原因的次数（PRD §6.2 表：就餐每日 2 次）；未登录或无记录为 0。 */
+        private Integer todayUsed;
+
+        /** 今日该原因是否已用满 —— 选择器据此置灰，避免「选了才被拒」。 */
+        private Boolean exhausted;
+
+        /** 用满时的说明文案，未用满为 null（PRD §13：不可用必须给原因）。 */
+        private String exhaustedReason;
     }
 }

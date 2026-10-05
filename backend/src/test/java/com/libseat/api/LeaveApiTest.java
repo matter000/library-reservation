@@ -635,4 +635,163 @@ class LeaveApiTest extends ApiTestBase {
         MvcResult foreign = start(u1, another.getId(), "PHONE", null);
         assertEquals(NOT_FOUND, code(foreign), "别人的预约应 4040，实际：" + body(foreign));
     }
+
+    // ==================== T-V2-24 补测：把 PRD §12-7/13 那两档「放宽」真的钉住 ====================
+
+    @Test
+    @DisplayName("【补测T1】分区暂离天花板是活约束：同一原因在考研专座拿满 120 分钟、在静音区被夹到 60")
+    void zoneLeaveCeilingIsLiveConstraint() throws Exception {
+        String me = newUser();
+        long uid = userId(me);
+        LocalDate tomorrow = tomorrowOf(LocalDate.now());
+
+        // 六个种子原因的单次上限最长只有 60 分钟，分区侧 120（考研专座）与 60（静音区）因此分不出来。
+        // 把就餐临时放宽到 180，让「分区天花板」成为真正的约束值 —— 这才是 PRD §12-7「放宽至 120min」
+        // 可被验证的形态。整个测试 JVM 共用同一个内存库，所以用完必须在 finally 里复原。
+        jdbc.update("update t_leave_reason set max_min = 180 where code = 'MEAL'");
+        try {
+            Reservation exam = checkedIn(uid, freeSeatOfZone(floor3, "3F-EXAM", tomorrow, 16, 8, 0),
+                    floor3, tomorrow, 16, 8);
+            JsonNode examLeave = startOk(me, exam.getId(), "MEAL", null);
+            assertTrue(examLeave.path("remainMin").asInt() >= 118
+                            && examLeave.path("remainMin").asInt() <= 120,
+                    "考研专座应给满分区上限 120 分钟，实际 remainMin=" + examLeave.path("remainMin").asInt());
+
+            // 同一人、同一原因，只换分区：静音区 60 立刻把 180 夹下来。两区之差就是分区配置本身。
+            returnOpenLeave(me, exam.getId());
+            Reservation silent = checkedIn(uid, freeSeatOfZone(floor1, "1F-SILENT", tomorrow, 16, 8, 0),
+                    floor1, tomorrow, 16, 8);
+            JsonNode silentLeave = startOk(me, silent.getId(), "MEAL", null);
+            assertTrue(silentLeave.path("remainMin").asInt() >= 58
+                            && silentLeave.path("remainMin").asInt() <= 60,
+                    "静音区应被分区上限夹到 60 分钟，实际 remainMin=" + silentLeave.path("remainMin").asInt());
+            returnOpenLeave(me, silent.getId());
+        } finally {
+            jdbc.update("update t_leave_reason set max_min = 60 where code = 'MEAL'");
+        }
+    }
+
+    @Test
+    @DisplayName("【补测T2】每日总次数挂在分区上：静音区第 4 次拒、考研专座第 5 次放行、第 6 次才拒")
+    void dailyTotalLimitFollowsZone() throws Exception {
+        LocalDate tomorrow = tomorrowOf(LocalDate.now());
+
+        // 静音区（leave_daily_limit=3）：三人各自用满再试第 4 次。
+        // ★ 必须各用一个新用户：总数是按「人 + 自然日」统计的，同一个人在静音区用过 3 次，
+        //   到考研专座就只剩 2 次余量，那测的是余量而不是分区的上限值。
+        String silentUser = newUser();
+        long silentUid = userId(silentUser);
+        for (int i = 0; i < 3; i++) {
+            int start = 16 + i * 2;
+            long seat = freeSeatOfZone(floor1, "1F-SILENT", tomorrow, start, 2, 0);
+            Reservation r = checkedIn(silentUid, seat, floor1, tomorrow, start, 2);
+            startOk(silentUser, r.getId(), "PHONE", null);
+            returnOpenLeave(silentUser, r.getId());
+        }
+        int silentFourth = 22;
+        Reservation fourth = checkedIn(silentUid,
+                freeSeatOfZone(floor1, "1F-SILENT", tomorrow, silentFourth, 2, 0),
+                floor1, tomorrow, silentFourth, 2);
+        MvcResult rejected = start(silentUser, fourth.getId(), "REST", null);
+        assertEquals(LEAVE_LIMIT_EXCEEDED, code(rejected),
+                "静音区每日 3 次，第 4 次应 4096，实际：" + body(rejected));
+        assertTrue(msg(rejected).contains("上限 3 次"), "应说明是本分区上限，实际：" + msg(rejected));
+
+        // 考研专座（放宽至 5 次）：第 4、5 次必须放行，第 6 次才拒。
+        // ★ V15 之前这里第 4 次就报 4096 —— 原因表的 3 被拿去 min() 夹分区的 5，"放宽"永远不可达，
+        //   而「我的预约」按钮只看分区值，于是按钮亮着、提交被拒。
+        String examUser = newUser();
+        long examUid = userId(examUser);
+        String[] reasons = {"PHONE", "PHONE", "PHONE", "REST", "REST"};
+        for (int i = 0; i < reasons.length; i++) {
+            int start = 16 + i * 2;
+            long seat = freeSeatOfZone(floor3, "3F-EXAM", tomorrow, start, 2, 0);
+            Reservation r = checkedIn(examUid, seat, floor3, tomorrow, start, 2);
+            JsonNode ok = startOk(examUser, r.getId(), reasons[i], null);
+            assertTrue(ok.path("remainMin").asInt() > 0, "考研专座第 " + (i + 1) + " 次应放行");
+            returnOpenLeave(examUser, r.getId());
+        }
+        int sixthSlot = 26;
+        long sixthSeat = freeSeatOfZone(floor3, "3F-EXAM", tomorrow, sixthSlot, 2, 0);
+        Reservation sixth = checkedIn(examUid, sixthSeat, floor3, tomorrow, sixthSlot, 2);
+        MvcResult sixthStart = start(examUser, sixth.getId(), "PICKUP", null);
+        assertEquals(LEAVE_LIMIT_EXCEEDED, code(sixthStart),
+                "考研专座放宽到 5 次，第 6 次才应 4096，实际：" + body(sixthStart));
+        assertTrue(msg(sixthStart).contains("上限 5 次"), "实际：" + msg(sixthStart));
+
+        // 置灰文案与提交报错一字不差 —— 两处判定同源才可能一致
+        JsonNode vo = myReservation(examUser, sixth.getId(), "inProgress");
+        assertEquals(false, vo.path("canLeave").asBoolean());
+        assertEquals(msg(sixthStart), vo.path("leaveDisabledReason").asText(),
+                "★「按钮亮着、提交被拒」是本轮修掉的口径分裂，用同一句话钉住两侧");
+    }
+
+    @Test
+    @DisplayName("【补测T2b】原因各自每日次数第一次真正生效：就餐第 3 次 4096，但总数还剩、换原因仍可登记")
+    void perReasonDailyLimitIsEnforced() throws Exception {
+        String me = newUser();
+        long uid = userId(me);
+        LocalDate today = LocalDate.now();
+        int nowSlot = BizConstants.slotOf(LocalTime.now());
+
+        for (int i = 0; i < 2; i++) {
+            // 每次都取「当前全空闲」的第 0 座：上一条造数已把上一个座位标脏，天然错开
+            long seat = freeSeatOfZone(floor1, "1F-SILENT", today, nowSlot, 2, 0);
+            Reservation r = checkedIn(uid, seat, floor1, today, nowSlot, 2);
+            startOk(me, r.getId(), "MEAL", null);
+            returnOpenLeave(me, r.getId());
+        }
+
+        Reservation third = checkedIn(uid, freeSeatOfZone(floor1, "1F-SILENT", today, nowSlot, 2, 0),
+                floor1, today, nowSlot, 2);
+        MvcResult mealExhausted = start(me, third.getId(), "MEAL", null);
+        assertEquals(LEAVE_LIMIT_EXCEEDED, code(mealExhausted),
+                "就餐每日 2 次（PRD §6.2 表），第 3 次应 4096，实际：" + body(mealExhausted));
+        assertTrue(msg(mealExhausted).contains("就餐"),
+                "必须点名是哪个原因用满了，实际：" + msg(mealExhausted));
+
+        // 总数其实还没满（静音区 3 次，本人此刻只用了 2 次）→ 换一个原因仍可登记。
+        // 这条断言证明「总数」与「单原因次数」真的是两条独立规则，而不是又一次 min()。
+        startOk(me, third.getId(), "PHONE", null);
+        returnOpenLeave(me, third.getId());
+
+        JsonNode dict = data(exec(get("/api/leaves/reasons").header("Authorization", bearer(me))));
+        JsonNode meal = null;
+        JsonNode phone = null;
+        for (JsonNode node : dict) {
+            if ("MEAL".equals(node.path("code").asText())) {
+                meal = node;
+            } else if ("PHONE".equals(node.path("code").asText())) {
+                phone = node;
+            }
+        }
+        assertNotNull(meal);
+        assertNotNull(phone);
+        assertEquals(2, meal.path("todayUsed").asInt(), "字典要给出本人今日已用次数");
+        assertEquals(true, meal.path("exhausted").asBoolean(), "就餐应标为已用满");
+        assertTrue(meal.path("exhaustedReason").asText().contains("2 次"),
+                "置灰必须给原因，实际：" + meal.path("exhaustedReason").asText());
+        assertEquals(1, phone.path("todayUsed").asInt());
+        assertEquals(false, phone.path("exhausted").asBoolean(), "接电话上限 3 次，还能用");
+    }
+
+    @Test
+    @DisplayName("【补测T3】休闲阅览区同样不可暂离：4095 与按钮置灰给同一句原因")
+    void loungeZoneRejectsLeave() throws Exception {
+        String me = newUser();
+        long uid = userId(me);
+        LocalDate tomorrow = tomorrowOf(LocalDate.now());
+        long seat = freeSeatOfZone(floor1, "1F-LOUNGE", tomorrow, 16, 4, 0);
+        Reservation reservation = checkedIn(uid, seat, floor1, tomorrow, 16, 4);
+
+        MvcResult rejected = start(me, reservation.getId(), "MEAL", null);
+        assertEquals(LEAVE_NOT_ALLOWED, code(rejected),
+                "休闲阅览区（沙发区，不设暂离）应 4095，实际：" + body(rejected));
+        assertTrue(msg(rejected).contains("不支持暂离"), "实际：" + msg(rejected));
+
+        JsonNode vo = myReservation(me, reservation.getId(), "inProgress");
+        assertEquals(false, vo.path("canLeave").asBoolean());
+        assertEquals(msg(rejected), vo.path("leaveDisabledReason").asText(),
+                "★ 置灰原因与提交报错必须一字不差");
+    }
 }

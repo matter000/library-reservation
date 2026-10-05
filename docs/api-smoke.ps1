@@ -329,15 +329,26 @@ Expect '22.5 取消成功' (Biz-Code $cancel2) 0
 # ---------- 23. 签到 → 暂离 → 返回 → 结束（当前时段链路，闭馆后按 SKIP 处理） ----------
 $slots = (Invoke-Api GET '/api/config/slots' $null $stuToken).data
 $openNow = $slots | Where-Object { $_.bookable -eq $true } | Select-Object -First 1
-if ($null -eq $openNow) {
-    Skip '23 签到/暂离链路' '当前时刻之后已无可预约时段（闭馆或已晚），交由用例覆盖'
+# ★ 时长要按「本格到闭馆还剩几格」算：写死 2 小时在傍晚必然 4001（超出开放窗口），
+#   于是这条链路只在白天可验 —— 脚本因此只能在固定时刻跑，等于没有覆盖。
+$lastSlot = ($slots | Measure-Object -Property slotIndex -Maximum).Maximum
+$maxHours = [int][math]::Floor(($lastSlot + 1 - $openNow.slotIndex) / 2)
+# ★ 签到窗口 = 开始前 15 分钟 ~ 开始后 15 分钟（PRD §12-9），而 bookable 只给未开始的格子，
+#   所以只有距下一格开始不足 15 分钟时这一步才走得通。其余时刻如实 SKIP：
+#   把断言改成「签到应失败」测的是时钟，不是规则。
+$waitMin = [int]($openNow.slotIndex * 30 - [datetime]::Now.TimeOfDay.TotalMinutes)
+if ($null -eq $openNow -or $maxHours -lt 1) {
+    Skip '23 签到/暂离链路' ("当前时刻之后已不足一小时可约（首个可约格={0}，窗口末格={1}），交由用例覆盖" `
+        -f $(if ($openNow) { $openNow.slotIndex } else { '无' }), $lastSlot)
+} elseif ($waitMin -gt 15) {
+    Skip '23 签到/暂离链路' ("距首个可约时段还有 {0} 分钟，还没进入签到窗口（开始前 15 分钟），交由用例覆盖" -f $waitMin)
 } else {
     $today2 = (Get-Date).ToString('yyyy-MM-dd')
     $todayMap = Invoke-Api GET "/api/seats/map?floorId=$floorId&date=$today2&slot=$($openNow.slotIndex)" $null $stuToken
     $nowSeat = $todayMap.data.seats |
         Where-Object { $_.displayStatus -eq 'FREE' -and $_.zoneId -eq $plainZone.zoneId } | Select-Object -First 1
     $flow = Invoke-Api POST '/api/reservations' @{
-        seatId = $nowSeat.seatId; date = $today2; startSlot = $openNow.slotIndex; duration = 2
+        seatId = $nowSeat.seatId; date = $today2; startSlot = $openNow.slotIndex; duration = $maxHours
     } $smoke2
     Show '23. 当前时段链路预约结果' $flow
     if ((Biz-Code $flow) -eq 0) {
@@ -435,6 +446,51 @@ foreach ($path in @('/m/home', '/m/seat', '/staff/dashboard', '/admin/rules/hist
     $deep = try { (Invoke-WebRequest -Uri "$Base$path" -UseBasicParsing -Method Head).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }
     Expect "30. 深链 $path 可刷新" $deep 200
 }
+
+# ---------- 31. 强制释放必填原因并通知学生（PRD §12-26 / 收口偏差 C1） ----------
+# ★ 正文比对一律用 ASCII：PowerShell 5.1 按本地代码页解 UTF-8 响应体，
+#   中文进了 content 就成了乱码，拿中文字面量去 Contains 只会得到一个假失败。
+$toRelease = $null
+foreach ($trySlot in @(38, 36, 34, 32)) {
+    $relMap = Invoke-Api GET "/api/seats/map?floorId=$floorId&date=$tomorrow2&slot=$trySlot" $null $stuToken
+    $relSeat = $relMap.data.seats |
+        Where-Object { $_.displayStatus -eq 'FREE' -and $_.zoneId -eq $plainZone.zoneId } | Select-Object -First 1
+    if ($null -eq $relSeat) { continue }
+    $toRelease = Invoke-Api POST '/api/reservations' @{
+        seatId = $relSeat.seatId; date = $tomorrow2; startSlot = $trySlot; duration = 1
+    } $smoke2
+    if ((Biz-Code $toRelease) -eq 0) { break }
+}
+if ($null -ne $toRelease -and (Biz-Code $toRelease) -eq 0) {
+    $relId = $toRelease.data.reservationId
+    Expect '31.1 空原因必须被拒（4001）' (Biz-Code (
+        Invoke-Api POST "/api/admin/reservations/$relId/release" @{ reason = '  ' } $admToken)) 4001
+    Expect '31.2 强制释放成功' (Biz-Code (
+        Invoke-Api POST "/api/admin/reservations/$relId/release" @{ reason = 'smoke-device-maintenance' } $admToken)) 0
+    $relNotices = Invoke-Api GET '/api/me/notices' $null $smoke2
+    $hit = @($relNotices.data.list | Where-Object { $_.type -eq 'SEAT_RELEASED' -and $_.refId -eq $relId })
+    Show '31. 释放通知' @{ matched = $hit.Count; hasLink = ($hit[0].link -eq '/my/reservations') }
+    Expect '31.3 释放给学生落一条站内通知（不是只有巡查路径才通知）' $hit.Count 1
+    Expect '31.4 通知正文带上释放原因' ($hit[0].content.Contains('smoke-device-maintenance')) $true
+    Expect '31.5 通知可跳转到我的预约' $hit[0].link '/my/reservations'
+} else {
+    Skip '31 强制释放通知' "未能约到可释放的预约（时段已被占或闸门拦住）"
+}
+
+# ---------- 32. 暂离原因字典带本人计数（PRD §6.2 表 + §13 置灰必给原因） ----------
+$dict = Invoke-Api GET '/api/leaves/reasons' $null $smoke2
+$dMeal = @($dict.data | Where-Object { $_.code -eq 'MEAL' })[0]
+Show '32. 原因字典' @{
+    count = $dict.data.Count
+    mealDailyLimit = $dMeal.dailyLimit
+    mealTodayUsed = $dMeal.todayUsed
+    exhaustedFlag = $dMeal.exhausted
+}
+Expect '32.1 六个原因' $dict.data.Count 6
+Expect '32.2 就餐各自每日 2 次（V15 把 PRD §6.2 的值真正落进数据）' $dMeal.dailyLimit 2
+Expect '32.3 字典带本人今日已用次数（选择器靠它置灰，不让用户选了才被拒）' ($null -ne $dMeal.todayUsed) $true
+Expect '32.4 标了用满的原因必须给文案' (@(
+    $dict.data | Where-Object { $_.exhausted -eq $true -and [string]::IsNullOrEmpty($_.exhaustedReason) }).Count) 0
 
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ("冒烟脚本执行完毕：PASS {0} / FAIL {1} / SKIP {2}" -f $script:passCount, $script:failCount, $script:warnCount) `

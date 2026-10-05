@@ -351,14 +351,12 @@ public class PatrolService {
                 throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED,
                         "这条任务没有关联预约，无座位可释放：请先按现场情况选「裁定违规」或「忽略」");
             }
-            adminUsageService.release(reservation.getId(), "巡查处置：" + note.trim());
-            noticeService.push(reservation.getUserId(), NoticeType.SEAT_RELEASED,
-                    "座位已被馆员释放",
+            // 通知由强制释放这一唯一入口发（PRD §12-26），这里只把更具体的正文递进去
+            adminUsageService.release(reservation.getId(), "巡查处置：" + note.trim(),
                     "馆员在巡查处置中释放了 " + BizConstants.formatDate(reservation.getReserveDate()) + " "
                             + BizConstants.rangeLabel(reservation.getStartSlot(),
                             BizConstants.hoursOfSlots(reservation.getEndSlot() - reservation.getStartSlot()))
-                            + " 的座位，原因：" + note.trim() + "。如对处置有异议，可到馆员台或「信用与违规」页申诉。",
-                    NoticeService.REF_RESERVATION, reservation.getId(), null);
+                            + " 的座位，原因：" + note.trim() + "。如对处置有异议，可到馆员台或「信用与违规」页申诉。");
         } else if (action == PatrolAction.VIOLATION) {
             if (reservation == null) {
                 throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED,

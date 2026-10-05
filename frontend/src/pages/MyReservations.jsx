@@ -122,18 +122,16 @@ export default function MyReservations() {
     ? `剩 ${item.leaveRemainMin} 分钟`
     : `已超期 ${-item.leaveRemainMin} 分钟`);
 
-  /** 打开登记暂离弹窗：原因字典是配置，拉一次就够。 */
+  /** 打开登记暂离弹窗：字典里带着「本人今日各原因已用次数」，每次打开都重新拉。 */
   const openLeaveModal = async (item) => {
     setLeaveItem(item);
     setReasonCode(null);
     setLeaveNote('');
-    if (reasons.length === 0) {
-      try {
-        const list = await fetchLeaveReasons();
-        setReasons(Array.isArray(list) ? list : []);
-      } catch (e) {
-        // 错误提示由拦截器统一弹出
-      }
+    try {
+      const list = await fetchLeaveReasons();
+      setReasons(Array.isArray(list) ? list : []);
+    } catch (e) {
+      // 错误提示由拦截器统一弹出
     }
   };
 
@@ -415,7 +413,10 @@ export default function MyReservations() {
           onChange={setReasonCode}
           options={reasons.map((item) => ({
             value: item.code,
-            label: `${item.name}（最长 ${item.maxMin} 分钟${item.needNote ? ' · 需填事由' : ''}）`,
+            // 今日用满的原因直接置灰并写清原因（PRD §13：不可用必须给理由，不能选了才被拒）
+            disabled: item.exhausted,
+            label: `${item.name}（最长 ${item.maxMin} 分钟${item.needNote ? ' · 需填事由' : ''}`
+              + `${item.dailyLimit ? ` · 今日 ${item.todayUsed}/${item.dailyLimit} 次` : ''}）`,
           }))}
         />
         <Input.TextArea

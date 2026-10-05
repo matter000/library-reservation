@@ -28,13 +28,13 @@ public class LeaveController {
     private final LeaveService leaveService;
 
     /**
-     * 暂离原因字典。
+     * 暂离原因字典（含本人今日各原因已用次数，选择器据此置灰）。
      *
      * @return 启用的原因列表
      */
     @GetMapping("/reasons")
     public Result<List<LeaveDTO.ReasonVO>> reasons() {
-        return Result.ok(leaveService.reasons());
+        return Result.ok(leaveService.reasons(UserContext.getUserId()));
     }
 
     /**

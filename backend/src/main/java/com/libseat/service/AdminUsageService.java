@@ -9,6 +9,7 @@ import com.libseat.entity.Floor;
 import com.libseat.entity.Reservation;
 import com.libseat.entity.Seat;
 import com.libseat.entity.User;
+import com.libseat.enums.NoticeType;
 import com.libseat.enums.ReservationStatus;
 import com.libseat.enums.SeatDisplayStatus;
 import com.libseat.enums.SeatStatus;
@@ -16,6 +17,7 @@ import com.libseat.repository.ReservationRepository;
 import com.libseat.repository.ReservationSlotRepository;
 import com.libseat.repository.SeatRepository;
 import com.libseat.repository.UserRepository;
+
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -57,6 +59,8 @@ public class AdminUsageService {
 
     /** 候补顶位（馆员释放与用户取消走同一条路径，T-V2-19）。 */
     private final WaitlistStateService waitlistStateService;
+
+    private final NoticeService noticeService;
 
     /**
      * 座位使用情况查询。
@@ -274,6 +278,25 @@ public class AdminUsageService {
      */
     @Transactional
     public AdminDTO.ReleaseVO release(Long reservationId, String reason) {
+        return release(reservationId, reason, null);
+    }
+
+    /**
+     * 强制释放，并可指定给学生的通知正文。
+     *
+     * <p>★ PRD §12-26 要求「强制释放必填原因并通知学生」，所以通知由这个唯一入口发，
+     *   而不是散落在各个调用方：馆员台直接释放以前只改状态不发通知，
+     *   学生的座位没了却查不到是谁、为什么放的 —— 那是必然的投诉来源。
+     *   调用方可以传更具体的正文（巡查处置带「有异议可申诉」），不传则用通用文案；
+     *   同一（学生, 类型, 预约）只会落一条通知，所以调用方不必再自己发一次。
+     *
+     * @param reservationId 预约 ID
+     * @param reason        释放原因（≤100 字，必填）
+     * @param noticeText    给学生的通知正文，null 表示用通用文案
+     * @return 释放结果
+     */
+    @Transactional
+    public AdminDTO.ReleaseVO release(Long reservationId, String reason, String noticeText) {
         if (reservationId == null) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "预约 ID 不能为空");
         }
@@ -305,6 +328,15 @@ public class AdminUsageService {
         detail.put("previousStatus", previousStatus);
         detail.put("reason", reason.trim());
         auditService.record(AuditService.ACTION_RESERVATION_RELEASE, "RESERVATION", reservation.getId(), detail);
+
+        noticeService.push(reservation.getUserId(), NoticeType.SEAT_RELEASED, "座位已被释放",
+                StringUtils.hasText(noticeText) ? noticeText
+                        : BizConstants.formatDate(reservation.getReserveDate()) + " "
+                                + BizConstants.rangeLabel(reservation.getStartSlot(),
+                                BizConstants.hoursOfSlots(reservation.getEndSlot() - reservation.getStartSlot()))
+                                + " 的座位被管理员释放，原因：" + reason.trim()
+                                + "。如对处置有异议，可到馆员台当面说明或在「信用与违规」页申诉。",
+                NoticeService.REF_RESERVATION, reservation.getId(), null);
 
         return AdminDTO.ReleaseVO.builder()
                 .reservationId(reservation.getId())
