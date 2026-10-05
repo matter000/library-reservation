@@ -9,6 +9,12 @@
 
 ---
 
+> ★ **迁移编号以 `backend/src/main/resources/db/migration/{h2,mysql}/` 目录为准**。
+> 本文各任务初稿写的 `Vn__` 是计划编号，落库时按「一片一版本」拆开了
+> （例如初稿的 `V9__peak_waitlist_notice.sql` 实际是 V11 高峰 / V12 候补 / V13 通知三版）。
+> 已落库脚本不能回改（破 Flyway checksum），所以只能改文档 —— 2026-10-05 已逐条对齐，
+> 完整清单见 `DESIGN-V2.md` §14。
+
 ## 0. 环境准备（一次性）
 
 ```powershell
@@ -123,7 +129,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 | --- | --- |
 | 前置依赖 | T-V2-01, T-V2-02 |
 | 优先级 | P0 |
-| 涉及文件 | `db/migration/*/V4__space.sql`（建 `t_zone`、`t_seat.zone_id`、回填、`uk_zone_floor_code`）<br/>`entity/Zone.java`、`enums/ZoneType.java`、`repository/ZoneRepository.java`<br/>`service/ZoneService.java`（CRUD + 规则解析 + 可见性过滤）<br/>`controller/ZoneController.java`（学生面）、`controller/StaffZoneController.java`（管理面）<br/>`dto/ZoneDTO.java`<br/>`seed/DataInitializer.java`（3 楼层各建 2~3 个分区并回填座位） |
+| 涉及文件 | `db/migration/*/V4__space_zone.sql`（建 `t_zone`、`t_seat.zone_id`、回填、`uk_zone_floor_code`）<br/>`entity/Zone.java`、`enums/ZoneType.java`、`repository/ZoneRepository.java`<br/>`service/ZoneService.java`（CRUD + 规则解析 + 可见性过滤）<br/>`controller/ZoneController.java`（学生面）、`controller/StaffZoneController.java`（管理面）<br/>`dto/ZoneDTO.java`<br/>`seed/DataInitializer.java`（3 楼层各建 2~3 个分区并回填座位） |
 
 **要点**
 - 分区规则字段按 DESIGN §2.1 全量落地；`visible_roles`/`eligible_roles` CSV 写入时校验枚举合法。
@@ -145,7 +151,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 | --- | --- |
 | 前置依赖 | T-V2-05 |
 | 优先级 | P0 |
-| 涉及文件 | `db/migration/*/V4__space.sql`（建 `t_table`、`t_seat.table_id`、`uk_seat_pos`）<br/>`entity/SeatTable.java`（避开 java.sql.Table 歧义，表名仍 `t_table`）、`repository/SeatTableRepository.java`<br/>`service/TableService.java`<br/>`service/AdminSeatService.java`（**改**：批量生成支持 `zoneId/tableId`、冲突预览、`skipConflicting`）<br/>`controller/StaffTableController.java`、`dto/TableDTO.java`<br/>前端 `pages/admin/TableManage.jsx`、`pages/admin/SeatBatchModal.jsx`（改造） |
+| 涉及文件 | `db/migration/*/V5__seat_table.sql`（建 `t_table`、`t_seat.table_id`、`uk_seat_pos`）<br/>`entity/SeatTable.java`（避开 java.sql.Table 歧义，表名仍 `t_table`）、`repository/SeatTableRepository.java`<br/>`service/TableService.java`<br/>`service/AdminSeatService.java`（**改**：批量生成支持 `zoneId/tableId`、冲突预览、`skipConflicting`）<br/>`controller/StaffTableController.java`、`dto/TableDTO.java`<br/>前端 `pages/admin/TableManage.jsx`、`pages/admin/SeatBatchModal.jsx`（改造） |
 
 **要点**
 - **修 V1 遗留缺陷**：批量生成不再与既有座位同格重叠。先 `batch-preview` 返回冲突行列清单，正式生成默认跳过冲突并返回 `skippedPositions`。
@@ -166,7 +172,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 | --- | --- |
 | 前置依赖 | T-V2-05 |
 | 优先级 | P0 |
-| 涉及文件 | `db/migration/*/V5__time.sql`（slot ×2 迁移 + `t_open_profile` + `t_open_calendar` + `t_peak_window` + 种子）<br/>`common/BizConstants.java`（slot 编码常量改造：`SLOT_MINUTES=30`、`slotOf(LocalTime)`、`slotToMinute`）<br/>`entity/OpenProfile.java`、`entity/OpenCalendar.java`、`entity/PeakWindow.java` + 三个 Repository<br/>`service/OpenRuleService.java`（`resolve(date)` → 当日生效规则）<br/>`service/FloorService.java`（`/api/config/slots` 改造）<br/>`controller/AdminOpenRuleController.java`、`dto/OpenRuleDTO.java`<br/>前端 `utils/datetime.js`（slot ↔ 时间）、`constants/index.js`、`pages/SeatMap.jsx` 时段选择器 |
+| 涉及文件 | `db/migration/*/V6__open_time.sql`（slot ×2 迁移 + `t_open_profile` + `t_open_calendar` + `t_peak_window` + 种子）<br/>`common/BizConstants.java`（slot 编码常量改造：`SLOT_MINUTES=30`、`slotOf(LocalTime)`、`slotToMinute`）<br/>`entity/OpenProfile.java`、`entity/OpenCalendar.java`、`entity/PeakWindow.java` + 三个 Repository<br/>`service/OpenRuleService.java`（`resolve(date)` → 当日生效规则）<br/>`service/FloorService.java`（`/api/config/slots` 改造）<br/>`controller/AdminOpenRuleController.java`、`dto/OpenRuleDTO.java`<br/>前端 `utils/datetime.js`（slot ↔ 时间）、`constants/index.js`、`pages/SeatMap.jsx` 时段选择器 |
 
 **要点**
 - 编码唯一口径：`slot = (hour*60+minute)/30`，`end_slot` 开区间。**内部格长固定 30 分钟**，60 分钟只是时长选项限制。
@@ -213,7 +219,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 | --- | --- |
 | 前置依赖 | T-V2-08 |
 | 优先级 | **P0（最高优先）** |
-| 涉及文件 | `db/migration/*/V6__leave.sql`（`t_leave_reason`/`t_leave_record` + `uk_leave_open` + 原因种子；`t_user` 信用列已在 V2 建好）<br/>`entity/LeaveRecord.java`、`entity/LeaveReason.java` + Repository<br/>`enums/LeaveStatus.java`<br/>`service/LeaveService.java`（start/returnBack 校验链 DESIGN §5.2）<br/>`controller/LeaveController.java`、`dto/LeaveDTO.java`<br/>`service/ReservationService.java`（新增 `finish` 主动结束） |
+| 涉及文件 | `db/migration/*/V7__leave.sql`（`t_leave_reason`/`t_leave_record` + `uk_leave_open` + 原因种子；`t_user` 信用列已在 V2 建好）<br/>`entity/LeaveRecord.java`、`entity/LeaveReason.java` + Repository<br/>`enums/LeaveStatus.java`<br/>`service/LeaveService.java`（start/returnBack 校验链 DESIGN §5.2）<br/>`controller/LeaveController.java`、`dto/LeaveDTO.java`<br/>`service/ReservationService.java`（新增 `finish` 主动结束） |
 
 **要点**
 - 7 步校验顺序严格照 DESIGN §5.2；`planned_end` 双重封顶（分区上限 + 预约结束时间），**剩余不足按剩余封顶而非报错**。
@@ -279,7 +285,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 | --- | --- |
 | 前置依赖 | T-V2-11 |
 | 优先级 | P0 |
-| 涉及文件 | `db/migration/*/V7__credit.sql`（`t_violation`/`t_credit_log`/`t_penalty` + 历史 `no_show_count` 折算）<br/>`entity/{Violation,CreditLog,Penalty}.java` + Repository<br/>`enums/{ViolationType,PenaltyType}.java`<br/>`service/CreditService.java`（**applyViolation 唯一入口**）<br/>`service/PenaltyService.java`<br/>`service/ReservationService.java`（校验链插入处罚闸门 + 单日累计）<br/>`service/ReservationStateService.java`、`LeaveStateService.java`（改为调用 `CreditService`）<br/>`test/…/CreditPenaltyApiTest.java` |
+| 涉及文件 | `db/migration/*/V8__credit.sql`（`t_violation`/`t_credit_log`/`t_penalty` + 历史 `no_show_count` 折算）<br/>`entity/{Violation,CreditLog,Penalty}.java` + Repository<br/>`enums/{ViolationType,PenaltyType}.java`<br/>`service/CreditService.java`（**applyViolation 唯一入口**）<br/>`service/PenaltyService.java`<br/>`service/ReservationService.java`（校验链插入处罚闸门 + 单日累计）<br/>`service/ReservationStateService.java`、`LeaveStateService.java`（改为调用 `CreditService`）<br/>`test/…/CreditPenaltyApiTest.java` |
 
 **要点**
 - `applyViolation` 单事务内完成：写违规（**无证据 JSON 直接抛异常**）→ 扣分（`max(0, …)`）→ 写 `t_credit_log(balance_after)` → 评估阶梯生成 `t_penalty`（幂等：同类 ACTIVE 只延长）→ 写通知。
@@ -302,7 +308,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 | --- | --- |
 | 前置依赖 | T-V2-12 |
 | 优先级 | P1（本轮做，可降级为"仅撤销"） |
-| 涉及文件 | `db/migration/*/V7__credit.sql`（`t_appeal` + `uk_appeal_violation`）<br/>`entity/Appeal.java`、`service/AppealService.java`、`controller/AppealController.java`（学生面）、`controller/StaffAppealController.java`<br/>`dto/AppealDTO.java`、`test/…/AppealApiTest.java` |
+| 涉及文件 | `db/migration/*/V9__appeal.sql`（`t_appeal` + `uk_appeal_violation`）<br/>`entity/Appeal.java`、`service/AppealService.java`、`controller/AppealController.java`（学生面）、`controller/StaffAppealController.java`<br/>`dto/AppealDTO.java`、`test/…/AppealApiTest.java` |
 
 **要点**：24h 时限（超期 4108）；一条违规一次申诉（唯一索引兜底）；成立 → 违规 `REVOKED` + 反向补分（写 `RESTORE` 流水，**不改历史**）+ 解除本次扣分触发的处罚；驳回附理由；学生可升级 → SYS_ADMIN 终审 `FINAL_JUDGED`（终态）。裁定页渲染违规 `evidence` JSON 的可读视图。
 
@@ -338,7 +344,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 | --- | --- |
 | 前置依赖 | T-V2-06, T-V2-08 |
 | 优先级 | P1 |
-| 涉及文件 | `db/migration/*/V8__group.sql`<br/>`entity/{Group,GroupMember}.java` + Repository、`enums/{GroupStatus,MemberInviteStatus}.java`<br/>`service/GroupService.java`（建队/邀请/确认/锁定下单）<br/>`controller/GroupController.java`、`dto/GroupDTO.java`<br/>`test/…/GroupBookingApiTest.java` |
+| 涉及文件 | `db/migration/*/V10__group.sql`<br/>`entity/{Group,GroupMember}.java` + Repository、`enums/{GroupStatus,MemberInviteStatus}.java`<br/>`service/GroupService.java`（建队/邀请/确认/锁定下单）<br/>`controller/GroupController.java`、`dto/GroupDTO.java`<br/>`test/…/GroupBookingApiTest.java` |
 
 **要点**
 - **不新建占用表**：锁定后按桌位座位逐条创建 `reservation`（共享 `group_id`），并发防重仍由 `uk_slot_seat_date_idx` 保证；任一座位被抢 → 整单事务回滚 + 4091（"要么整桌成功，要么不动"）。
@@ -408,7 +414,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 | --- | --- |
 | 前置依赖 | T-V2-18, T-V2-11（释放挂钩点） |
 | 优先级 | P2（可延至下一轮） |
-| 涉及文件 | `db/migration/*/V9__peak_waitlist_notice.sql`（`t_waitlist` + `uk_waitlist_active`）<br/>`entity/Waitlist.java`、`enums/WaitlistStatus.java`<br/>`service/WaitlistService.java`（join/confirm/quit/**onSeatReleased**）<br/>`service/WaitlistStateService.java` + `scheduler/WaitlistExpireTask.java`（每分钟）<br/>`controller/WaitlistController.java`、`test/…/WaitlistApiTest.java` |
+| 涉及文件 | `db/migration/*/V12__waitlist.sql`（`t_waitlist` + `uk_waitlist_active`）<br/>`entity/Waitlist.java`、`enums/WaitlistStatus.java`<br/>`service/WaitlistService.java`（join/confirm/quit/**onSeatReleased**）<br/>`service/WaitlistStateService.java` + `scheduler/WaitlistExpireTask.java`（每分钟）<br/>`controller/WaitlistController.java`、`test/…/WaitlistApiTest.java` |
 
 **要点**：每人活动队列 ≤2 → 4106；释放同事务内推送 offer 给队首（窗口默认 10 分钟，可配）；确认前须先取消冲突时段自有预约；超时 `EXPIRED` 顺延下一位且**不记违规**。
 
@@ -426,7 +432,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 | --- | --- |
 | 前置依赖 | T-V2-19 |
 | 优先级 | P1（候补与暂离提醒都依赖它） |
-| 涉及文件 | `db/migration/*/V9__peak_waitlist_notice.sql`（`t_notice`）<br/>`entity/Notice.java`、`service/NoticeService.java`、`controller/NoticeController.java`<br/>`scheduler/ReminderTask.java`（签到前 15 分钟 / 暂离剩 5 分钟，按 `type+ref` 幂等）<br/>前端 `components/NoticeBell.jsx`（复用平面图轮询通道）、`api/notice.js` |
+| 涉及文件 | `db/migration/*/V13__notice.sql`（`t_notice`）<br/>`entity/Notice.java`、`service/NoticeService.java`、`controller/NoticeController.java`<br/>`scheduler/ReminderTask.java`（签到前 15 分钟 / 暂离剩 5 分钟，按 `type+ref` 幂等）<br/>前端 `components/NoticeBell.jsx`（复用平面图轮询通道）、`api/notice.js` |
 
 **验收标准**：三类通知（候补 offer、暂离到期、违规即时）均产生且可读、可标已读、未读数正确；同一条不重复生成；**明确文档化"无第三方推送，推送=站内通知+轮询"**。
 
@@ -440,7 +446,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 | --- | --- |
 | 前置依赖 | T-V2-10, T-V2-12 |
 | 优先级 | P1 |
-| 涉及文件 | `db/migration/*/V10__patrol.sql`（`t_patrol_task` + `uk_patrol_open` + 巡查阈值种子）<br/>`entity/PatrolTask.java`、`enums/{PatrolType,PatrolStatus}.java`<br/>`service/PatrolService.java`（生成 + 四种处置）<br/>`scheduler/PatrolTaskGenerator.java`（10 分钟）<br/>`controller/StaffPatrolController.java`、`dto/PatrolDTO.java`<br/>前端 `layouts/StaffLayout.jsx`、`pages/staff/PatrolBoard.jsx`、`pages/staff/UsageBoard.jsx`<br/>`test/…/PatrolApiTest.java` |
+| 涉及文件 | `db/migration/*/V14__patrol.sql`（`t_patrol_task` + `uk_patrol_open` + 巡查阈值种子）<br/>`entity/PatrolTask.java`、`enums/{PatrolType,PatrolStatus}.java`<br/>`service/PatrolService.java`（生成 + 四种处置）<br/>`scheduler/PatrolTaskGenerator.java`（10 分钟）<br/>`controller/StaffPatrolController.java`、`dto/PatrolDTO.java`<br/>前端 `layouts/StaffLayout.jsx`、`pages/staff/PatrolBoard.jsx`、`pages/staff/UsageBoard.jsx`<br/>`test/…/PatrolApiTest.java` |
 
 **要点**：三条生成规则（连续使用 ≥`suspect_min`、组队未入座、到期仍占）+ 馆员人工登记；**机器绝不自动释放**；`RELEASE` 复用强制释放（必填原因 + 通知 + 审计），`VIOLATION` 走 `CreditService.applyViolation(ON_SITE_OCCUPY,-15)` 并固化证据。
 
@@ -472,7 +478,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 | --- | --- |
 | 前置依赖 | S0–S6 |
 | 优先级 | P1 |
-| 涉及文件 | 前端 `layouts/MobileLayout.jsx`（底部 Tab：首页/找座/我的座位/信用/我的）、`/m/*` 路由、`styles/global.css`、`styles/seat.css`（热区 ≥44px、横向滚动不缩放）、`components/SeatGrid.jsx`（焦点可达 + `prefers-reduced-motion`）<br/>`db/migration/*/V11__seed_demo.sql`（演示数据补齐：教师/馆员账号、分区样例、历史违规样例）<br/>**`WebConfig.SpaFallbackController` 同步新增 `/m`、`/m/**` 白名单** |
+| 涉及文件 | 前端 `layouts/MobileLayout.jsx`（底部 Tab：首页/找座/我的座位/信用/我的）、`/m/*` 路由、`styles/global.css`、`styles/seat.css`（热区 ≥44px、横向滚动不缩放）、`components/SeatGrid.jsx`（焦点可达 + `prefers-reduced-motion`）<br/>`db/migration/*/V16__seed_demo.sql`（**本片未做**，仍欠，见 DESIGN-V2 §14）（演示数据补齐：教师/馆员账号、分区样例、历史违规样例）<br/>**`WebConfig.SpaFallbackController` 同步新增 `/m`、`/m/**` 白名单** |
 
 **验收标准**：375px 宽度下主流程（找座→点座→确认）≤3 次点击；键盘 Tab 可达全部操作且焦点可见；`prefers-reduced-motion` 下无动画；`/m/seat` 等深链刷新不白屏。
 

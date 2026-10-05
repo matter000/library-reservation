@@ -193,7 +193,7 @@ slotToTime(slot) = LocalTime.ofMinute(slot * 30)   // 15 → 07:30
 UPDATE t_reservation      SET start_slot = start_slot * 2, end_slot = end_slot * 2;
 UPDATE t_reservation_slot SET slot_index = slot_index * 2;
 ```
-（V1 的 8~21 整点 → V2 的 16~42；迁移脚本必须在 `V5__time.sql` 内一次性完成，并在同版本里更新所有历史统计口径。）
+（V1 的 8~21 整点 → V2 的 16~42；迁移脚本必须在 `V6__open_time.sql` 内一次性完成，并在同版本里更新所有历史统计口径。）
 
 ### 4.3 开放时间与日型（后台可配，不发版）
 
@@ -787,21 +787,28 @@ CREATE INDEX IF NOT EXISTS idx_patrol_status ON t_patrol_task (status, level, cr
 
 **决策：引入 Flyway**（`flyway-core`，Boot 3.2 原生支持；纯版本化 SQL 文件，符合 V1「DDL 可见可评审」原则）。
 
-> **版本号纪律**：Flyway 版本必须严格递增且**一片一个版本**，禁止两个片复用同一个 `Vn__` 文件（否则后一片无法应用）。脚本编号与 §16 的分片顺序一一对应：
+> **版本号纪律**：Flyway 版本必须严格递增且**一片一个版本**，禁止两个片复用同一个 `Vn__` 文件（否则后一片无法应用）。
+> **★ 下表是 2026-10-05 收口时的真实清单**（初稿的 V4~V11 编号已被逐片拆开，改不动已落库脚本的 checksum）；
+> 任何时候要以 `backend/src/main/resources/db/migration/{h2,mysql}/` 目录为准，文档只是抄录。
 
 | 脚本 | 所属片 | 内容 |
 | --- | --- | --- |
 | `V1__baseline.sql` | S0 | 与现有 `schema-h2.sql` 逐字一致（新库直接建全） |
 | `V2__role.sql` | S0 | 角色值迁移（USER→STUDENT、ADMIN→SYS_ADMIN）+ `t_user` 新列（`credit_score`/`student_no`/`active_finish_streak`） |
 | `V3__rule_audit.sql` | S0 | `t_rule_config` + `t_audit_log` + 默认规则种子 |
-| `V4__space.sql` | S1 | `t_zone` / `t_table` + `t_seat.zone_id/table_id/full_day` + 分区桌位种子 + `uk_seat_pos`（先跑冲突检测） |
-| `V5__time.sql` | S1 | **时段 ×2 迁移** + `t_open_profile` / `t_open_calendar` / `t_peak_window` + 日型种子 |
-| `V6__leave.sql` | S2 | `t_leave_reason`（含种子）/ `t_leave_record` + `uk_leave_open` |
-| `V7__credit.sql` | S3 | `t_violation` / `t_credit_log` / `t_penalty` / `t_appeal` + 历史 `no_show_count` 折算为违规记录 |
-| `V8__group.sql` | S4 | `t_group` / `t_group_member` / `t_reservation.group_id` / `t_zone_grant` |
-| `V9__peak_waitlist_notice.sql` | S5 | `t_waitlist` / `t_notice` / `t_zone_peak_state` |
-| `V10__patrol.sql` | S6 | `t_patrol_task` + 巡查阈值规则种子 |
-| `V11__seed_demo.sql` | S7 | 演示数据补齐（教师/馆员账号、分区样例、历史违规样例） |
+| `V4__space_zone.sql` | S1 | `t_zone` + `t_seat.zone_id/full_day` + `uk_zone_floor_code` + 分区种子 |
+| `V5__seat_table.sql` | S1 | `t_table` + `t_seat.table_id` + `uk_seat_pos`（坐标唯一，先跑冲突检测） |
+| `V6__open_time.sql` | S1 | **时段 ×2 迁移** + `t_open_profile` / `t_open_calendar` / `t_peak_window` + 日型种子 |
+| `V7__leave.sql` | S2 | `t_leave_reason`（含种子）/ `t_leave_record` + `uk_leave_open` |
+| `V8__credit.sql` | S3 | `t_violation` / `t_credit_log` / `t_penalty` + 历史 `no_show_count` 折算为违规记录 |
+| `V9__appeal.sql` | S3 | `t_appeal` + `uk_appeal_violation`（初稿把它并进 V7，实际单独一版） |
+| `V10__group.sql` | S4 | `t_group` / `t_group_member` / `t_reservation.group_id` / `t_zone_grant` |
+| `V11__peak.sql` | S5 | `t_zone_peak_state` + 高峰调控参数（初稿的 `V9__peak_waitlist_notice` 在此拆成三版） |
+| `V12__waitlist.sql` | S5 | `t_waitlist` + `uk_waitlist_active` |
+| `V13__notice.sql` | S5 | `t_notice` |
+| `V14__patrol.sql` | S6 | `t_patrol_task` + `uk_patrol_open` + 巡查阈值规则种子 |
+| `V15__leave_reason_limit.sql` | S7 | T-V2-24 收口：把「就餐每日 2 次」真正写进数据（暂离计次拆成两条口径后，原因表的 `daily_limit` 不再夹分区总数） |
+| ~~`V16__seed_demo.sql`~~ | S7 | **仍未做**：演示数据补齐（教师/馆员账号样例、历史违规样例）。造历史违规必须同时写 `t_violation`+`t_credit_log`+`t_user.credit_score`，否则破 `sum(delta)==credit_score` 对账不变式 |
 
 **必须同时做的配置改动**：停用 `spring.sql.init.mode`（否则与 Flyway 双跑建表），改为 `spring.flyway.baseline-on-migrate=true` + `baseline-version=1`；MySQL/H2 双方言目录 `db/migration/{h2,mysql}`。
 
