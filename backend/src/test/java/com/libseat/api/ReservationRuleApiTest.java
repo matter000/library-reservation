@@ -1,6 +1,7 @@
 package com.libseat.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.libseat.common.BizConstants;
 import com.libseat.entity.Reservation;
 import com.libseat.entity.ReservationSlot;
 import com.libseat.enums.ReservationStatus;
@@ -11,7 +12,9 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -64,6 +67,83 @@ class ReservationRuleApiTest extends ApiTestBase {
     }
 
     // ==================== duration ====================
+
+    @Test
+    @DisplayName("【B2】教师单次 6 小时真的可约：选项与校验同一出处，分区上限仍然优先")
+    void teacherMayBookSixHours() throws Exception {
+        String teacher = login("teacher1", "123456");
+        String student = newUser();
+        long teacherZone = zoneIdByCode("2F-TEACHER");
+        String date = d(1);
+        int start = slot(9);
+
+        // ① 配置接口给教师的档位必须比学生多 —— 前端选项和后端校验读的是同一份列表
+        JsonNode forStudent = data(exec(get("/api/config/booking").header("Authorization", bearer(student))));
+        JsonNode forTeacher = data(exec(get("/api/config/booking").header("Authorization", bearer(teacher))));
+        assertEquals(List.of(1, 2, 3, 4), hoursOf(forStudent), "学生仍是配置里写死的 1~4 小时");
+        assertEquals(List.of(1, 2, 3, 4, 5, 6), hoursOf(forTeacher),
+                "★ 教师应拿到在配置之上追加的 5/6 小时；缺这一档就说明 PRD §12-2 的教师上限只是展示，"
+                        + "教师既挑不到、硬调接口也被拦");
+        assertEquals(360, forTeacher.path("maxDurationTeacherMin").asInt(), "教师上限要一并给出，界面才说得清");
+
+        // ② 6 小时在教师专区可约（该区单次上限 360 分钟刚好接住）
+        long seat = freeSeatInZone(floor2, teacherZone, date, start, BizConstants.slotsOf(6));
+        MvcResult six = reserveRaw(teacher, seat, date, start, 6);
+        assertEquals(0, code(six), "教师约 6 小时应成功：" + body(six));
+
+        // ③ 再往上一档没有依据：7 小时既不在配置列表也超过教师上限
+        int late = slot(15);
+        MvcResult seven = reserveRaw(teacher,
+                freeSeatInZone(floor2, teacherZone, date, late, 1), date, late, 7);
+        assertEquals(PARAM_ERROR, code(seven), "7 小时应 4001，实际：" + body(seven));
+
+        // ④ 分区上限优先：静音自习区单次 240 分钟，教师也不能在该区约 5 小时
+        int silentStart = slot(14);
+        MvcResult inSilent = reserveRaw(teacher,
+                freeSeatInZone(floor1, zoneIdByCode("1F-SILENT"), date, silentStart, 2),
+                date, silentStart, 5);
+        assertEquals(PARAM_ERROR, code(inSilent),
+                "教师在静音区约 5 小时应被分区上限拦下：" + body(inSilent));
+        assertTrue(msg(inSilent).contains("240"), "要给出本区单次上限，实际：" + msg(inSilent));
+    }
+
+    /** 配置里的可选时长转成 List 便于断言。 */
+    private List<Integer> hoursOf(JsonNode config) {
+        List<Integer> hours = new ArrayList<>();
+        config.path("allowedDurations").forEach(node -> hours.add(node.asInt()));
+        return hours;
+    }
+
+    private long zoneIdByCode(String code) {
+        return jdbc.queryForObject("select id from t_zone where code = ?", Long.class, code);
+    }
+
+    /** 指定分区内跨 [start, start+count) 每格都空的座位（只看起始格会撞出 4091 假并发）。 */
+    private long freeSeatInZone(long floorId, long zoneId, String date, int start, int count) throws Exception {
+        java.util.Set<Long> candidates = null;
+        for (int i = 0; i < count; i++) {
+            JsonNode map = data(exec(get("/api/seats/map")
+                    .param("floorId", String.valueOf(floorId))
+                    .param("zoneId", String.valueOf(zoneId))
+                    .param("date", date)
+                    .param("slot", String.valueOf(start + i))
+                    .header("Authorization", bearer(admin))));
+            java.util.Set<Long> free = new java.util.LinkedHashSet<>();
+            for (JsonNode node : map.path("seats")) {
+                if ("FREE".equals(node.path("displayStatus").asText())) {
+                    free.add(node.path("seatId").asLong());
+                }
+            }
+            if (candidates == null) {
+                candidates = free;
+            } else {
+                candidates.retainAll(free);
+            }
+        }
+        assertTrue(candidates != null && !candidates.isEmpty(),
+                date + " 分区 " + zoneId + " 在 " + start + " 起 " + count + " 格内没有全空座位，用例要换时段");
+        return candidates.iterator().next();
+    }
 
     @Test
     @DisplayName("【duration】0 / 5 / -1 / 2.5 / \"2\" 均返回 4001")

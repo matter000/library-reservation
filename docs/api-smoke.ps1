@@ -599,6 +599,22 @@ Expect '35.2 第 7 小时必须被拦（4098，本区累计仅 300 分钟，只�
 Expect '35.3 报错要给出上限数字' ((Biz-Message $capThird).Length -gt 8) $true
 foreach ($id in $capSeats) { Invoke-Api POST "/api/reservations/$id/cancel" $null $capToken | Out-Null }
 
+# ---------- 36. 教师单次 6 小时（PRD §12-2）：可选档位按角色给 ----------
+# V11 把 book.max-duration-teacher-min 种成 240，与学生的 4 小时同值 —— 这条规则从落库起就是空转。
+# 只读断言：不真去约 6 小时，避免为了演示在教师账号上留一条长占用。
+$tch = Invoke-Api POST '/api/auth/login' @{ username = 'teacher1'; password = '123456' }
+$cfgTeacher = Invoke-Api GET '/api/config/booking' $null $tch.data.token
+$cfgStudent = Invoke-Api GET '/api/config/booking' $null $stuToken
+Show '36. 按角色给出的可选时长' @{
+    teacher = ($cfgTeacher.data.allowedDurations -join '/')
+    student = ($cfgStudent.data.allowedDurations -join '/')
+    teacherMaxMin = $cfgTeacher.data.maxDurationTeacherMin
+}
+Expect '36.1 教师上限是 360 分钟（V18 修的数据）' $cfgTeacher.data.maxDurationTeacherMin 360
+Expect '36.2 学生仍是 4 档' @($cfgStudent.data.allowedDurations).Count 4
+Expect '36.3 教师多出 5/6 两档（选项与校验同一出处）' @($cfgTeacher.data.allowedDurations).Count 6
+Expect '36.4 教师档位的最大值就是上限换算出来的 6 小时' (($cfgTeacher.data.allowedDurations | Measure-Object -Maximum).Maximum) 6
+
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ("冒烟脚本执行完毕：PASS {0} / FAIL {1} / SKIP {2}" -f $script:passCount, $script:failCount, $script:warnCount) `
     -ForegroundColor $(if ($script:failCount -gt 0) { 'Red' } else { 'Green' })

@@ -95,9 +95,10 @@ public class WaitlistService {
         if (!BizConstants.slotStart(request.getDate(), request.getStartSlot()).isAfter(now)) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "不能候补已过去的时段");
         }
-        if (!ruleConfigService.allowedDurations().contains(request.getDuration())) {
+        // 时长档位与预约同一口径（教师可候补 5/6 小时），不要在候补这条路上另写一份 1~4
+        if (!ruleConfigService.allowedDurations(role).contains(request.getDuration())) {
             throw new BusinessException(ErrorCode.PARAM_ERROR,
-                    "时长只能选择 " + ruleConfigService.allowedDurations() + " 小时");
+                    "时长只能选择 " + ruleConfigService.allowedDurations(role) + " 小时");
         }
 
         long freeNow = freeSeats(zone, request.getDate(), request.getStartSlot(), endSlot).size();

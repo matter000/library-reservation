@@ -101,7 +101,10 @@ public class FloorController {
     public Result<FloorDTO.BookingConfigVO> bookingConfig() {
         return Result.ok(FloorDTO.BookingConfigVO.builder()
                 .advanceDays(ruleConfigService.advanceDays())
-                .allowedDurations(ruleConfigService.allowedDurations())
+                // ★ 按时给角色：教师比学生多 5/6 小时两档（PRD §12-2），
+                //   前端选项与后端校验必须同源，否则教师永远挑不到自己有权约的时长。
+                .allowedDurations(ruleConfigService.allowedDurations(UserContext.getRole()))
+                .maxDurationTeacherMin(ruleConfigService.maxDurationTeacherMin())
                 .defaultDuration(ruleConfigService.defaultDuration())
                 .checkInBeforeMin(ruleConfigService.checkInBeforeMin())
                 .checkInAfterMin(ruleConfigService.checkInAfterMin())

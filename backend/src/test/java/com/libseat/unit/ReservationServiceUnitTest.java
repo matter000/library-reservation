@@ -101,6 +101,9 @@ class ReservationServiceUnitTest {
         when(ruleConfigService.advanceDays()).thenReturn(BizConstants.ADVANCE_DAYS);
         when(ruleConfigService.defaultDuration()).thenReturn(BizConstants.DEFAULT_DURATION);
         when(ruleConfigService.allowedDurations()).thenReturn(BizConstants.ALLOWED_DURATIONS);
+        // 服务读的是按角色的那一档（教师会多出 5/6 小时）；桩成同一份列表，
+        // 本文件验的是预约规则本身，角色差异由 ReservationRuleApiTest#teacherMayBookSixHours 覆盖。
+        when(ruleConfigService.allowedDurations(any())).thenReturn(BizConstants.ALLOWED_DURATIONS);
         // 开放规则桩成「不闭馆的默认窗口」，闭馆与日型分支由 OpenRuleApiTest / OpenRuleServiceTest 覆盖
         when(openRuleService.resolve(any())).thenReturn(new com.libseat.service.OpenRuleService.DayRule(
                 TODAY, com.libseat.enums.DayType.WORKDAY,

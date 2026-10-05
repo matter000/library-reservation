@@ -162,8 +162,14 @@ public final class BizConstants {
     /** 高峰时段的提前开放时刻（前一天 HH:mm）。 */
     public static final String PEAK_OPEN_TIME = "22:00";
 
-    /** 教师单次时长上限（分钟）。 */
-    public static final int MAX_DURATION_TEACHER_MIN = 240;
+    /**
+     * 教师单次时长上限（分钟）= 6 小时（PRD §12-2「单次上限 4 小时（教师 6 小时）」）。
+     *
+     * <p>★ V11 曾把它种成 240 —— 与学生的 4 小时完全相同，于是"教师 6 小时"这条规则
+     *   在系统里等于不存在（既挑不到那一档，硬调接口也被时长列表拦下）。V18 改回 360。
+     *   注意它只在**角色配额**这一层生效：分区自己的单次上限仍然优先（见 §14.1 的口径）。
+     */
+    public static final int MAX_DURATION_TEACHER_MIN = 360;
 
     // ===== 候补队列兜底值（真实值在规则中心，见 V12） =====
 

@@ -137,7 +137,7 @@ public class GroupService {
             throw new BusinessException(ErrorCode.PARAM_ERROR,
                     "该桌只有 " + seats.size() + " 个可用座位，人数上限不能超过它");
         }
-        validateTimeWindow(zone, request.getDate(), request.getStartSlot(), request.getDuration());
+        validateTimeWindow(zone, request.getDate(), request.getStartSlot(), request.getDuration(), role);
 
         LocalDateTime lockTime = BizConstants.slotStart(request.getDate(), request.getStartSlot())
                 .minusMinutes(BizConstants.GROUP_LOCK_BEFORE_MIN);
@@ -622,7 +622,7 @@ public class GroupService {
      * <p>★ 与 {@code ReservationService} 的第 2/3/4/4b 步同口径，但作用只是「提前给即时反馈」；
      * 权威判定仍在锁定时的下单链上 —— 那里整单回滚能保证座位一动不动，所以不必把七步复制一遍。
      */
-    private void validateTimeWindow(Zone zone, LocalDate date, int startSlot, int duration) {
+    private void validateTimeWindow(Zone zone, LocalDate date, int startSlot, int duration, UserRole role) {
         LocalDate today = LocalDate.now();
         // ★ 与散客下单同一口径：可提前天数取分区值（本区没配才用全局规则值），
         //   否则「建队时放行、锁定时拒绝」，队伍已经邀请了人，退回来就是白折腾一轮。
@@ -644,9 +644,9 @@ public class GroupService {
         if (!BizConstants.slotStart(date, startSlot).isAfter(LocalDateTime.now())) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "不能预约已过去的时段");
         }
-        if (!ruleConfigService.allowedDurations().contains(duration)) {
+        if (!ruleConfigService.allowedDurations(role).contains(duration)) {
             throw new BusinessException(ErrorCode.PARAM_ERROR,
-                    "时长只能选择 " + ruleConfigService.allowedDurations() + " 小时");
+                    "时长只能选择 " + ruleConfigService.allowedDurations(role) + " 小时");
         }
         if (zone.getMaxDurationMin() != null && duration * 60 > zone.getMaxDurationMin()) {
             throw new BusinessException(ErrorCode.PARAM_ERROR,

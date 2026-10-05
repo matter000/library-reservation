@@ -819,7 +819,8 @@ CREATE INDEX IF NOT EXISTS idx_patrol_status ON t_patrol_task (status, level, cr
 | `V15__leave_reason_limit.sql` | S7 | T-V2-24 收口：把「就餐每日 2 次」真正写进数据（暂离计次拆成两条口径后，原因表的 `daily_limit` 不再夹分区总数） |
 | `V16__zone_advance_days_nullable.sql` | S7 | `t_zone.advance_days` 放开 NOT NULL：分区没配时才由全局 `book.advance-days` 兜底，否则"跟随全馆"这个状态在库里无法表达，全局规则就成了死配置 |
 | `V17__global_daily_cap_rule.sql` | S7 | 新增全馆规则 `book.daily-cap-min`（360 分钟 = PRD §12-3 的 6 小时，挂在用户身上、跨分区累加），并把考研专座那个比全馆更宽的 `daily_cap_min=480` 撤成 NULL（PRD 从未给任何分区放过单日额度，留着只会误导） |
-| ~~`V18__seed_demo.sql`~~ | S7 | **仍未做**：演示数据补齐（教师/馆员账号、历史违规样例）。造历史违规必须同时写 `t_violation`+`t_credit_log`+`t_user.credit_score`，否则破 `sum(delta)==credit_score` 对账不变式 |
+| `V18__teacher_duration_cap.sql` | S7 | 教师单次时长上限从 240 改回 360（PRD §12-2 的 6 小时）—— V11 种的 240 与学生完全相同，这条规则从落库那天起就是空转；顺带改准说明（非高峰时分区单次上限仍然优先，见 §14.1） |
+| ~~`V19__seed_demo.sql`~~ | S7 | **仍未做**：演示数据补齐（教师/馆员账号、历史违规样例）。造历史违规必须同时写 `t_violation`+`t_credit_log`+`t_user.credit_score`，否则破 `sum(delta)==credit_score` 对账不变式 |
 
 ### 14.1 全局规则值与分区值的合成口径（2026-10-05 裁定）
 

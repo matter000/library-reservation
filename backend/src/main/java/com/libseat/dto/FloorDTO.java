@@ -110,8 +110,11 @@ public class FloorDTO {
         /** 可提前预约天数（含当天）。 */
         private Integer advanceDays;
 
-        /** 可选时长列表（小时）。 */
+        /** 可选时长列表（小时）。★ 已按当前用户角色放宽：教师会多出 5/6 小时两档。 */
         private List<Integer> allowedDurations;
+
+        /** 教师单次时长上限（分钟，PRD §12-2）；界面用它说明"为什么教师能选到更长的档"。 */
+        private Integer maxDurationTeacherMin;
 
         /** 默认时长（小时）。 */
         private Integer defaultDuration;

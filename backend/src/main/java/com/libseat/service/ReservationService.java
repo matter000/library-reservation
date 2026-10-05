@@ -202,8 +202,10 @@ public class ReservationService {
                     + BizConstants.slotText(openWindowEndSlot(date)) + "）");
         }
 
-        // ---------- 第 4 步：时长 ∈ 配置的可选值（默认 1/2/3/4 小时） ----------
-        List<Integer> allowedDurations = ruleConfigService.allowedDurations();
+        // ---------- 第 4 步：时长 ∈ 该角色的可选值（教师按 PRD §12-2 放宽，见 RuleConfigService） ----------
+        // ★ 校验与前端选项走同一个函数：以前这里固定读 1~4，教师上限只在高峰那一步被读到，
+        //   结果"教师可约 6 小时"在系统里根本不存在——挑不到那一档，硬调接口也被这条列表拦下。
+        List<Integer> allowedDurations = ruleConfigService.allowedDurations(role);
         if (!allowedDurations.contains(duration)) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "时长只能选择 "
                     + String.join("/", allowedDurations.stream().map(String::valueOf).toList()) + " 小时");

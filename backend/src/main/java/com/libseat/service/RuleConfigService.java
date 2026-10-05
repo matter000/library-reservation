@@ -5,6 +5,7 @@ import com.libseat.common.BusinessException;
 import com.libseat.common.ErrorCode;
 import com.libseat.common.RuleKeys;
 import com.libseat.entity.RuleConfig;
+import com.libseat.enums.UserRole;
 import com.libseat.repository.RuleConfigRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -185,6 +186,38 @@ public class RuleConfigService {
     /** 可选时长列表（小时）。 */
     public List<Integer> allowedDurations() {
         return getIntList(RuleKeys.BOOK_ALLOWED_DURATIONS, BizConstants.ALLOWED_DURATIONS);
+    }
+
+    /**
+     * 按角色给出可选时长（PRD §12-2「单次上限 4 小时（教师 6 小时）」）。
+     *
+     * <p>★ 校验与选项必须走这一个函数。以前教师上限只在高峰压缩那一步被读到，
+     *   可选列表却一律是 1~4 小时，于是"教师可约 6 小时"这条规则在系统里**不存在**：
+     *   教师挑不到 5/6 小时，硬调接口也会被"时长只能选择 1/2/3/4 小时"拦下。
+     *
+     * <p>教师的放宽方式是"在配置列表之上追加"，不是另起一张表：
+     * 管理员把 {@code book.allowed-durations} 改成 [1,2] 时，教师拿到的就是 [1,2,3..6]，
+     * 仍然尊重配置里刻意收紧的那些档位以下部分。
+     *
+     * @param role 当前用户角色（null 按普通用户处理）
+     * @return 可选时长（小时，升序）
+     */
+    public List<Integer> allowedDurations(UserRole role) {
+        List<Integer> base = allowedDurations();
+        if (role != UserRole.TEACHER || base.isEmpty()) {
+            return base;
+        }
+        int baseMax = Collections.max(base);
+        int teacherHours = maxDurationTeacherMin() / 60;
+        if (teacherHours <= baseMax) {
+            return base;
+        }
+        List<Integer> extended = new ArrayList<>(base);
+        for (int hour = baseMax + 1; hour <= teacherHours; hour++) {
+            extended.add(hour);
+        }
+        Collections.sort(extended);
+        return List.copyOf(extended);
     }
 
     /** ★ 信用闸门总开关：false 时违规照记、分数照扣，但不阻断预约（演示逃生阀）。 */
