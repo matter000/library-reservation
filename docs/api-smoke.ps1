@@ -63,15 +63,31 @@ function Biz-Code {
     return $null
 }
 
-# 报错文案同理：4xx 走 __body，成功走 .message。这里只量长度不比中文
-# （PS 5.1 按本地代码页解 UTF-8，中文字面量比较必然假失败），
-# "空话"与"给了具体天数"的长度差别足够把问题暴露出来。
+# 4xx 的文案在 __body 里，成功时直接读 .message；两者都返回字符串（可能为空）。
 function Biz-Message {
     param([object]$Response)
     if ($null -ne $Response.__body) {
         try { return ([string](ConvertFrom-Json $Response.__body).message) } catch { return '' }
     }
     return [string]$Response.message
+}
+
+# 取一个在 [slot, slot+count) **每一格**都空闲的座位。
+# ★ 只看起始格是经典坑：4 小时的预约要占 8 格，起始格空、后面被人占了，
+#   接口就回 4091「该座位刚被他人预约」——看起来像并发问题，其实是选座选错了。
+function Free-Seat {
+    param([long]$Floor, [string]$Date, [int]$Slot, [int]$Count, [long]$Zone, [string]$Token)
+    $candidates = $null
+    for ($i = 0; $i -lt $Count; $i++) {
+        $map = Invoke-Api GET "/api/seats/map?floorId=$Floor&date=$Date&slot=$($Slot + $i)" $null $Token
+        $free = @($map.data.seats | Where-Object { $_.displayStatus -eq 'FREE' -and $_.zoneId -eq $Zone } |
+            ForEach-Object { $_.seatId })
+        if ($null -eq $candidates) { $candidates = $free }
+        else { $candidates = @($candidates | Where-Object { $free -contains $_ }) }
+        if ($candidates.Count -eq 0) { return $null }
+    }
+    if ($candidates.Count -eq 0) { return $null }
+    return $candidates[0]
 }
 
 $script:passCount = 0
@@ -546,6 +562,42 @@ if ($null -eq $tightZone) {
         Expect '34.2 报错必须给出天数而不是空话' ($beyondMsg.Length -gt 8) $true
     }
 }
+
+# ---------- 35. 单日累计上限是全馆口径（PRD §12-3：换分区也一样计入） ----------
+# 关键设计：前两段刻意落在**两个不同分区**，这样第三段被拦时不可能是分区级上限干的，
+# 才能真正证明"全馆累计"这道闸门存在（两段都挤在 1F 静音区的话，测的是分区口径）。
+$capUser = "cap$stamp"
+Invoke-Api POST '/api/auth/register' @{
+    username = $capUser; password = '123456'; confirmPassword = '123456'; realName = 'cap-probe'
+} $null | Out-Null
+$capToken = (Invoke-Api POST '/api/auth/login' @{ username = $capUser; password = '123456' }).data.token
+$floor3 = (Invoke-Api GET '/api/floors' $null $capToken).data[2].floorId
+$zone3 = @((Invoke-Api GET "/api/zones?floorId=$floor3" $null $capToken).data |
+    Where-Object { $_.code -eq '3F-SILENT' })[0]
+$capSeats = @()
+$capBooked = 0
+$segments = @(
+    @{ floor = $floorId; zone = $plainZone.zoneId; slot = 16; hours = 4 },
+    @{ floor = $floor3;  zone = $zone3.zoneId;     slot = 24; hours = 2 })
+foreach ($seg in $segments) {
+    $segSlots = [int]($seg.hours * 2)
+    $seatId = Free-Seat -Floor $seg.floor -Date $tomorrow2 -Slot $seg.slot -Count $segSlots `
+        -Zone $seg.zone -Token $capToken
+    if ($null -eq $seatId) { continue }
+    $r = Invoke-Api POST '/api/reservations' @{
+        seatId = $seatId; date = $tomorrow2; startSlot = $seg.slot; duration = $seg.hours
+    } $capToken
+    if ((Biz-Code $r) -eq 0) { $capBooked++; $capSeats += $r.data.reservationId }
+}
+Expect '35.1 前置：跨两个分区约满 6 小时（4+2）' $capBooked 2
+$thirdSeat = Free-Seat -Floor $floorId -Date $tomorrow2 -Slot 30 -Count 2 -Zone $plainZone.zoneId -Token $capToken
+$capThird = Invoke-Api POST '/api/reservations' @{
+    seatId = $thirdSeat; date = $tomorrow2; startSlot = 30; duration = 1
+} $capToken
+Show '35. 全馆单日上限' @{ code = (Biz-Code $capThird); msgLen = (Biz-Message $capThird).Length }
+Expect '35.2 第 7 小时必须被拦（4098，本区累计仅 300 分钟，只可能是全馆口径）' (Biz-Code $capThird) 4098
+Expect '35.3 报错要给出上限数字' ((Biz-Message $capThird).Length -gt 8) $true
+foreach ($id in $capSeats) { Invoke-Api POST "/api/reservations/$id/cancel" $null $capToken | Out-Null }
 
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ("冒烟脚本执行完毕：PASS {0} / FAIL {1} / SKIP {2}" -f $script:passCount, $script:failCount, $script:warnCount) `

@@ -49,8 +49,17 @@ public final class BizConstants {
     /** 可选时长（小时）；上限即本列表最大值 4 小时。 */
     public static final List<Integer> ALLOWED_DURATIONS = List.of(1, 2, 3, 4);
 
-    /** 可预约窗口天数（今天 ~ 今天+6）。 */
+    /** 可预约窗口天数（今天 ~ 今天+6）；分区写了本区口径时以分区为准。 */
     public static final int ADVANCE_DAYS = 7;
+
+    /**
+     * 单日累计上限（分钟）= 6 小时，PRD §12-3。
+     *
+     * <p>★ 这条规则挂在**用户**身上，不是分区：一个学生换五个区各坐 4 小时，
+     *   按分区口径算没有任何一道闸门会响，而按 PRD 他早就超了一天 6 小时。
+     *   分区自己的 {@code daily_cap_min} 仍然生效，但它管的是"本区累计"，两者是两道独立的检查。
+     */
+    public static final int DAILY_CAP_MIN = 360;
 
     /** 开始前可签到分钟数。 */
     public static final int CHECK_IN_BEFORE_MIN = 15;

@@ -237,9 +237,11 @@ public class ReservationService {
             }
         }
 
-        // ---------- 第 4d 步：信用闸门（ACTIVE 处罚 → 4100/4101；分区单日上限 → 4098）----------
+        // ---------- 第 4d 步：信用闸门（ACTIVE 处罚 → 4100/4101；单日上限 → 4098）----------
         // 顺序按 DESIGN §6.2：先看处罚，再看累计。单位注意：duration 是小时，
-        // 分区上限是分钟，这里显式 *60，不混用格号。
+        // 上限是分钟，这里显式 *60，不混用格号。
+        // ★ 两道累计上限都要算：分区那条是本区口径，全馆那条挂在用户身上（PRD §12-3），
+        //   少算后者就等于允许"换区无限续"。
         Integer dailyCapMin = seatZone == null ? null : seatZone.getDailyCapMin();
         long usedTodayMin = 0L;
         if (seatZone != null && dailyCapMin != null && dailyCapMin > 0) {
@@ -247,8 +249,10 @@ public class ReservationService {
                     userId, date, seatZone.getId(), OccupancyService.OCCUPYING_STATUSES)
                     * BizConstants.SLOT_MINUTES;
         }
+        long globalUsedTodayMin = (long) reservationRepository.sumSlotsOfUser(
+                userId, date, OccupancyService.OCCUPYING_STATUSES) * BizConstants.SLOT_MINUTES;
         creditService.checkBookingGate(userId, date, startSlot, duration * 60,
-                dailyCapMin, usedTodayMin, targetPeak);
+                dailyCapMin, usedTodayMin, ruleConfigService.dailyCapMin(), globalUsedTodayMin, targetPeak);
 
         // ---------- 第 5 步：今天时起始时段未过期 ----------
         LocalDateTime start = BizConstants.slotStart(date, startSlot);

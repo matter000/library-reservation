@@ -450,6 +450,43 @@ class CreditPenaltyApiTest extends ApiTestBase {
     }
 
     @Test
+    @DisplayName("【B3】单日累计还有全馆口径：换分区照样累加，报错要说清「今天一共」而不是「这个区」")
+    void globalDailyCapCountsAcrossZones() throws Exception {
+        String me = newUser();
+        String date = soonWorkday();
+        int openEnd = openRuleService.resolve(LocalDate.parse(date)).getOpenEnd();
+        long zone1 = silentZone().path("zoneId").asLong();
+        long zone2 = -1;
+        for (JsonNode node : zones(floor2)) {
+            if ("2F-SILENT".equals(node.path("code").asText())) {
+                zone2 = node.path("zoneId").asLong();
+            }
+        }
+        assertTrue(zone2 > 0, "种子中应有 2F-SILENT 作为跨区对照分区");
+
+        // 第一段：1F 静音区 4 小时，正好顶满该区的单日上限（240 分钟）但不超
+        int start1 = windowStart(date);
+        MvcResult first = book(me, freeSeatOfZone(floor1, zone1, date, start1, 8, 0), date, start1, 4);
+        assertEquals(0, code(first), "先在 1F 约 4 小时：" + body(first));
+
+        // 第二段：换到 2F 静音区约 2 小时。本区累计只有 120 分钟，
+        // ★ 这一步是在证明"分区闸门没响"——如果它响了，说明两道检查被合成了一道。
+        int start2 = start1 + 8;
+        assertTrue(start2 + 4 <= openEnd, date + " 的窗口放不下第二段，用例要换时段");
+        MvcResult second = book(me, freeSeatOfZone(floor2, zone2, date, start2, 4, 0), date, start2, 2);
+        assertEquals(0, code(second), "跨区累计不该被分区级上限拦住：" + body(second));
+
+        // 第三段：今天已 6 小时 = 全馆上限，再约 1 小时必须被拒
+        int start3 = start2 + 4;
+        assertTrue(start3 + 2 <= openEnd, date + " 的窗口放不下第三段，用例要换时段");
+        MvcResult over = book(me, freeSeatOfZone(floor1, zone1, date, start3, 2, 0), date, start3, 1);
+        assertEquals(DAILY_CAP_EXCEEDED, code(over),
+                "全馆累计 360 分钟后再约 1 小时应 4098，实际：" + body(over));
+        assertTrue(msg(over).contains("全馆"), "必须说明这是全馆口径，否则用户会换个区再试：" + msg(over));
+        assertTrue(msg(over).contains("360"), "要给出上限数字，便于用户自己算：" + msg(over));
+    }
+
+    @Test
     @DisplayName("【验收5】爽约扫描端到端产生违规；全库对账为空")
     void consistencyAndNoShowTrigger() throws Exception {
         String me = newUser();

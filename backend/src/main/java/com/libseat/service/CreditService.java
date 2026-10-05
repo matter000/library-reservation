@@ -193,24 +193,31 @@ public class CreditService {
     }
 
     /**
-     * 预约闸门：处罚与单日累计（DESIGN §8.3 的两步）。
+     * 预约闸门：处罚、分区单日累计、全馆单日累计（DESIGN §8.3 的三步）。
      *
      * <p>★ {@code credit.enforce_enabled=false} 时只记录不限制，是演示环境的逃生阀，
      * 判断放在这一处而不是散到各个调用点。
      *
-     * @param userId      预约人
-     * @param date        目标日期
-     * @param startSlot   起始时段
-     * @param durationMin 本次时长（分钟）
-     * @param dailyCapMin 分区给出的单日上限（null 表示不限制）
-     * @param usedToday   该分区当日已用分钟
-     * @param targetPeak  目标时段是否命中高峰（★ 由调用方按<b>分区</b>判定后传入：
-     *                    这里自己按格号查窗口会把 A 区的高峰算到 B 区头上，
-     *                    而馆员按占用率拉起的动态高峰更是完全看不见）
+     * <p>★ 两道"单日上限"是<b>独立</b>的，不要合成一道：
+     *   分区那条管"这个区今天被坐了多久"，全馆那条管"这个人今天一共坐了多久"（PRD §12-3）。
+     *   只留分区的话，换区预约可以无限叠加 —— 五个区各 4 小时，没有一道闸门会响。
+     *
+     * @param userId          预约人
+     * @param date            目标日期
+     * @param startSlot       起始时段
+     * @param durationMin     本次时长（分钟）
+     * @param dailyCapMin     分区给出的单日上限（null 表示本区不设分区级上限）
+     * @param usedToday       该分区当日已用分钟
+     * @param globalCapMin    全馆单日上限（{@code book.daily-cap-min}）
+     * @param globalUsedToday 当日全馆已用分钟
+     * @param targetPeak      目标时段是否命中高峰（★ 由调用方按<b>分区</b>判定后传入：
+     *                        这里自己按格号查窗口会把 A 区的高峰算到 B 区头上，
+     *                        而馆员按占用率拉起的动态高峰更是完全看不见）
      */
     @Transactional(readOnly = true)
     public void checkBookingGate(Long userId, LocalDate date, int startSlot, int durationMin,
-                                 Integer dailyCapMin, long usedToday, boolean targetPeak) {
+                                 Integer dailyCapMin, long usedToday,
+                                 int globalCapMin, long globalUsedToday, boolean targetPeak) {
         if (!ruleConfigService.creditEnforceEnabled()) {
             return;
         }
@@ -233,6 +240,13 @@ public class CreditService {
             throw new BusinessException(ErrorCode.DAILY_CAP_EXCEEDED,
                     "该分区单日累计上限 " + dailyCapMin + " 分钟，已用 " + usedToday
                             + " 分钟，本次 " + durationMin + " 分钟超出");
+        }
+        if (globalCapMin > 0 && globalUsedToday + durationMin > globalCapMin) {
+            // ★ 文案要说明这是"今天一共"而不是"这个区"，否则用户会换个区再试一次，
+            //   而换区也照样被拒 —— 让人白跑一趟的规则说明不是好说明。
+            throw new BusinessException(ErrorCode.DAILY_CAP_EXCEEDED,
+                    "单日累计上限 " + globalCapMin + " 分钟（全馆口径，换分区也一样计入），"
+                            + "今天已用 " + globalUsedToday + " 分钟，本次 " + durationMin + " 分钟超出");
         }
     }
 

@@ -172,6 +172,11 @@ public class RuleConfigService {
         return getInt(RuleKeys.BOOK_ADVANCE_DAYS, BizConstants.ADVANCE_DAYS);
     }
 
+    /** 单日累计上限（分钟，全馆口径，挂在用户身上）。 */
+    public int dailyCapMin() {
+        return getInt(RuleKeys.BOOK_DAILY_CAP_MIN, BizConstants.DAILY_CAP_MIN);
+    }
+
     /** 预约默认时长（小时）。 */
     public int defaultDuration() {
         return getInt(RuleKeys.BOOK_DEFAULT_DURATION, BizConstants.DEFAULT_DURATION);

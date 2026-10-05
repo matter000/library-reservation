@@ -16,6 +16,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -24,6 +25,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -207,6 +209,11 @@ class PeakRuleApiTest extends ApiTestBase {
     @Test
     @DisplayName("【验收3】高峰时段未到「前一天 22:00」不可预约，窗口外照常")
     void advanceOpenGateOnlyForPeakSlots() throws Exception {
+        // ★ 时钟守卫：这条断言的前提是"还没到开放时刻（前一天 22:00）"。
+        //   22:00 一过闸门就正常开了，预约会成功 —— 那是规则在正确工作，不是实现错了；
+        //   把它改成"应成功"就等于测时钟而不是测规则，所以按本项目惯例如实跳过。
+        assumeTrue(LocalTime.now().getHour() < 22,
+                "当前 " + LocalTime.now() + " 已过高峰预约开放时刻（前一天 22:00），「未到时刻应被拒」的前提不成立");
         String date = targetDate();
         window("GLOBAL", null, null, PEAK_SLOT, PEAK_SLOT + 4, null, PEAK_SLOT);
         long seat = freeSeat(date, PEAK_SLOT);

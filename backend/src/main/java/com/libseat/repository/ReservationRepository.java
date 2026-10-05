@@ -168,6 +168,24 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long>,
                            @Param("statuses") Collection<ReservationStatus> statuses);
 
     /**
+     * 某人某日在**全馆**已占用的时段格数之和（PRD §12-3 的单日累计上限判定用）。
+     *
+     * <p>与 {@link #sumSlotsOfUserZone} 是两道独立检查：分区口径管"本区坐了多久"，
+     * 这一条管"这个人今天一共坐了多久"。只留前者的话，换区预约可以无限叠加，
+     * 而"一天 6 小时"写在规则中心却没有任何消费路径。
+     *
+     * @param userId   用户
+     * @param date     日期
+     * @param statuses 有效占用状态集合
+     * @return 已占格数，无预约时为 0
+     */
+    @Query("select coalesce(sum(r.endSlot - r.startSlot), 0) from Reservation r "
+            + "where r.userId = :userId and r.reserveDate = :date and r.status in :statuses")
+    int sumSlotsOfUser(@Param("userId") Long userId,
+                       @Param("date") LocalDate date,
+                       @Param("statuses") Collection<ReservationStatus> statuses);
+
+    /**
      * 一次组队下单产生的全部预约（签到与缺席处理按这支队伍整体操作）。
      *
      * @param groupId 队伍 ID

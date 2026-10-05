@@ -402,6 +402,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_appeal_violation ON t_appeal (violation_id)
 
 **预约创建时的闸门顺序**（`ReservationService` 校验链新增两步，位置见 §8.3）：先查 ACTIVE 且未过期的 `t_penalty` → `4100/4101`（带恢复时间），再查单日累计 → `4098`。
 
+★ "单日累计"是**两道独立的检查**，不是一道取小（2026-10-05 对账 PRD §12-3 后补齐）：
+① 分区口径 `t_zone.daily_cap_min` 管"本区今天被坐了多久"（NULL = 本区不设分区级上限）；
+② 全馆口径 `book.daily-cap-min`（默认 360 分钟）管"这个人今天一共坐了多久"，跨分区累加。
+只留 ① 的话，换区预约可以无限叠加 —— 五个区各 4 小时，没有一道闸门会响，
+而 PRD 把这条规则写在**人**身上。报错文案必须写明"全馆口径、换分区也一样计入"，
+否则用户的下一动作就是换个区再试一次，白跑一趟。
+
 ### 6.3 申诉闭环
 
 `POST /api/violations/{id}/appeal`（24h 内、每违规一次、`uk_appeal_violation` 兜底）→ 违规置 `APPEALING` →
@@ -811,7 +818,8 @@ CREATE INDEX IF NOT EXISTS idx_patrol_status ON t_patrol_task (status, level, cr
 | `V14__patrol.sql` | S6 | `t_patrol_task` + `uk_patrol_open` + 巡查阈值规则种子 |
 | `V15__leave_reason_limit.sql` | S7 | T-V2-24 收口：把「就餐每日 2 次」真正写进数据（暂离计次拆成两条口径后，原因表的 `daily_limit` 不再夹分区总数） |
 | `V16__zone_advance_days_nullable.sql` | S7 | `t_zone.advance_days` 放开 NOT NULL：分区没配时才由全局 `book.advance-days` 兜底，否则"跟随全馆"这个状态在库里无法表达，全局规则就成了死配置 |
-| ~~`V17__seed_demo.sql`~~ | S7 | **仍未做**：演示数据补齐（教师/馆员账号、历史违规样例）。造历史违规必须同时写 `t_violation`+`t_credit_log`+`t_user.credit_score`，否则破 `sum(delta)==credit_score` 对账不变式 |
+| `V17__global_daily_cap_rule.sql` | S7 | 新增全馆规则 `book.daily-cap-min`（360 分钟 = PRD §12-3 的 6 小时，挂在用户身上、跨分区累加），并把考研专座那个比全馆更宽的 `daily_cap_min=480` 撤成 NULL（PRD 从未给任何分区放过单日额度，留着只会误导） |
+| ~~`V18__seed_demo.sql`~~ | S7 | **仍未做**：演示数据补齐（教师/馆员账号、历史违规样例）。造历史违规必须同时写 `t_violation`+`t_credit_log`+`t_user.credit_score`，否则破 `sum(delta)==credit_score` 对账不变式 |
 
 ### 14.1 全局规则值与分区值的合成口径（2026-10-05 裁定）
 
