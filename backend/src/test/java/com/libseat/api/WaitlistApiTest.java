@@ -130,9 +130,12 @@ class WaitlistApiTest extends ApiTestBase {
         assertNotNull(offered.path("offerExpireTime").asText(), "要给出截止时刻，用户才知道要不要快点");
         assertEquals("WAITING", mySingle(second).path("status").asText(), "一个位置不能同时许诺给两个人");
 
-        // 用调度器的同一个入口推进时钟：判定仍由服务端按规则算，用例不伪造状态
-        assertEquals(1, waitlistStateService.expireOverdue(LocalDateTime.now().plusMinutes(OFFER_MIN + 1L)),
-                "过期扫描应处理恰好一条");
+        // 用调度器的同一个入口推进时钟：判定仍由服务端按规则算，用例不伪造状态。
+        // ★ 返回条数只断言「至少一条」：整个测试 JVM 共享同一个内存库，别的用例此刻也可能
+        //   留有已过窗口的 OFFERED 行（计数类断言必须按人隔离，这是本项目定下的约定）。
+        //   「恰好本队那一条被过期」由下面两行的状态断言精确锁住。
+        assertTrue(waitlistStateService.expireOverdue(LocalDateTime.now().plusMinutes(OFFER_MIN + 1L)) >= 1,
+                "过期扫描至少应处理本用例这一条");
         assertEquals("EXPIRED", jdbc.queryForObject("select status from t_waitlist where id = ?",
                 String.class, headId), "队首未确认应置过期");
         JsonNode promoted = mySingle(second);

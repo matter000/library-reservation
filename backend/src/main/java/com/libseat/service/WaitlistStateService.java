@@ -6,6 +6,7 @@ import com.libseat.common.ErrorCode;
 import com.libseat.entity.Reservation;
 import com.libseat.entity.Seat;
 import com.libseat.entity.Waitlist;
+import com.libseat.enums.NoticeType;
 import com.libseat.enums.WaitlistStatus;
 import com.libseat.repository.SeatRepository;
 import com.libseat.repository.WaitlistRepository;
@@ -44,6 +45,10 @@ public class WaitlistStateService {
     private final SeatRepository seatRepository;
 
     private final RuleConfigService ruleConfigService;
+
+    private final NoticeService noticeService;
+
+    private final com.libseat.repository.ZoneRepository zoneRepository;
 
     /**
      * 预约释放钩子：按座位所属分区 + 被让出的时段区间顶位。
@@ -113,7 +118,20 @@ public class WaitlistStateService {
         waitlist.setOfferedTime(now);
         waitlist.setOfferExpireTime(now.plusMinutes(ruleConfigService.waitlistOfferMin()));
         waitlistRepository.save(waitlist);
-        // TODO T-V2-20 通知中心：写一条 WAITLIST_OFFER 站内通知（t_notice 随通知任务一起建）
+        // 候补 offer 通知：这条消息的价值全在「窗口只有 N 分钟」，所以正文自带截止时刻，
+        // 而 expire_time 让铃铛能把已经顺延掉的 offer 灰掉（仍可点开看看到发生了什么）。
+        String zoneName = zoneRepository.findById(waitlist.getZoneId())
+                .map(com.libseat.entity.Zone::getName)
+                .orElse("分区 " + waitlist.getZoneId());
+        noticeService.push(waitlist.getUserId(), NoticeType.WAITLIST_OFFER,
+                "候补轮到你了",
+                zoneName + " " + BizConstants.formatDate(waitlist.getReserveDate()) + " "
+                        + BizConstants.rangeLabel(waitlist.getStartSlot(),
+                        BizConstants.hoursOfSlots(waitlist.getEndSlot() - waitlist.getStartSlot()))
+                        + " 空出一个位置，请在 " + BizConstants.formatDateTime(waitlist.getOfferExpireTime())
+                        + " 前确认。候补不留座，窗口内位置可能被别人直接约走；超时不确认不记违规，"
+                        + "位置顺延下一位。",
+                NoticeService.REF_WAITLIST, waitlist.getId(), waitlist.getOfferExpireTime());
         log.info("候补 offer 已发出：waitlistId={}, userId={}, 截止 {}",
                 waitlist.getId(), waitlist.getUserId(), waitlist.getOfferExpireTime());
     }

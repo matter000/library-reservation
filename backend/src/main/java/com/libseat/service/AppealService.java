@@ -50,6 +50,8 @@ public class AppealService {
 
     private final AuditService auditService;
 
+    private final NoticeService noticeService;
+
     /**
      * 学生提交申诉（S12）。
      *
@@ -208,6 +210,17 @@ public class AppealService {
         detail.put("restoredScore", restored);
         detail.put("reply", saved.getReply());
         auditService.record(AuditService.ACTION_APPEAL_JUDGE, "APPEAL", saved.getId(), detail);
+        // 裁定结果即时告知：成立要说清回了多少分，驳回要把驳回理由带进正文 ——
+        // 学生点开通知时不该只看到「申诉已裁定」四个字。
+        noticeService.push(violation.getUserId(), com.libseat.enums.NoticeType.APPEAL_RESULT,
+                "申诉" + (approve ? "成立" : "驳回"),
+                approve
+                        ? "违规（" + violation.getType().getText() + "）的申诉已成立，回补 " + restored
+                        + " 分，信用分已恢复。"
+                        : "违规（" + violation.getType().getText() + "）的申诉被驳回："
+                        + (StringUtils.hasText(reply) ? reply.trim() : "维持原裁定。")
+                        + (finalJudgement ? "（本件已终审）" : "如仍有异议可在「信用与违规」升级终审。"),
+                NoticeService.REF_APPEAL, saved.getId(), null);
         log.info("申诉已裁定：appealId={}, approve={}, 状态={}, 回补={}, 裁定人角色={}",
                 saved.getId(), approve, saved.getStatus(), restored, saved.getHandlerRole());
         return toVO(saved, violation, violation.getUserId(), handlerRole);

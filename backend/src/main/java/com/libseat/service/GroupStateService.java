@@ -6,6 +6,8 @@ import com.libseat.entity.GroupMember;
 import com.libseat.entity.Reservation;
 import com.libseat.enums.AttendStatus;
 import com.libseat.enums.GroupStatus;
+import com.libseat.enums.InviteStatus;
+import com.libseat.enums.NoticeType;
 import com.libseat.enums.ReservationStatus;
 import com.libseat.enums.ViolationType;
 import com.libseat.repository.GroupMemberRepository;
@@ -18,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 
@@ -35,6 +38,9 @@ import java.util.List;
 @RequiredArgsConstructor
 public class GroupStateService {
 
+    /** 时刻文案格式（与暂离通知同源，通知正文要能直接读）。 */
+    private static final DateTimeFormatter HM = DateTimeFormatter.ofPattern("HH:mm");
+
     private final ReservationRepository reservationRepository;
 
     private final ReservationSlotRepository reservationSlotRepository;
@@ -48,6 +54,8 @@ public class GroupStateService {
     private final RuleConfigService ruleConfigService;
 
     private final WaitlistStateService waitlistStateService;
+
+    private final NoticeService noticeService;
 
     /**
      * 组长签到 = 全队签到。
@@ -162,6 +170,30 @@ public class GroupStateService {
         evidence.put("judgedAt", BizConstants.formatDateTime(now));
         creditService.applyViolation(group.getLeaderId(), ViolationType.LEADER_ABSENT, null,
                 creditService.buildEvidence(evidence), sampleReservationId, null);
+        // 组长缺席要通知的是**成员**：他们既没被扣分，也不知道队伍已经没了，
+        // 不在场的成员如果继续赶来只会对着一张已被别人坐下的桌子站着（DESIGN §7.2）。
+        String range = BizConstants.formatDate(group.getReserveDate()) + " "
+                + BizConstants.rangeLabel(group.getStartSlot(),
+                BizConstants.hoursOfSlots(group.getEndSlot() - group.getStartSlot()));
+        noticeService.push(group.getLeaderId(), NoticeType.GROUP_LEADER_ABSENT,
+                "队伍已取消：你未在签到窗口内签到",
+                "第 " + group.getId() + " 队（" + range + "）因你未在 " + HM.format(
+                        BizConstants.slotStart(group.getReserveDate(), group.getStartSlot())
+                                .plusMinutes(checkInAfterMin))
+                        + " 前签到而被取消，已释放 " + count + " 个座位。本次只处罚组长，成员不记违规。",
+                NoticeService.REF_GROUP, group.getId(), null);
+        for (GroupMember member : groupMemberRepository.findByGroupIdOrderByIdAsc(group.getId())) {
+            if (member.getUserId().equals(group.getLeaderId())
+                    || member.getInviteStatus() != InviteStatus.CONFIRMED) {
+                // 只告知「真的在这队里」的人：婉拒过或没确认的成员本来就不知道自己被取消了什么
+                continue;
+            }
+            noticeService.push(member.getUserId(), NoticeType.GROUP_LEADER_ABSENT,
+                    "队伍已取消：组长未签到",
+                    "第 " + group.getId() + " 队（" + range + "）因组长未在签到窗口内签到而被取消，"
+                            + "座位已释放。你不记任何违规，可以重新建队或直接预约散座。",
+                    NoticeService.REF_GROUP, group.getId(), null);
+        }
         log.info("组长未签到，整队取消：groupId={}, 释放 {} 条预约", group.getId(), count);
         return count;
     }

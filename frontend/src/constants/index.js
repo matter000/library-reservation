@@ -220,6 +220,9 @@ export const GROUP_POLL_INTERVAL = 15000;
 /** 候补页轮询间隔：同理，offer 确认窗口也是按分钟推进的。 */
 export const WAITLIST_POLL_INTERVAL = 15000;
 
+/** 铃铛轮询间隔：没有推送通道，站内通知只能靠轮询送达，15 秒是「像即时」与「不打扰后端」的折中。 */
+export const NOTICE_POLL_INTERVAL = 15000;
+
 /** 候补 offer 窗口兜底分钟数（真实值取自 /api/config/booking 的 waitlist.offer-min）。 */
 export const WAITLIST_OFFER_MIN = 10;
 

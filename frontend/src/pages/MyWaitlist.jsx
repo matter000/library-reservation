@@ -103,6 +103,8 @@ export default function MyWaitlist() {
         style={{ marginBottom: 12 }}
         message={'收到「待确认」后请在窗口内点确认：候补只是轮到你尝试，位置并没有给你留着，'
           + '窗口内座位可能被别人直接约走。超时不确认不会记违规，位置自动顺延给下一位。'}
+        description={'本系统没有第三方推送通道，「推送」= 站内通知 + 轮询：'
+          + '页面关着就不会有任何提醒，请保持本页开着，或留意顶栏铃铛。'}
       />
 
       {error ? <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} /> : null}

@@ -304,7 +304,8 @@ class CreditPenaltyApiTest extends ApiTestBase {
 
         creditService.applyViolation(id, ViolationType.ON_SITE_OCCUPY, null, evidence(), null, null);
         assertEquals(75, score(id));
-        assertEquals(List.of(PenaltyType.PEAK_BAN), types(id), "跌破 90 → 高峰禁约");
+        assertEquals(List.of(PenaltyType.PEAK_BAN), types(id),
+                "跌破 90 → 高峰禁约｜" + ladderInputs(id));
 
         creditService.applyViolation(id, ViolationType.NO_SHOW, null, evidence(), null, null);
         assertEquals(65, score(id));
@@ -328,7 +329,8 @@ class CreditPenaltyApiTest extends ApiTestBase {
 
         creditService.applyViolation(id, ViolationType.LEADER_ABSENT, -50, evidence(), null, null);
         assertEquals(0, score(id), "分数只夹到 0，不做负数");
-        assertEquals(List.of(PenaltyType.SEMESTER_BAN), types(id), "0 分 → 暂停至学期末");
+        assertEquals(List.of(PenaltyType.SEMESTER_BAN), types(id),
+                "0 分 → 暂停至学期末｜" + ladderInputs(id));
         assertNull(penaltyRepository.findByUserIdAndStatusOrderByIdDesc(id, PenaltyStatus.ACTIVE)
                 .get(0).getEndTime(), "学期禁没有自动终点，只能人工解除");
         assertEquals(0, creditLogRepository.sumDelta(id),

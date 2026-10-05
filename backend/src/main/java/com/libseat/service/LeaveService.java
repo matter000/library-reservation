@@ -11,6 +11,7 @@ import com.libseat.entity.Reservation;
 import com.libseat.entity.Seat;
 import com.libseat.entity.Zone;
 import com.libseat.enums.LeaveStatus;
+import com.libseat.enums.NoticeType;
 import com.libseat.enums.ReservationStatus;
 import com.libseat.repository.LeaveReasonRepository;
 import com.libseat.repository.LeaveRecordRepository;
@@ -58,6 +59,8 @@ public class LeaveService {
     private final SeatRepository seatRepository;
 
     private final ZoneRepository zoneRepository;
+
+    private final NoticeService noticeService;
 
     /**
      * 原因字典（前端选择器用，只返回启用项）。
@@ -147,7 +150,14 @@ public class LeaveService {
                 .build();
         try {
             LeaveRecord saved = leaveRecordRepository.saveAndFlush(record);
-            // TODO T-V2-20 通知中心：写「暂离到期前 5 分钟提醒」的站内通知（t_notice 表在 S5 建）
+            // 暂离登记即时告知（DESIGN §5.2 第 7 步）：把「什么时候必须回来」和
+            // 「剩余时间不顺延」写在正文里，因为这两条正是用户回来后发现座位已没时的争执点。
+            noticeService.push(userId, NoticeType.LEAVE_OPEN,
+                    "暂离已登记",
+                    "请于 " + HM.format(plannedEnd) + " 前点「我已返回」。暂离期间座位仍归你，"
+                            + "但本次预约的结束时刻不变（" + HM.format(reservationEnd) + " 释放），"
+                            + "超时未归会记一次违规并释放座位。",
+                    NoticeService.REF_LEAVE, saved.getId(), plannedEnd);
             return toVO(saved, reservation, reason);
         } catch (DataIntegrityViolationException e) {
             log.warn("并发登记暂离被唯一索引拦下：reservationId={}, userId={}", reservation.getId(), userId);

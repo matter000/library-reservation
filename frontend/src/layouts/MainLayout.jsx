@@ -5,6 +5,7 @@ import {
 } from '@ant-design/icons';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/AuthContext';
+import NoticeBell from '../components/NoticeBell';
 import { USER_ROLE } from '../constants';
 
 const { Header, Content, Footer } = Layout;
@@ -54,6 +55,7 @@ export default function MainLayout() {
           style={{ flex: 1, minWidth: 0 }}
         />
         <div className="main-header-user">
+          <NoticeBell />
           <Avatar size="small" icon={<UserOutlined />} />
           <Typography.Text style={{ color: '#fff' }}>
             {user ? user.realName || user.username : ''}

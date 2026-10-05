@@ -17,6 +17,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 
 /**
@@ -36,6 +37,9 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "t_penalty")
 public class Penalty {
+
+    /** 「尚未生效」的判定容差：见 {@link #activeAt}，用于吸收墙钟抖动。 */
+    private static final Duration START_TOLERANCE = Duration.ofSeconds(1);
 
     /** 主键。 */
     @Id
@@ -94,11 +98,20 @@ public class Penalty {
     /**
      * 此刻是否仍在生效。
      *
+     * <p>★ {@code start_time} 的判定要留一秒容差：写入用的是业务事务里的
+     * {@code LocalDateTime.now()}，读取用的是另一次的系统墙钟，两者不是单调时钟，
+     * 系统对时或时钟粒度都能让「刚写入 3 毫秒的处罚」看起来 startTime 还在未来 ——
+     * 于是刚被禁的用户在闸门眼里「还没生效」。真正需要挡的是「指定将来某刻才开始禁」的处罚，
+     * 那差了的是分钟级而不是毫秒级。
+     *
      * @param now 参照时刻
-     * @return ACTIVE 且未过期
+     * @return ACTIVE 且已开始、未过期
      */
     public boolean activeAt(LocalDateTime now) {
-        if (status != PenaltyStatus.ACTIVE || startTime != null && startTime.isAfter(now)) {
+        if (status != PenaltyStatus.ACTIVE) {
+            return false;
+        }
+        if (startTime != null && startTime.minus(START_TOLERANCE).isAfter(now)) {
             return false;
         }
         return endTime == null || endTime.isAfter(now);

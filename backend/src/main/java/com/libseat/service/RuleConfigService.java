@@ -274,6 +274,11 @@ public class RuleConfigService {
         return getInt(RuleKeys.WAITLIST_MAX_ACTIVE, BizConstants.WAITLIST_MAX_ACTIVE);
     }
 
+    /** 暂离到期前多少分钟发站内提醒。 */
+    public int noticeLeaveRemindMin() {
+        return getInt(RuleKeys.NOTICE_LEAVE_REMIND_MIN, BizConstants.NOTICE_LEAVE_REMIND_MIN);
+    }
+
     /**
      * 把配置里的时刻文本解析成 {@link LocalTime}，写错不影响服务启动。
      *

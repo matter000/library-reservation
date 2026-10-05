@@ -79,4 +79,19 @@ public interface LeaveRecordRepository extends JpaRepository<LeaveRecord, Long> 
      */
     List<LeaveRecord> findByStatusAndOpenFlagAndPlannedEndTimeBefore(
             LeaveStatus status, Integer openFlag, LocalDateTime before);
+
+    /**
+     * 还剩 within 分钟内到期的暂离（站内提醒扫描入口，T-V2-20）。
+     *
+     * <p>下界取 {@code from}（含）而不是更早：应归时刻已过的记录归超时扫描管，
+     * 那里给的是「已违规」而不是「快到期」。
+     *
+     * @param status   OPEN
+     * @param openFlag 固定传 1
+     * @param from     应归时刻下界
+     * @param to       应归时刻上界
+     * @return 即将到期的记录
+     */
+    List<LeaveRecord> findByStatusAndOpenFlagAndPlannedEndTimeBetween(
+            LeaveStatus status, Integer openFlag, LocalDateTime from, LocalDateTime to);
 }

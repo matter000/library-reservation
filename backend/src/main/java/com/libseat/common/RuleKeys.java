@@ -79,6 +79,9 @@ public final class RuleKeys {
     /** 同一用户最多能挂几条活动候补。 */
     public static final String WAITLIST_MAX_ACTIVE = "waitlist.max-active";
 
+    /** 暂离到期前多少分钟发站内提醒。 */
+    public static final String NOTICE_LEAVE_REMIND_MIN = "notice.leave-remind-min";
+
     private RuleKeys() {
         // 常量类禁止实例化
     }

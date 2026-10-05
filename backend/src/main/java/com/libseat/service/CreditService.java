@@ -8,6 +8,7 @@ import com.libseat.entity.Penalty;
 import com.libseat.entity.User;
 import com.libseat.entity.Violation;
 import com.libseat.enums.CreditLogKind;
+import com.libseat.enums.NoticeType;
 import com.libseat.enums.PenaltyType;
 import com.libseat.enums.ViolationType;
 import com.libseat.repository.CreditLogRepository;
@@ -51,6 +52,9 @@ public class CreditService {
 
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
+    /** 站内通知（违规即时告知，含申诉窗口）。只依赖仓储，不会与本类成环。 */
+    private final NoticeService noticeService;
+
     /**
      * 记一笔违规：写违规 → 扣分 → 记流水 → 评估阶梯。四步同一事务。
      *
@@ -88,7 +92,17 @@ public class CreditService {
         int balance = moveScore(user, CreditLogKind.PENALTY, delta, "VIOLATION", violation.getId(),
                 type.getText() + " " + delta);
         penaltyService.syncLadder(userId, balance, type.getText() + "后信用分 " + balance, LocalDateTime.now());
-        // TODO T-V2-20 通知中心：违规即时通知（含申诉入口 deeplink）随 t_notice 一起接
+        // 违规即时通知（DESIGN §6.2）：扣分与处罚已经生效，用户必须在不点开的情况下
+        // 也能看清「扣了多少、现在多少分、什么时候前能申诉」——链接指向 /credit，那里就是申诉入口。
+        noticeService.push(userId, NoticeType.VIOLATION,
+                "违规裁定：" + type.getText(),
+                type.getText() + " 已裁定，扣 " + (-delta) + " 分，当前信用分 " + balance
+                        + "。可在 " + BizConstants.APPEAL_WINDOW_HOURS + " 小时内（"
+                        + BizConstants.formatDateTime(violation.getCreateTime()
+                        .plusHours(BizConstants.APPEAL_WINDOW_HOURS))
+                        + " 前）发起申诉，超时后只能到馆员处申请撤销。",
+                NoticeService.REF_VIOLATION, violation.getId(),
+                violation.getCreateTime().plusHours(BizConstants.APPEAL_WINDOW_HOURS));
         log.info("违规裁定：userId={}, type={}, delta={}, 余额={}", userId, type, delta, balance);
         return violation;
     }

@@ -155,6 +155,9 @@ public final class BizConstants {
     /** 同一用户最多能挂几条活动候补。 */
     public static final int WAITLIST_MAX_ACTIVE = 2;
 
+    /** 暂离到期前多少分钟发一次站内提醒（DESIGN §8.4，同一记录只发一次）。 */
+    public static final int NOTICE_LEAVE_REMIND_MIN = 5;
+
     /** 日期格式。 */
     public static final String DATE_PATTERN = "yyyy-MM-dd";
 
