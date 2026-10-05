@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -229,6 +230,56 @@ public class RuleConfigService {
     /** 连续主动结束多少档算一次奖励。 */
     public int creditStreakSize() {
         return getInt(RuleKeys.CREDIT_STREAK_SIZE, BizConstants.CREDIT_STREAK_SIZE);
+    }
+
+    // ==================== 高峰调控（T-V2-18） ====================
+
+    /** 动态高峰占用率阈值（百分数）。 */
+    public int peakDynamicThreshold() {
+        return getInt(RuleKeys.PEAK_DYNAMIC_THRESHOLD, BizConstants.PEAK_DYNAMIC_THRESHOLD);
+    }
+
+    /** 动态高峰：连续超阈多少分钟才认定。 */
+    public int peakDynamicSustainMin() {
+        return getInt(RuleKeys.PEAK_DYNAMIC_SUSTAIN_MIN, BizConstants.PEAK_DYNAMIC_SUSTAIN_MIN);
+    }
+
+    /** 动态高峰：认定后至少保持多少分钟。 */
+    public int peakDynamicHoldMin() {
+        return getInt(RuleKeys.PEAK_DYNAMIC_HOLD_MIN, BizConstants.PEAK_DYNAMIC_HOLD_MIN);
+    }
+
+    /** 高峰时段单次时长上限（分钟）。 */
+    public int peakCompressMin() {
+        return getInt(RuleKeys.PEAK_COMPRESS_MIN, BizConstants.PEAK_COMPRESS_MIN);
+    }
+
+    /** 高峰时段的提前开放时刻（{@code HH:mm}，解析失败回退兜底值）。 */
+    public LocalTime peakOpenTime() {
+        return parseTime(getString(RuleKeys.PEAK_OPEN_TIME, BizConstants.PEAK_OPEN_TIME));
+    }
+
+    /** 教师单次时长上限（分钟）。 */
+    public int maxDurationTeacherMin() {
+        return getInt(RuleKeys.BOOK_MAX_DURATION_TEACHER_MIN, BizConstants.MAX_DURATION_TEACHER_MIN);
+    }
+
+    /**
+     * 把配置里的时刻文本解析成 {@link LocalTime}，写错不影响服务启动。
+     *
+     * <p>★ 不抛异常是有意为之：一个手抖填成 "2200" 的时刻不该让整站起不来，
+     *   回退兜底值并记一条 warn，管理员在规则页上看得见原值。
+     *
+     * @param text 配置值
+     * @return 解析结果，失败为兜底值
+     */
+    private LocalTime parseTime(String text) {
+        try {
+            return LocalTime.parse(text);
+        } catch (RuntimeException e) {
+            log.warn("规则里的时刻格式不对，已回退兜底值：{}（兜底 {}）", text, BizConstants.PEAK_OPEN_TIME);
+            return LocalTime.parse(BizConstants.PEAK_OPEN_TIME);
+        }
     }
 
     // ==================== 管理端读写 ====================

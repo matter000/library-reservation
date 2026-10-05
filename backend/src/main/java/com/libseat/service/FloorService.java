@@ -6,7 +6,6 @@ import com.libseat.common.ErrorCode;
 import com.libseat.dto.FloorDTO;
 import com.libseat.dto.SeatDTO;
 import com.libseat.entity.Floor;
-import com.libseat.entity.PeakWindow;
 import com.libseat.entity.Seat;
 import com.libseat.entity.SeatTable;
 import com.libseat.entity.Zone;
@@ -50,6 +49,9 @@ public class FloorService {
     private final OccupancyService occupancyService;
 
     private final OpenRuleService openRuleService;
+
+    /** 高峰判定（静态窗口按 scope 过滤 + 动态高峰），T-V2-18。 */
+    private final PeakService peakService;
 
     /**
      * 楼层列表（含各楼层空闲数与占用率）。
@@ -198,16 +200,15 @@ public class FloorService {
 
     /**
      * 组装分区有效规则（服务端单点判定，前端不再重复实现）。
+     *
+     * <p>★ 高峰判定一律走 {@link PeakService}：它按 {@code scope} 过滤窗口并叠上动态高峰，
+     * 而「这一格有没有窗口」的老写法会把别的区的高峰贴到本区头上。
      */
     private SeatDTO.ZoneRuleVO buildZoneRules(Zone zone, LocalDate date, int slot, UserRole role) {
         boolean eligible = ZoneService.containsRole(zone.getEligibleRoles(), role);
-        OpenRuleService.DayRule day = openRuleService.resolve(date);
-        PeakWindow peak = day.peakOf(slot);
-        Integer maxMin = zone.getMaxDurationMin();
-        if (peak != null && peak.getMaxDurationMin() != null
-                && (maxMin == null || peak.getMaxDurationMin() < maxMin)) {
-            maxMin = peak.getMaxDurationMin();
-        }
+        LocalDateTime now = LocalDateTime.now();
+        Integer maxMin = peakService.effectiveMaxDurationMin(zone, date, slot, role, now);
+        boolean peakFlag = peakService.isPeak(zone, date, slot, now);
         return SeatDTO.ZoneRuleVO.builder()
                 .zoneId(zone.getId())
                 .zoneName(zone.getName())
@@ -222,7 +223,7 @@ public class FloorService {
                 .leaveMaxMin(zone.getLeaveMaxMin())
                 .groupRequired(zone.getGroupRequired())
                 .allowGroup(zone.getAllowGroup())
-                .peakFlag(peak != null)
+                .peakFlag(peakFlag)
                 .build();
     }
 

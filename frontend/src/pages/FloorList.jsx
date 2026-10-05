@@ -227,6 +227,8 @@ export default function FloorList() {
                       >
                         <Typography.Text type="secondary" ellipsis style={{ maxWidth: 130 }}>
                           {z.name}
+                          {/* 高峰要在列表页就看得见：等到进平面图才发现被限流，用户已经白跑一步 */}
+                          {z.peakFlag ? <Tag color="volcano" style={{ marginLeft: 4 }}>高峰</Tag> : null}
                         </Typography.Text>
                         <Typography.Text style={{ color: z.freeSeats > 0 ? '#52c41a' : '#ff4d4f' }}>
                           {z.freeSeats}/{z.totalSeats} 空

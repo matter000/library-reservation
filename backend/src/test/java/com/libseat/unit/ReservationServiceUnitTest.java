@@ -82,6 +82,9 @@ class ReservationServiceUnitTest {
     private com.libseat.service.LeaveService leaveService;
     @Mock
     private com.libseat.service.CreditService creditService;
+    /** 高峰判定：桩默认「非高峰」，压缩与提前开放闸门由 PeakRuleApiTest 覆盖。 */
+    @Mock
+    private com.libseat.service.PeakService peakService;
 
     private ReservationService service;
 
@@ -103,7 +106,7 @@ class ReservationServiceUnitTest {
         when(openRuleService.endSlotOf(any())).thenReturn(BizConstants.DEFAULT_SLOT_END);
         service = new ReservationService(reservationRepository, reservationSlotRepository,
                 seatRepository, zoneRepository, userRepository, floorService, ruleConfigService,
-                openRuleService, leaveRecordRepository, leaveService, creditService);
+                openRuleService, leaveRecordRepository, leaveService, creditService, peakService);
     }
 
     /** 整点 → 30 分钟格序号（格长改造后，用例仍以「小时」表达意图）。 */

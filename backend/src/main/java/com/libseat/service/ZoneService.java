@@ -10,7 +10,6 @@ import com.libseat.entity.Zone;
 import com.libseat.enums.DiscussLevel;
 import com.libseat.enums.FloorStatus;
 import com.libseat.enums.ReservationStatus;
-import com.libseat.enums.SeatDisplayStatus;
 import com.libseat.enums.UserRole;
 import com.libseat.enums.ZoneType;
 import com.libseat.repository.FloorRepository;
@@ -23,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -53,6 +53,9 @@ public class ZoneService {
     private final ReservationRepository reservationRepository;
 
     private final OccupancyService occupancyService;
+
+    /** 高峰判定（静态窗口按 scope 过滤 + 动态高峰），T-V2-18。 */
+    private final PeakService peakService;
 
     private final FloorService floorService;
 
@@ -85,7 +88,7 @@ public class ZoneService {
                 if (!containsRole(zone.getVisibleRoles(), role)) {
                     continue;
                 }
-                result.add(toVO(zone, floor, occupiedMap, role, targetSlot));
+                result.add(toVO(zone, floor, occupiedMap, role, targetDate, targetSlot));
             }
         }
         return result;
@@ -105,7 +108,7 @@ public class ZoneService {
         Map<Long, OccupancyService.SeatOccupancy> occupiedMap =
                 occupancyService.getOccupancy(targetDate, targetSlot);
         return zoneRepository.findByFloorIdOrderBySortOrderAscIdAsc(floorId).stream()
-                .map(zone -> toVO(zone, floor, occupiedMap, UserRole.SYS_ADMIN, targetSlot))
+                .map(zone -> toVO(zone, floor, occupiedMap, UserRole.SYS_ADMIN, targetDate, targetSlot))
                 .toList();
     }
 
@@ -301,25 +304,29 @@ public class ZoneService {
      * 写路径的响应只回显分区自身配置，不叠加实时占用（空快照即「本层无人在座」）。
      */
     private ZoneDTO.ZoneVO toVOWithoutOccupancy(Zone zone, Floor floor) {
-        return toVO(zone, floor, Map.of(), UserRole.SYS_ADMIN, floorService.currentSlot());
+        return toVO(zone, floor, Map.of(), UserRole.SYS_ADMIN, LocalDate.now(), floorService.currentSlot());
+    }
+
+    /**
+     * 分区在指定日期 + 时段的占用统计。
+     *
+     * <p>★ 计数本身在 {@link OccupancyService#usageOf}：余量卡片与动态高峰必须读同一个口径，
+     * 两处各算一遍就会出现「卡片显示 85%，系统却按高峰把时长压了」。
+     */
+    private OccupancyService.ZoneUsage usageOf(Zone zone, Floor floor,
+                                               Map<Long, OccupancyService.SeatOccupancy> occupiedMap, int slot) {
+        boolean closed = floor.getStatus() == FloorStatus.CLOSED || zone.getStatus() == FloorStatus.CLOSED;
+        return occupancyService.usageOf(seatRepository.findByZoneId(zone.getId()), closed, occupiedMap, slot);
     }
 
     private ZoneDTO.ZoneVO toVO(Zone zone, Floor floor, Map<Long, OccupancyService.SeatOccupancy> occupiedMap,
-                                 UserRole role, int slot) {
-        List<Seat> seats = seatRepository.findByZoneId(zone.getId());
-        boolean closed = floor.getStatus() == FloorStatus.CLOSED || zone.getStatus() == FloorStatus.CLOSED;
-        long total = seats.size();
-        long occupied = 0;
-        long unavailable = 0;
-        for (Seat seat : seats) {
-            SeatDisplayStatus display = occupancyService.derive(seat, closed, occupiedMap, slot);
-            if (display == SeatDisplayStatus.UNAVAILABLE) {
-                unavailable++;
-            } else if (display.occupying()) {
-                occupied++;
-            }
-        }
-        long usable = total - unavailable;
+                                 UserRole role, LocalDate date, int slot) {
+        OccupancyService.ZoneUsage usage = usageOf(zone, floor, occupiedMap, slot);
+        long total = usage.total();
+        long occupied = usage.occupied();
+        long unavailable = usage.unavailable();
+        long usable = usage.usable();
+        boolean peakFlag = peakService.isPeak(zone, date, slot, LocalDateTime.now());
         return ZoneDTO.ZoneVO.builder()
                 .zoneId(zone.getId())
                 .floorId(floor.getId())
@@ -348,6 +355,7 @@ public class ZoneService {
                 .eligibleRoles(csvToList(zone.getEligibleRoles()))
                 .allowGroup(zone.getAllowGroup())
                 .groupRequired(zone.getGroupRequired())
+                .peakFlag(peakFlag)
                 .build();
     }
 }

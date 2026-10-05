@@ -138,4 +138,51 @@ public class OccupancyService {
         }
         return SeatDisplayStatus.FREE;
     }
+
+    /**
+     * 一组座位在某个时段的占用统计。
+     *
+     * <p>★ 余量卡片、动态高峰判定、平面图统计必须走这一处：占用率算两遍必然出现
+     *   「卡片显示 85%，系统却按 92% 压时长」，而高峰是不是成立恰恰取决于这个百分比。
+     *
+     * @param total       座位总数
+     * @param occupied    正在被占用的座位数（含暂离）
+     * @param unavailable 维护 / 停用（含楼层或分区关闭）座位数
+     */
+    public record ZoneUsage(long total, long occupied, long unavailable) {
+
+        /** 可正常使用座位数。 */
+        public long usable() {
+            return total - unavailable;
+        }
+
+        /** 占用率（百分数，一位小数）。 */
+        public double rate() {
+            return BizConstants.rate(occupied, usable());
+        }
+    }
+
+    /**
+     * 按 {@link #derive} 逐座统计占用情况。
+     *
+     * @param seats       座位列表
+     * @param closed      楼层 / 分区是否关闭（关闭即全部不可用）
+     * @param occupancy   该时段的占用快照
+     * @param slot        时段序号
+     * @return 占用统计
+     */
+    public ZoneUsage usageOf(List<Seat> seats, boolean closed,
+                             Map<Long, SeatOccupancy> occupancy, int slot) {
+        long occupied = 0;
+        long unavailable = 0;
+        for (Seat seat : seats) {
+            SeatDisplayStatus display = derive(seat, closed, occupancy, slot);
+            if (display == SeatDisplayStatus.UNAVAILABLE) {
+                unavailable++;
+            } else if (display.occupying()) {
+                occupied++;
+            }
+        }
+        return new ZoneUsage(seats.size(), occupied, unavailable);
+    }
 }

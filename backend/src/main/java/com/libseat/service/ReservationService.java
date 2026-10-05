@@ -79,6 +79,9 @@ public class ReservationService {
     /** 信用闸门与主动结束奖励的唯一入口。 */
     private final CreditService creditService;
 
+    /** 高峰判定（静态窗口按 scope 过滤 + 动态高峰状态），T-V2-18。 */
+    private final PeakService peakService;
+
     /**
      * 提交预约（DESIGN §4.3-C1 七步校验）。
      *
@@ -145,9 +148,9 @@ public class ReservationService {
         // 资格判定必须在服务端：前端隐藏入口只是体验层，直接打接口就能绕过
         com.libseat.entity.Zone seatZone = seat.getZoneId() == null ? null
                 : zoneRepository.findById(seat.getZoneId()).orElse(null);
+        UserRole role = userRepository.findById(userId)
+                .map(com.libseat.entity.User::getRole).orElse(null);
         if (seatZone != null) {
-            UserRole role = userRepository.findById(userId)
-                    .map(com.libseat.entity.User::getRole).orElse(null);
             if (!ZoneService.containsRole(seatZone.getVisibleRoles(), role)
                     || !ZoneService.containsRole(seatZone.getEligibleRoles(), role)) {
                 // 两种拒绝都指向同一事实「这个区不对你开放」；文案统一并点名分区，
@@ -204,7 +207,24 @@ public class ReservationService {
             }
         }
 
-        // ---------- 第 4c 步：信用闸门（ACTIVE 处罚 → 4100/4101；分区单日上限 → 4098）----------
+        // ---------- 第 4c 步：高峰调控（提前开放闸门 + 时长压缩，T-V2-18）----------
+        // ★ 静态窗口必须按 scope 过滤、动态高峰也要算进来：只看「这一格有没有窗口」，
+        //   会把 A 区的限流贴到 B 区头上，而馆员按占用率拉起来的高峰则完全没人拦。
+        boolean targetPeak = false;
+        if (seatZone != null) {
+            peakService.requireOpen(seatZone, date, startSlot, now);
+            targetPeak = peakService.isPeak(seatZone, date, startSlot, now);
+            if (targetPeak) {
+                Integer capMin = peakService.effectiveMaxDurationMin(seatZone, date, startSlot, role, now);
+                if (capMin != null && duration * 60 > capMin) {
+                    throw new BusinessException(ErrorCode.PEAK_BANNED,
+                            "该时段为高峰，单次最长 " + capMin + " 分钟，本次 "
+                                    + duration + " 小时超限（" + seatZone.getName() + "）");
+                }
+            }
+        }
+
+        // ---------- 第 4d 步：信用闸门（ACTIVE 处罚 → 4100/4101；分区单日上限 → 4098）----------
         // 顺序按 DESIGN §6.2：先看处罚，再看累计。单位注意：duration 是小时，
         // 分区上限是分钟，这里显式 *60，不混用格号。
         Integer dailyCapMin = seatZone == null ? null : seatZone.getDailyCapMin();
@@ -214,7 +234,8 @@ public class ReservationService {
                     userId, date, seatZone.getId(), OccupancyService.OCCUPYING_STATUSES)
                     * BizConstants.SLOT_MINUTES;
         }
-        creditService.checkBookingGate(userId, date, startSlot, duration * 60, dailyCapMin, usedTodayMin);
+        creditService.checkBookingGate(userId, date, startSlot, duration * 60,
+                dailyCapMin, usedTodayMin, targetPeak);
 
         // ---------- 第 5 步：今天时起始时段未过期 ----------
         LocalDateTime start = BizConstants.slotStart(date, startSlot);

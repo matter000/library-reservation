@@ -110,6 +110,13 @@ public class ZoneDTO {
 
         /** 是否仅接受整组预约。 */
         private Boolean groupRequired;
+
+        /**
+         * 该分区在「查询日期 + 时段」是否处于高峰（静态窗口 ∨ 动态占用率认定）。
+         *
+         * <p>余量卡片要把它显示出来，用户才不至于走到平面图才发现被限流。
+         */
+        private Boolean peakFlag;
     }
 
     /**

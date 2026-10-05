@@ -49,8 +49,6 @@ public class CreditService {
 
     private final RuleConfigService ruleConfigService;
 
-    private final OpenRuleService openRuleService;
-
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     /**
@@ -192,10 +190,13 @@ public class CreditService {
      * @param durationMin 本次时长（分钟）
      * @param dailyCapMin 分区给出的单日上限（null 表示不限制）
      * @param usedToday   该分区当日已用分钟
+     * @param targetPeak  目标时段是否命中高峰（★ 由调用方按<b>分区</b>判定后传入：
+     *                    这里自己按格号查窗口会把 A 区的高峰算到 B 区头上，
+     *                    而馆员按占用率拉起的动态高峰更是完全看不见）
      */
     @Transactional(readOnly = true)
     public void checkBookingGate(Long userId, LocalDate date, int startSlot, int durationMin,
-                                 Integer dailyCapMin, long usedToday) {
+                                 Integer dailyCapMin, long usedToday, boolean targetPeak) {
         if (!ruleConfigService.creditEnforceEnabled()) {
             return;
         }
@@ -203,7 +204,7 @@ public class CreditService {
         List<Penalty> active = penaltyService.activePenalties(userId, now);
         for (Penalty penalty : active) {
             if (penalty.getType() == PenaltyType.PEAK_BAN) {
-                if (openRuleService.resolve(date).peakOf(startSlot) != null) {
+                if (targetPeak) {
                     throw new BusinessException(ErrorCode.PEAK_BANNED,
                             "信用分受限期间不可预约高峰时段（本次恢复时间见「我的信用」）");
                 }

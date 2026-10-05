@@ -126,6 +126,27 @@ public final class BizConstants {
     /** 组长签到后，成员确认入座的宽限（分钟），超时记「组队缺席」。 */
     public static final int GROUP_ATTEND_GRACE_MIN = 30;
 
+    // ===== 高峰调控兜底值（真实值在规则中心 rgroup=PEAK，见 V11） =====
+    // 与信用分阈值同理：规则中心不可用时也要能判定，但兜底值一旦与种子不一致就会骗人。
+
+    /** 动态高峰占用率阈值（百分数）。 */
+    public static final int PEAK_DYNAMIC_THRESHOLD = 90;
+
+    /** 动态高峰：连续超阈多少分钟才认定。 */
+    public static final int PEAK_DYNAMIC_SUSTAIN_MIN = 15;
+
+    /** 动态高峰：认定后至少保持多少分钟（防抖动）。 */
+    public static final int PEAK_DYNAMIC_HOLD_MIN = 30;
+
+    /** 高峰时段单次时长上限（分钟）。 */
+    public static final int PEAK_COMPRESS_MIN = 120;
+
+    /** 高峰时段的提前开放时刻（前一天 HH:mm）。 */
+    public static final String PEAK_OPEN_TIME = "22:00";
+
+    /** 教师单次时长上限（分钟）。 */
+    public static final int MAX_DURATION_TEACHER_MIN = 240;
+
     /** 日期格式。 */
     public static final String DATE_PATTERN = "yyyy-MM-dd";
 

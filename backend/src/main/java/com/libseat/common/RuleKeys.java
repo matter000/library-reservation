@@ -55,6 +55,24 @@ public final class RuleKeys {
     /** 多少次连续主动结束算一档。 */
     public static final String CREDIT_STREAK_SIZE = "credit.streak-size";
 
+    /** 动态高峰：分区占用率达到该百分比开始计时。 */
+    public static final String PEAK_DYNAMIC_THRESHOLD = "peak.dynamic-threshold";
+
+    /** 动态高峰：连续超阈多少分钟后才认定。 */
+    public static final String PEAK_DYNAMIC_SUSTAIN_MIN = "peak.dynamic-sustain-min";
+
+    /** 动态高峰：认定后至少保持多少分钟（回落不立即解除）。 */
+    public static final String PEAK_DYNAMIC_HOLD_MIN = "peak.dynamic-hold-min";
+
+    /** 高峰时段单次时长上限（分钟）。 */
+    public static final String PEAK_COMPRESS_MIN = "peak.compress-min";
+
+    /** 高峰时段改为前一天这个时刻才开放（{@code HH:mm}）。 */
+    public static final String PEAK_OPEN_TIME = "peak.open-time";
+
+    /** 教师单次时长上限（分钟），用于覆盖分区上限。 */
+    public static final String BOOK_MAX_DURATION_TEACHER_MIN = "book.max-duration-teacher-min";
+
     private RuleKeys() {
         // 常量类禁止实例化
     }
