@@ -31,7 +31,15 @@ public enum NoticeType {
     WAITLIST_OFFER("候补轮到你了", "/my/waitlist"),
 
     /** 组长未在窗口内签到，整队被取消。 */
-    GROUP_LEADER_ABSENT("队伍已取消", "/groups");
+    GROUP_LEADER_ABSENT("队伍已取消", "/groups"),
+
+    /**
+     * 馆员巡查时强制释放了本人的座位（DESIGN §11 处置 RELEASE 要求通知学生）。
+     *
+     * <p>★ 这个类型不在 §8.4 的初稿清单里：写初稿时释放只有管理员入口，
+     * T-V2-21 把「强制释放」开放给馆员处置后，「座位突然没了」就成了必须有解释的事件。
+     */
+    SEAT_RELEASED("座位已被释放", "/my/reservations");
 
     /** 类型文案。 */
     private final String text;

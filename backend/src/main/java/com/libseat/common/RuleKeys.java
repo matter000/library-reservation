@@ -82,6 +82,18 @@ public final class RuleKeys {
     /** 暂离到期前多少分钟发站内提醒。 */
     public static final String NOTICE_LEAVE_REMIND_MIN = "notice.leave-remind-min";
 
+    /** 签到后连续使用无暂离多少分钟即疑似占座。 */
+    public static final String PATROL_SUSPECT_MIN = "patrol.suspect-min";
+
+    /** 疑似占座的另一条件：预约剩余不少于多少分钟（快结束的不打扰）。 */
+    public static final String PATROL_SUSPECT_MIN_LEFT = "patrol.suspect-min-left";
+
+    /** 组队签到后多少分钟仍未确认入座。 */
+    public static final String PATROL_GROUP_ABSENT_MIN = "patrol.group-absent-min";
+
+    /** 同座位同类型被提醒后多少分钟内再犯即升为 HIGH。 */
+    public static final String PATROL_ESCALATE_MIN = "patrol.escalate-min";
+
     private RuleKeys() {
         // 常量类禁止实例化
     }

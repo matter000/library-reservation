@@ -29,7 +29,12 @@ export default function StaffHome() {
       path: '/staff/appeals',
       note: '申诉队列 · 证据 · 裁定',
     },
-    { title: '巡查任务看板', stage: 'S6 巡查' },
+    {
+      title: '巡查任务看板',
+      stage: 'S6 巡查',
+      path: '/staff/patrol',
+      note: '疑点生成 · 提醒 / 释放 / 裁定',
+    },
     { title: '全馆监控大屏', stage: 'S6 巡查' },
   ];
 

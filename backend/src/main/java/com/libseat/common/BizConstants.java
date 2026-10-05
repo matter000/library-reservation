@@ -158,6 +158,18 @@ public final class BizConstants {
     /** 暂离到期前多少分钟发一次站内提醒（DESIGN §8.4，同一记录只发一次）。 */
     public static final int NOTICE_LEAVE_REMIND_MIN = 5;
 
+    /** 签到后连续使用无暂离多少分钟即算疑似占座（PRD §6.5）。 */
+    public static final int PATROL_SUSPECT_MIN = 120;
+
+    /** 疑似占座的另一条件：预约剩余时间不少于多少分钟。 */
+    public static final int PATROL_MIN_LEFT_MIN = 30;
+
+    /** 组队签到后多少分钟仍未确认入座即登记巡查任务。 */
+    public static final int PATROL_GROUP_ABSENT_MIN = 30;
+
+    /** 同座位同类型被口头提醒后多少分钟内再犯即升为 HIGH。 */
+    public static final int PATROL_ESCALATE_MIN = 30;
+
     /** 日期格式。 */
     public static final String DATE_PATTERN = "yyyy-MM-dd";
 

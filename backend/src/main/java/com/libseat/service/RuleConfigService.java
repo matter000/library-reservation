@@ -279,6 +279,26 @@ public class RuleConfigService {
         return getInt(RuleKeys.NOTICE_LEAVE_REMIND_MIN, BizConstants.NOTICE_LEAVE_REMIND_MIN);
     }
 
+    /** 签到后连续使用无暂离多少分钟即疑似占座。 */
+    public int patrolSuspectMin() {
+        return getInt(RuleKeys.PATROL_SUSPECT_MIN, BizConstants.PATROL_SUSPECT_MIN);
+    }
+
+    /** 疑似占座要求的剩余时长下限（分钟）。 */
+    public int patrolMinLeftMin() {
+        return getInt(RuleKeys.PATROL_SUSPECT_MIN_LEFT, BizConstants.PATROL_MIN_LEFT_MIN);
+    }
+
+    /** 组队签到后多少分钟未确认入座即登记任务。 */
+    public int patrolGroupAbsentMin() {
+        return getInt(RuleKeys.PATROL_GROUP_ABSENT_MIN, BizConstants.PATROL_GROUP_ABSENT_MIN);
+    }
+
+    /** 提醒后多少分钟内再犯即升为 HIGH。 */
+    public int patrolEscalateMin() {
+        return getInt(RuleKeys.PATROL_ESCALATE_MIN, BizConstants.PATROL_ESCALATE_MIN);
+    }
+
     /**
      * 把配置里的时刻文本解析成 {@link LocalTime}，写错不影响服务启动。
      *

@@ -85,6 +85,12 @@ public class AuditService {
     /** 动作码：馆员直接撤销违规（超过申诉时限后的唯一救济入口）。 */
     public static final String ACTION_VIOLATION_REVOKE = "VIOLATION_REVOKE";
 
+    /** 动作码：馆员登记现场疑点。 */
+    public static final String ACTION_PATROL_REGISTER = "PATROL_REGISTER";
+
+    /** 动作码：巡查任务处置（提醒 / 释放 / 裁定 / 忽略）。 */
+    public static final String ACTION_PATROL_HANDLE = "PATROL_HANDLE";
+
     /** 动作码 → 中文文案（唯一来源，前端直接展示，不在两处写映射）。 */
     private static final Map<String, String> ACTION_TEXT = Map.ofEntries(
             Map.entry(ACTION_RULE_UPDATE, "修改规则配置"),
@@ -101,7 +107,9 @@ public class AuditService {
             Map.entry(ACTION_APPEAL_SUBMIT, "提交申诉"),
             Map.entry(ACTION_APPEAL_ESCALATE, "申诉升级终审"),
             Map.entry(ACTION_APPEAL_JUDGE, "申诉裁定"),
-            Map.entry(ACTION_VIOLATION_REVOKE, "撤销违规")
+            Map.entry(ACTION_VIOLATION_REVOKE, "撤销违规"),
+            Map.entry(ACTION_PATROL_REGISTER, "登记巡查疑点"),
+            Map.entry(ACTION_PATROL_HANDLE, "巡查任务处置")
     );
 
     private final AuditLogRepository auditLogRepository;

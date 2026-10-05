@@ -116,6 +116,7 @@ public class WebConfig implements WebMvcConfigurer {
                 "/credit",
                 "/profile",
                 "/staff",
+                "/staff/patrol",
                 "/staff/appeals",
                 "/admin",
                 "/admin/floors",

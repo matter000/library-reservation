@@ -104,6 +104,30 @@ body {
   min-height: calc(100vh - 88px);
 }
 
+/* ============ 馆员作业面布局 ============ */
+.staff-layout {
+  min-height: 100vh;
+}
+
+.staff-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 24px;
+}
+
+.staff-header-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+/* 作业面各页自带 24px 内边距，这里不再叠加 */
+.staff-content {
+  background: #f5f5f5;
+}
+
 /* ============ 通用 ============ */
 .page-title {
   margin-bottom: 16px;

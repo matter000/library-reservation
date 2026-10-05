@@ -62,6 +62,23 @@ public class ViolationService {
         EVIDENCE_LABELS.put("patrolId", "巡查任务");
         EVIDENCE_LABELS.put("note", "现场说明");
         EVIDENCE_LABELS.put("photoUrl", "现场照片");
+        // ★ 巡查疑点的判定输入（T-V2-21）：看板要回答「系统凭什么报警」，
+        //   漏配一个键只会退化成原始英文名，所以疑点里出现什么就在这里配什么。
+        EVIDENCE_LABELS.put("thresholdMin", "阈值（分钟）");
+        EVIDENCE_LABELS.put("usedMin", "已连续使用（分钟）");
+        EVIDENCE_LABELS.put("checkInTime", "签到时刻");
+        EVIDENCE_LABELS.put("plannedEnd", "预约结束时刻");
+        EVIDENCE_LABELS.put("onLeave", "正在暂离");
+        EVIDENCE_LABELS.put("overdueMin", "已超时（分钟）");
+        EVIDENCE_LABELS.put("groupId", "队伍");
+        EVIDENCE_LABELS.put("memberUserId", "被登记成员");
+        EVIDENCE_LABELS.put("leaderCheckInTime", "组长签到时刻");
+        EVIDENCE_LABELS.put("leaderCheckedInForOthers", "组长已代全队签到");
+        EVIDENCE_LABELS.put("status", "预约状态");
+        EVIDENCE_LABELS.put("registeredBy", "登记人");
+        EVIDENCE_LABELS.put("reservationId", "关联预约");
+        EVIDENCE_LABELS.put("handledBy", "处置人");
+        EVIDENCE_LABELS.put("handleNote", "处置说明");
     }
 
     private final ViolationRepository violationRepository;

@@ -243,9 +243,34 @@ export const WAITLIST_STATUS_META = {
   CANCELLED: { color: 'default' },
 };
 
+/**
+ * 巡查等级与状态（T-V2-21）。
+ *
+ * ★ 这里只配色：文案一律用后端返回的 levelText / statusText。
+ * 等级与状态都可能随规则演进（比如将来加「超时未处理自动升级」），两处各写一份就会漏。
+ */
+export const PATROL_LEVEL_META = {
+  HIGH: { color: 'red' },
+  MID: { color: 'orange' },
+  LOW: { color: 'default' },
+};
+
+export const PATROL_STATUS_META = {
+  PENDING: { color: 'gold' },
+  REMIND: { color: 'blue' },
+  RELEASED: { color: 'volcano' },
+  VIOLATION: { color: 'red' },
+  IGNORED: { color: 'default' },
+};
+
+/** 巡查看板轮询间隔：任务由 10 分钟一轮的生成器产生，30 秒足够「刚报的能在巡楼路上看到」。 */
+export const PATROL_BOARD_POLL_INTERVAL = 30000;
+
 /** 违规状态下拉项。 */
 export const VIOLATION_STATUS_OPTIONS = Object.entries(VIOLATION_STATUS_META)
-  .map(([value, meta]) => ({ value, label: meta.text }));/** 申诉状态下拉项。 */
+  .map(([value, meta]) => ({ value, label: meta.text }));
+
+/** 申诉状态下拉项。 */
 export const APPEAL_STATUS_OPTIONS = Object.entries(APPEAL_STATUS_META)
   .map(([value, meta]) => ({ value, label: meta.text }));
 

@@ -2,6 +2,7 @@ import React from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import MainLayout from '../layouts/MainLayout';
 import AdminLayout from '../layouts/AdminLayout';
+import StaffLayout from '../layouts/StaffLayout';
 import RequireAuth from './RequireAuth';
 import Login from '../pages/Login';
 import Register from '../pages/Register';
@@ -25,6 +26,7 @@ import TableManage from '../pages/admin/TableManage';
 import OpenRuleManage from '../pages/admin/OpenRuleManage';
 import ViolationManage from '../pages/admin/ViolationManage';
 import StaffHome from '../pages/staff/StaffHome';
+import PatrolBoard from '../pages/staff/PatrolBoard';
 import AppealQueue from '../pages/staff/AppealQueue';
 import { useAuth } from '../store/AuthContext';
 import { USER_ROLE, roleHomePath } from '../constants';
@@ -69,23 +71,19 @@ export default function AppRoutes() {
         <Route path="/profile" element={<Profile />} />
       </Route>
 
-      {/* 馆员作业面（S0 先占位，实时监控 / 巡查 / 违规处理随 S2·S3·S6 交付） */}
+      {/* 馆员作业面：巡查上线后三块工作台共用 StaffLayout 外壳（T-V2-21） */}
       <Route
         path="/staff"
         element={
           <RequireAuth roles={[USER_ROLE.LIBRARIAN, USER_ROLE.SYS_ADMIN]}>
-            <StaffHome />
+            <StaffLayout />
           </RequireAuth>
         }
-      />
-      <Route
-        path="/staff/appeals"
-        element={
-          <RequireAuth roles={[USER_ROLE.LIBRARIAN, USER_ROLE.SYS_ADMIN]}>
-            <AppealQueue />
-          </RequireAuth>
-        }
-      />
+      >
+        <Route index element={<StaffHome />} />
+        <Route path="patrol" element={<PatrolBoard />} />
+        <Route path="appeals" element={<AppealQueue />} />
+      </Route>
 
       {/* 系统管理面 */}
       <Route
