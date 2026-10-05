@@ -480,7 +480,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_grant ON t_zone_grant (user_id, zone_id, te
 | --- | --- | --- |
 | 提前开放 | 高峰时段在「前一天 22:00」开放：`advance_days` 与 `peak_open_time` 组合判定，未到点返回 `4101` 并提示开放时刻 | 纯服务端时间判定，无需调度 |
 | 时长压缩 | 有效上限取 `min(分区, 当日, peak_compress_min)`；教师用 `teacher_duration_min` | 校验链一步 |
-| 排队候补 | `t_waitlist` + 5 分钟确认窗口 | **无 MQ/推送**：确认走站内通知 + 轮询（§8.4），窗口内用户不在场即顺延——需在 UI 明示"请保持页面打开" |
+| 排队候补 | `t_waitlist` + 规则 `waitlist.offer-min`（默认 10 分钟）确认窗口 | **无 MQ/推送**：确认走站内通知 + 轮询（§8.4），窗口内用户不在场即顺延——需在 UI 明示"请保持页面打开"。原定 5 分钟在 TASKS-V2 里改为可配，落地取默认 10 分钟：无推送时 5 分钟形同"守着刷新" |
 | 余座预告 | 分区余量 + 基于近 4 周同时段历史的「预计到达余座」 | 历史均值查询即可，不引入预测模型 |
 | 高峰提醒 | 站内通知 | 同上降级 |
 
@@ -492,7 +492,7 @@ CREATE TABLE IF NOT EXISTS t_waitlist (
     user_id BIGINT NOT NULL,
     floor_id BIGINT NOT NULL, zone_id BIGINT NOT NULL, table_id BIGINT NULL,
     reserve_date DATE NOT NULL, start_slot INT NOT NULL, end_slot INT NOT NULL,
-    status VARCHAR(20) NOT NULL,              -- WAITING/OFFERED/CONFIRMED/EXPIRED/CANCELLED/SUPERSEDED
+    status VARCHAR(20) NOT NULL,              -- WAITING/OFFERED/CONFIRMED/EXPIRED/CANCELLED
     active_flag SMALLINT NULL,                -- WAITING/OFFERED 时=1，终态置 NULL
     offered_time TIMESTAMP NULL, offer_expire_time TIMESTAMP NULL,
     create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -503,7 +503,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_waitlist_active ON t_waitlist (user_id, zon
 CREATE INDEX IF NOT EXISTS idx_waitlist_zone_state ON t_waitlist (zone_id, reserve_date, start_slot, status);
 ```
 
-流转：`join`（校验：该分区当前无空位、本人活动队列 ≤ 2 → 否则 `4106`）→ 座位/桌位释放事件（`ReservationStateService` 与 `LeaveStateService` 在**同一事务内**调用 `WaitlistService.onSeatReleased`）→ 队首置 `OFFERED`（`offer_expire=now+5min`）+ 通知 → 用户 `POST /api/waitlist/{id}/confirm`：确认前先取消冲突时段的其他预约，再走标准预约校验（信用/累计/重叠）→ `CONFIRMED`；超时由 `WaitlistExpireTask`（每分钟）置 `EXPIRED` 并顺延下一位，**不记违规**。
+流转（T-V2-19 落地口径）：`join`（校验：分区开放且本人有资格、非 `group_required`、时段未过期、该排队键**当前无空位**、同人同键不重复、本人活动队列 ≤ `waitlist.max-active`(默认 2) → 否则 `4093/4106`）→ 座位释放（`ReservationService.cancel/finish`、`ReservationStateService.markNoShow`、`LeaveStateService.markTimeout`、`GroupStateService.cancelForLeaderAbsence`、`AdminUsageService.release` 都在**同一事务内**调 `WaitlistStateService.onReservationReleased`；`AdminSeatService/AdminFloorService` 的删除路径刻意不调——椅子马上就不存在了，唤醒队列只会骗人）→ 队首置 `OFFERED`（`offer_expire = now + waitlist.offer-min`）+ 通知。
+
+★ 三条与初稿不同的实现决定，都是被具体问题逼出来的：
+
+1. **一次释放只发一个 offer**：放出来的是「一个位置」，同时许诺两人等于注定让一人扑空；同键已有未消化 offer 时不再重复发。
+2. **匹配用区间而非相等**：`startSlot` 落在 `[释放起点, 释放终点)` 内的队首都能被唤醒，否则 9:00-11:00 取消后，10:00 起排队的人永远等不到。起始格已过的候选一律跳过（预约链第 5 步会拒他，offer 是浪费）。
+3. **失败即自愈，且自愈单独提交**：确认时先现挑一座再走完整校验链；无空位或校验没过（`4091/4098/4100…`）→ 该条置 `EXPIRED` 并顺延下一位（`REQUIRES_NEW`，否则外层回滚会把顺延一起吞掉），**不记违规**。
 
 ### 8.4 站内通知（替代推送）
 
@@ -564,7 +570,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_time ON t_audit_log (create_time);
 | `scanLeaveTimeout` | 1 分钟 | `OPEN` 暂离且超 `planned_end` → 预约 `VIOLATED` + 删 slot + 违规 −10 | `LeaveStateService` |
 | `completeExpired` | 5 分钟 | `CHECKED_IN` 且 超结束 → `COMPLETED` + 删 slot（不记违规） | `ReservationStateService` |
 | `scanGroupAttendance` | 1 分钟 | 组队签到后 30 分钟未入座 → `ABSENT` + 违规（座位保留）；组长未签到 → 全队作废 + −20 | `GroupStateService` |
-| `scanWaitlistOffer` | 1 分钟 | `OFFERED` 超 5 分钟 → `EXPIRED` + 顺延下一位 | `WaitlistStateService` |
+| `expireOffers` | 1 分钟 | `OFFERED` 超 `waitlist.offer-min` → `EXPIRED` + 顺延下一位（不记违规） | `WaitlistStateService` |
 | `detectPeak` | 5 分钟 | 分区占用率 ≥ 阈值持续 N 分钟 → 写 `t_zone_peak_state` | 只读+快照写 |
 | `generatePatrolTasks` | 10 分钟 | 生成疑似占座任务（**绝不自动释放**） | `PatrolService` |
 | `sendReminders` | 1 分钟 | 签到前 15 分钟 / 暂离剩 5 分钟 → 写 `t_notice` | 幂等：`type+ref` 去重 |
@@ -632,8 +638,8 @@ CREATE INDEX IF NOT EXISTS idx_patrol_status ON t_patrol_task (status, level, cr
 | S18 | POST | `/api/groups/{id}/check-in` | 组长签到 = 全队签到 |
 | S19 | POST | `/api/groups/{id}/attend` | 成员入座确认（扫码） |
 | S20 | POST | `/api/waitlist` | 加入候补 `{zoneId,date,startSlot,duration}` |
-| S21 | POST | `/api/waitlist/{id}/confirm` | 5 分钟窗口内确认 |
-| S22 | DELETE | `/api/waitlist/{id}` | 退出队列 |
+| S21 | POST | `/api/waitlist/{id}/confirm` | 窗口（`waitlist.offer-min`）内确认，服务端现挑座位 |
+| S22 | POST | `/api/waitlist/{id}/quit` | 退出队列；手里正拿着 offer 时当场顺延 |
 | S23 | GET | `/api/me/notices` / POST `/api/me/notices/{id}/read` | 站内通知 |
 
 ### 12.2 馆员面 `/api/staff/**`（LIBRARIAN / SYS_ADMIN）

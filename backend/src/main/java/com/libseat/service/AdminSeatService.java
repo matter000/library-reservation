@@ -174,6 +174,7 @@ public class AdminSeatService {
         if (future > 0) {
             throw new BusinessException(ErrorCode.DELETE_FORBIDDEN, "该座位存在未完成的预约，请先释放");
         }
+        // 与删除楼层同理：这把椅子即将不存在，不放候补
         for (Reservation reservation : reservations) {
             reservationSlotRepository.deleteByReservationId(reservation.getId());
         }

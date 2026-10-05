@@ -83,6 +83,15 @@ public class ReservationService {
     private final PeakService peakService;
 
     /**
+     * 候补顶位（只依赖仓储的写操作服务，T-V2-19）。
+     *
+     * <p>★ 刻意不注入 {@link WaitlistService}：那个用例服务要调本类的 {@code createReservation}
+     * 完成确认下单，注入它就成了 ReservationService ⇄ WaitlistService 的构造器循环依赖，
+     * 应用直接起不来。
+     */
+    private final WaitlistStateService waitlistStateService;
+
+    /**
      * 提交预约（DESIGN §4.3-C1 七步校验）。
      *
      * <p>并发防重：主表 {@code saveAndFlush} 拿 id → slot 表 {@code saveAllAndFlush} 立即触发唯一索引，
@@ -398,6 +407,8 @@ public class ReservationService {
         reservationRepository.save(reservation);
         // slot 行物理删除 → 唯一索引天然可复用
         reservationSlotRepository.deleteByReservationId(reservation.getId());
+        // 位置空出来就立刻顶位：取消的意义是「马上有人能约」，不是等下一轮扫描
+        waitlistStateService.onReservationReleased(reservation, now);
 
         return ReservationDTO.ReservationActionVO.builder()
                 .reservationId(reservation.getId())
@@ -434,6 +445,8 @@ public class ReservationService {
         reservation.setStatus(ReservationStatus.COMPLETED);
         reservationRepository.save(reservation);
         reservationSlotRepository.deleteByReservationId(reservation.getId());
+        // §5.4 的「提前释放给他人」就落在这一步：整段 slot 已删，钩子只会唤醒起始格仍在未来的候补
+        waitlistStateService.onReservationReleased(reservation, now);
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "用户不存在"));

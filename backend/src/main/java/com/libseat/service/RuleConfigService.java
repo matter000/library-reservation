@@ -264,6 +264,16 @@ public class RuleConfigService {
         return getInt(RuleKeys.BOOK_MAX_DURATION_TEACHER_MIN, BizConstants.MAX_DURATION_TEACHER_MIN);
     }
 
+    /** 候补 offer 的确认窗口（分钟）。 */
+    public int waitlistOfferMin() {
+        return getInt(RuleKeys.WAITLIST_OFFER_MIN, BizConstants.WAITLIST_OFFER_MIN);
+    }
+
+    /** 同一用户最多能挂几条活动候补。 */
+    public int waitlistMaxActive() {
+        return getInt(RuleKeys.WAITLIST_MAX_ACTIVE, BizConstants.WAITLIST_MAX_ACTIVE);
+    }
+
     /**
      * 把配置里的时刻文本解析成 {@link LocalTime}，写错不影响服务启动。
      *

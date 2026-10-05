@@ -39,6 +39,9 @@ public class ReservationStateService {
 
     private final RuleConfigService ruleConfigService;
 
+    /** 候补顶位（爽约腾出来的剩余时段要立刻叫醒队首）。 */
+    private final WaitlistStateService waitlistStateService;
+
     /**
      * 单条置 NO_SHOW：归档预约 + 释放 slot + 违约次数 +1 + 记一笔违规。
      *
@@ -55,6 +58,8 @@ public class ReservationStateService {
         reservation.setCancelTime(now);
         reservationRepository.save(reservation);
         reservationSlotRepository.deleteByReservationId(reservation.getId());
+        // 爽约腾出的剩余时段立刻放给队首：9:15 判的 9:00-10:00，9:30 起排队的人还来得及确认
+        waitlistStateService.onReservationReleased(reservation, now);
         userRepository.findById(reservation.getUserId()).ifPresent(user -> {
             int noShow = (user.getNoShowCount() == null ? 0 : user.getNoShowCount()) + 1;
             user.setNoShowCount(noShow);

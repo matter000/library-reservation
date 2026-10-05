@@ -47,7 +47,7 @@ public class GroupStateService {
 
     private final RuleConfigService ruleConfigService;
 
-    private final WaitlistService waitlistService;
+    private final WaitlistStateService waitlistStateService;
 
     /**
      * 组长签到 = 全队签到。
@@ -137,8 +137,9 @@ public class GroupStateService {
             reservation.setStatus(ReservationStatus.CANCELLED);
             reservation.setCancelTime(now);
             reservationSlotRepository.deleteByReservationId(reservation.getId());
-            // 候补释放挂钩：与个人取消、暂离超时同一入口（当前是空实现，S5 接队列）
-            waitlistService.onSeatReleased(reservation);
+            // 候补释放挂钩：与个人取消、暂离超时同一入口。整桌释放 N 把椅子就调用 N 次，
+            // 同一排队键上的「一次释放只发一个 offer」判断会自然收敛，不会重复许诺同一个位置
+            waitlistStateService.onReservationReleased(reservation, now);
             if (sampleReservationId == null) {
                 sampleReservationId = reservation.getId();
             }

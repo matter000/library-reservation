@@ -73,6 +73,12 @@ public final class RuleKeys {
     /** 教师单次时长上限（分钟），用于覆盖分区上限。 */
     public static final String BOOK_MAX_DURATION_TEACHER_MIN = "book.max-duration-teacher-min";
 
+    /** 候补 offer 的确认窗口（分钟）。 */
+    public static final String WAITLIST_OFFER_MIN = "waitlist.offer-min";
+
+    /** 同一用户最多能挂几条活动候补。 */
+    public static final String WAITLIST_MAX_ACTIVE = "waitlist.max-active";
+
     private RuleKeys() {
         // 常量类禁止实例化
     }

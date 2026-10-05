@@ -1,7 +1,7 @@
 import React from 'react';
 import { Avatar, Button, Layout, Menu, Typography } from 'antd';
 import {
-  BookOutlined, LogoutOutlined, SafetyCertificateOutlined, TeamOutlined, UserOutlined,
+  BookOutlined, HourglassOutlined, LogoutOutlined, SafetyCertificateOutlined, TeamOutlined, UserOutlined,
 } from '@ant-design/icons';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/AuthContext';
@@ -22,6 +22,7 @@ export default function MainLayout() {
   const menuItems = [
     { key: '/floors', icon: <BookOutlined />, label: '楼层' },
     { key: '/my/reservations', icon: <UserOutlined />, label: '我的预约' },
+    { key: '/my/waitlist', icon: <HourglassOutlined />, label: '我的候补' },
     { key: '/groups', icon: <TeamOutlined />, label: '组队学习' },
     { key: '/credit', icon: <SafetyCertificateOutlined />, label: '信用与违规' },
   ];

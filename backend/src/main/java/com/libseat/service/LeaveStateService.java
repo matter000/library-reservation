@@ -39,7 +39,7 @@ public class LeaveStateService {
 
     private final UserRepository userRepository;
 
-    private final WaitlistService waitlistService;
+    private final WaitlistStateService waitlistStateService;
 
     private final CreditService creditService;
 
@@ -65,13 +65,14 @@ public class LeaveStateService {
         record.setOpenFlag(null);
         leaveRecordRepository.save(record);
 
+        // 座位已在上面释放，此刻顶位：被超时腾出来的位置不该空转到下一次扫描
+        waitlistStateService.onReservationReleased(reservation, now);
+
         userRepository.findById(record.getUserId()).ifPresent(user -> {
             int noShow = (user.getNoShowCount() == null ? 0 : user.getNoShowCount()) + 1;
             user.setNoShowCount(noShow);
             userRepository.save(user);
         });
-
-        waitlistService.onSeatReleased(reservation);
         // ★ 证据由触发方组装：规则名 + 关键时间戳 + 涉及 ID，缺证据的违规在 CreditService 里就被拒
         LinkedHashMap<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("rule", "zone.leave_max_min");

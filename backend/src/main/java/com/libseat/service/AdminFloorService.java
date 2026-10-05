@@ -121,6 +121,7 @@ public class AdminFloorService {
 
         List<Seat> seats = seatRepository.findByFloorIdOrderByRowNoAscColNoAsc(floorId);
         List<Reservation> reservations = reservationRepository.findByFloorId(floorId);
+        // 这里刻意不叫候补顶位：整个楼层的座位马上就没了，唤醒队列只会让人冲着一个不存在的位置确认
         for (Reservation reservation : reservations) {
             reservationSlotRepository.deleteByReservationId(reservation.getId());
         }

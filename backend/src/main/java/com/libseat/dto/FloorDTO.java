@@ -133,6 +133,15 @@ public class FloorDTO {
 
         /** 组队：组长签到后成员确认入座的宽限（分钟）。 */
         private Integer groupAttendGraceMin;
+
+        /**
+         * 候补 offer 的确认窗口（分钟，{@code waitlist.offer-min}）：说明文案要说得准，
+         * 写死数字会在管理员改值后变成假说明。
+         */
+        private Integer waitlistOfferMin;
+
+        /** 同一用户最多能挂几条活动候补（{@code waitlist.max-active}）。 */
+        private Integer waitlistMaxActive;
     }
 
     /**

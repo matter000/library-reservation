@@ -147,6 +147,14 @@ public final class BizConstants {
     /** 教师单次时长上限（分钟）。 */
     public static final int MAX_DURATION_TEACHER_MIN = 240;
 
+    // ===== 候补队列兜底值（真实值在规则中心，见 V12） =====
+
+    /** 候补 offer 的确认窗口（分钟）。 */
+    public static final int WAITLIST_OFFER_MIN = 10;
+
+    /** 同一用户最多能挂几条活动候补。 */
+    public static final int WAITLIST_MAX_ACTIVE = 2;
+
     /** 日期格式。 */
     public static final String DATE_PATTERN = "yyyy-MM-dd";
 

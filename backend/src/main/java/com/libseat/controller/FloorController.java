@@ -111,6 +111,9 @@ public class FloorController {
                 .groupInviteTtlMin(BizConstants.GROUP_INVITE_TTL_MIN)
                 .groupMinMembers(BizConstants.GROUP_MIN_MEMBERS)
                 .groupAttendGraceMin(BizConstants.GROUP_ATTEND_GRACE_MIN)
+                // 候补窗口与名额是规则中心的键（管理员可调），不是一级常量
+                .waitlistOfferMin(ruleConfigService.waitlistOfferMin())
+                .waitlistMaxActive(ruleConfigService.waitlistMaxActive())
                 .build());
     }
 }

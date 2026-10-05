@@ -217,11 +217,32 @@ export const GROUP_ATTEND_GRACE_MIN = 30;
 /** 组队页轮询间隔：锁定与邀请过期都按分钟推进，30 秒会让倒计时看起来「卡住」。 */
 export const GROUP_POLL_INTERVAL = 15000;
 
+/** 候补页轮询间隔：同理，offer 确认窗口也是按分钟推进的。 */
+export const WAITLIST_POLL_INTERVAL = 15000;
+
+/** 候补 offer 窗口兜底分钟数（真实值取自 /api/config/booking 的 waitlist.offer-min）。 */
+export const WAITLIST_OFFER_MIN = 10;
+
+/** 每人可同时挂几条候补的兜底值（真实值取自 waitlist.max-active）。 */
+export const WAITLIST_MAX_ACTIVE = 2;
+
+/**
+ * 候补状态（与后端 WaitlistStatus 对齐）。
+ *
+ * ★ 与队伍状态同样只在这里配色：文案一律用后端返回的 statusText，
+ * 状态机将来加一个瞬时态（比如「已通知」）不至于出现「后端发了、前端不会显示」。
+ */
+export const WAITLIST_STATUS_META = {
+  WAITING: { color: 'blue' },
+  OFFERED: { color: 'gold' },
+  CONFIRMED: { color: 'green' },
+  EXPIRED: { color: 'orange' },
+  CANCELLED: { color: 'default' },
+};
+
 /** 违规状态下拉项。 */
 export const VIOLATION_STATUS_OPTIONS = Object.entries(VIOLATION_STATUS_META)
-  .map(([value, meta]) => ({ value, label: meta.text }));
-
-/** 申诉状态下拉项。 */
+  .map(([value, meta]) => ({ value, label: meta.text }));/** 申诉状态下拉项。 */
 export const APPEAL_STATUS_OPTIONS = Object.entries(APPEAL_STATUS_META)
   .map(([value, meta]) => ({ value, label: meta.text }));
 

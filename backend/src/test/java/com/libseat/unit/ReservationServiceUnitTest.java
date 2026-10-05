@@ -85,6 +85,9 @@ class ReservationServiceUnitTest {
     /** 高峰判定：桩默认「非高峰」，压缩与提前开放闸门由 PeakRuleApiTest 覆盖。 */
     @Mock
     private com.libseat.service.PeakService peakService;
+    /** 候补顶位：桩服务什么也不做，取消/结束的候补行为由 WaitlistApiTest 走真实链路验证。 */
+    @Mock
+    private com.libseat.service.WaitlistStateService waitlistStateService;
 
     private ReservationService service;
 
@@ -106,7 +109,8 @@ class ReservationServiceUnitTest {
         when(openRuleService.endSlotOf(any())).thenReturn(BizConstants.DEFAULT_SLOT_END);
         service = new ReservationService(reservationRepository, reservationSlotRepository,
                 seatRepository, zoneRepository, userRepository, floorService, ruleConfigService,
-                openRuleService, leaveRecordRepository, leaveService, creditService, peakService);
+                openRuleService, leaveRecordRepository, leaveService, creditService, peakService,
+                waitlistStateService);
     }
 
     /** 整点 → 30 分钟格序号（格长改造后，用例仍以「小时」表达意图）。 */

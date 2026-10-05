@@ -55,6 +55,9 @@ public class AdminUsageService {
 
     private final AuditService auditService;
 
+    /** 候补顶位（馆员释放与用户取消走同一条路径，T-V2-19）。 */
+    private final WaitlistStateService waitlistStateService;
+
     /**
      * 座位使用情况查询。
      *
@@ -293,6 +296,8 @@ public class AdminUsageService {
         reservation.setAdminCancelReason(reason.trim());
         reservationRepository.save(reservation);
         reservationSlotRepository.deleteByReservationId(reservation.getId());
+        // 馆员撤销是把椅子还给下一位，不是让它空着：同一事务内立刻顶位
+        waitlistStateService.onReservationReleased(reservation, now);
 
         Map<String, Object> detail = new java.util.LinkedHashMap<>();
         detail.put("userId", reservation.getUserId());

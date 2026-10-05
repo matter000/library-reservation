@@ -7,19 +7,22 @@ import {
   DatePicker,
   Descriptions,
   Drawer,
+  Modal,
   Radio,
   Select,
+  Space,
   Spin,
   Tag,
   Typography,
   message,
 } from 'antd';
-import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, HourglassOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { fetchFloor, fetchSeatMap, fetchSlots } from '../api/floor';
 import { fetchUserZones } from '../api/space';
 import { createReservation } from '../api/reservation';
+import { joinWaitlist } from '../api/waitlist';
 import SeatGrid from '../components/SeatGrid';
 import SeatLegend from '../components/SeatLegend';
 import {
@@ -31,7 +34,7 @@ import {
   SEAT_MAP_POLL_INTERVAL,
 } from '../constants';
 import useBookingConfig from '../hooks/useBookingConfig';
-import { buildFallbackSlots, buildTimeRange, getBookableDates, nowSlot, nowTimeText, slotLabel } from '../utils/datetime';
+import { buildFallbackSlots, buildTimeRange, getBookableDates, nowSlot, nowTimeText, slotLabel, slotStartLabel } from '../utils/datetime';
 
 /**
  * ★ 座位平面图页（核心页）。
@@ -63,6 +66,11 @@ export default function SeatMap() {
   const [duration, setDuration] = useState(DEFAULT_DURATION);
   const [submitting, setSubmitting] = useState(false);
 
+  // 候补：本区本时段满座才给入口，弹层只收时长 —— 座位由服务端在确认那一刻现挑
+  const [waitOpen, setWaitOpen] = useState(false);
+  const [waitDuration, setWaitDuration] = useState(DEFAULT_DURATION);
+  const [joiningQueue, setJoiningQueue] = useState(false);
+
   // 整桌选择模式：groupRequired 分区强制开启，allowGroup 分区由用户勾选
   const [groupPick, setGroupPick] = useState(false);
   const [selectedTableId, setSelectedTableId] = useState(null);
@@ -71,12 +79,14 @@ export default function SeatMap() {
   const pollInFlightRef = useRef(false);
   const {
     advanceDays, allowedDurations, durationOptions, defaultDuration, checkInBeforeMin, checkInAfterMin,
+    waitlistOfferMin, waitlistMaxActive,
   } = useBookingConfig();
   const bookableDates = useMemo(() => getBookableDates(advanceDays), [advanceDays]);
 
   // 规则收紧后把已选时长收敛回合法集合
   useEffect(() => {
     setDuration((cur) => (allowedDurations.includes(cur) ? cur : defaultDuration));
+    setWaitDuration((cur) => (allowedDurations.includes(cur) ? cur : defaultDuration));
   }, [allowedDurations, defaultDuration]);
 
   /**
@@ -212,10 +222,18 @@ export default function SeatMap() {
    */
   const tableMode = zoneGroupable && (zoneRules.groupRequired === true || groupPick);
 
-  /** 时长选项再按分区上限裁一刀（后端仍会二次校验）。 */
-  const selectableDurations = zoneRules && zoneRules.maxDurationMin
-    ? durationOptions.filter((option) => option.value * 60 <= zoneRules.maxDurationMin)
-    : durationOptions;
+  /**
+   * 时长选项再按分区上限裁一刀（后端仍会二次校验）。
+   *
+   * ★ 必须 memo：filter 每轮 render 都返回新数组，控件拿到新 options 会再 setState，
+   * 实测能把页面推进「Maximum update depth exceeded」。
+   */
+  const selectableDurations = useMemo(
+    () => (zoneRules && zoneRules.maxDurationMin
+      ? durationOptions.filter((option) => option.value * 60 <= zoneRules.maxDurationMin)
+      : durationOptions),
+    [zoneRules, durationOptions],
+  );
 
   /** 点击空闲座位：整桌模式下选中的是「桌」，个人模式下才打开预约抽屉。 */
   const handleSelectSeat = (seat) => {
@@ -259,9 +277,41 @@ export default function SeatMap() {
     }
   };
 
+  /** 加入候补：只登记「想坐这个时段」，位置释放时由服务端按队列顺序通知队首。 */
+  const handleJoinQueue = async () => {
+    setJoiningQueue(true);
+    try {
+      const joined = await joinWaitlist({ zoneId, date, startSlot: slot, duration: waitDuration });
+      message.success(`已加入候补：${joined.zoneName} ${joined.date} ${joined.timeRange}，`
+        + `当前第 ${joined.position} 位 / 共 ${joined.queueLength} 人`);
+      setWaitOpen(false);
+    } catch (e) {
+      // 原因（还有空位 / 名额已满 / 时段已过）由拦截器弹出，这里补一次余量刷新
+      await loadMap();
+    } finally {
+      setJoiningQueue(false);
+    }
+  };
+
   const seats = mapData && mapData.seats ? mapData.seats : [];
   const stats = mapData ? mapData.stats : null;
   const floorClosed = mapData ? mapData.floorStatus === FLOOR_STATUS.CLOSED : false;
+
+  /** 当前分区的实时余量：与分区卡片、下拉项共用同一份派生结果，不在前端再数一遍座位。 */
+  const currentZone = zoneId ? zones.find((z) => z.zoneId === zoneId) : null;
+
+  /**
+   * 满座才给候补入口。
+   *
+   * ★ 还有空位时排队没意义（后端也会拒）；groupRequired 分区那里个人散约本来就下不了单，
+   * 候补到确认那一步同样会被挡，那种区应引导去建队。
+   */
+  const canJoinQueue = Boolean(currentZone
+    && currentZone.totalSeats > 0
+    && currentZone.freeSeats === 0
+    && !floorClosed
+    && zoneRules && zoneRules.eligible !== false && zoneRules.groupRequired !== true
+    && currentSlotOption && currentSlotOption.bookable !== false);
 
   /** 选中桌的实时汇总：每轮轮询按最新占用重算，桌位消失则回到未选状态。 */
   const selectedTable = useMemo(() => {
@@ -429,6 +479,25 @@ export default function SeatMap() {
       {currentSlotOption && currentSlotOption.bookable === false ? (
         <Alert type="info" showIcon message="当前所选时段已过期，仅可查看，不可预约" style={{ marginBottom: 12 }} />
       ) : null}
+      {currentZone && currentZone.totalSeats > 0 && currentZone.freeSeats === 0 && !floorClosed ? (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={`${currentZone.name} 在本时段已满`}
+          description={canJoinQueue ? (
+            <Space wrap>
+              <span>
+                {`有人取消或提前结束时，队首会收到 ${waitlistOfferMin} 分钟确认通知；每人最多同时挂 ${waitlistMaxActive} 条。`}
+              </span>
+              <Button size="small" type="primary" icon={<HourglassOutlined />} onClick={() => setWaitOpen(true)}>
+                加入候补
+              </Button>
+              <Button size="small" type="link" onClick={() => navigate('/my/waitlist')}>我的候补</Button>
+            </Space>
+          ) : '该分区暂不支持个人候补：仅整组预约的分区请去「组队学习」，或改选其他分区。'}
+        />
+      ) : null}
       {error ? <Alert type="error" message={error} style={{ marginBottom: 12 }} /> : null}
 
       {/* 3. 图例条（常驻） */}
@@ -497,6 +566,28 @@ export default function SeatMap() {
           ? '整桌模式：点空闲（绿色）座位选中它所在的整桌，座位在队伍锁定时刻才真正占下。页面每 30 秒自动刷新。'
           : '点击空闲（绿色）座位即可预约；页面每 30 秒自动刷新。'}
       </div>
+
+      {/* 候补弹层：只收时长，座位由服务端在确认那一刻现场挑 */}
+      <Modal
+        title={`候补 ${currentZone ? currentZone.name : ''} · ${date} ${slotStartLabel(slot)} 起`}
+        open={waitOpen}
+        onCancel={() => setWaitOpen(false)}
+        onOk={handleJoinQueue}
+        okText="确认排队"
+        cancelText="先不排"
+        confirmLoading={joiningQueue}
+      >
+        <Radio.Group
+          value={waitDuration}
+          onChange={(e) => setWaitDuration(e.target.value)}
+          options={selectableDurations}
+          optionType="button"
+        />
+        <Typography.Paragraph type="secondary" style={{ marginTop: 12 }}>
+          候补不留座：位置释放后由服务端当场挑一座，并重新走完整校验（信用分、单日累计、高峰限制同样生效）。
+          超时未确认只顺延给下一位，不记违规。
+        </Typography.Paragraph>
+      </Modal>
 
       {/* 预约抽屉 */}
       <Drawer

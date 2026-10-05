@@ -10,6 +10,8 @@ import {
   GROUP_INVITE_TTL_MIN,
   GROUP_LOCK_BEFORE_MIN,
   GROUP_MIN_MEMBERS,
+  WAITLIST_MAX_ACTIVE,
+  WAITLIST_OFFER_MIN,
 } from '../constants';
 
 /** 规则中心不可用时的兜底配置。 */
@@ -23,6 +25,8 @@ const FALLBACK = {
   groupInviteTtlMin: GROUP_INVITE_TTL_MIN,
   groupMinMembers: GROUP_MIN_MEMBERS,
   groupAttendGraceMin: GROUP_ATTEND_GRACE_MIN,
+  waitlistOfferMin: WAITLIST_OFFER_MIN,
+  waitlistMaxActive: WAITLIST_MAX_ACTIVE,
 };
 
 /**

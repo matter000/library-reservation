@@ -10,6 +10,7 @@ import SeatMap from '../pages/SeatMap';
 import MyReservations from '../pages/MyReservations';
 import GroupCreate from '../pages/GroupCreate';
 import MyGroup from '../pages/MyGroup';
+import MyWaitlist from '../pages/MyWaitlist';
 import Credit from '../pages/Credit';
 import Profile from '../pages/Profile';
 import FloorManage from '../pages/admin/FloorManage';
@@ -61,6 +62,7 @@ export default function AppRoutes() {
         <Route path="/floors" element={<FloorList />} />
         <Route path="/floors/:floorId/seats" element={<SeatMap />} />
         <Route path="/my/reservations" element={<MyReservations />} />
+        <Route path="/my/waitlist" element={<MyWaitlist />} />
         <Route path="/groups/create" element={<GroupCreate />} />
         <Route path="/groups" element={<MyGroup />} />
         <Route path="/credit" element={<Credit />} />
