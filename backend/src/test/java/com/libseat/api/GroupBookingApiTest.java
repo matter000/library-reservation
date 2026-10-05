@@ -223,4 +223,39 @@ class GroupBookingApiTest extends GroupTestSupport {
             dropGroupArtifacts(groupId, tableId);
         }
     }
+
+    @Test
+    @DisplayName("【B5】一组最多 6 人：8 座桌省略上限按 6 收，显式 9 人 4001，满员后第 7 个邀请被拒")
+    void groupSizeCappedAtSixMembers() throws Exception {
+        long tableId = newTable(8);
+        String leader = newUser();
+        Long groupId = null;
+        try {
+            MvcResult tooMany = createGroupRaw(leader, tableId, 9, null);
+            assertEquals(PARAM_ERROR, code(tooMany), "9 人应被拦下，实际：" + body(tooMany));
+            assertTrue(msg(tooMany).contains("6"), "回执必须说明上限是 6 人，实际：" + msg(tooMany));
+
+            // ★ 上下限要一起成立：省略上限被夹到 6 之后，「成团人数 7」就不能再被放过
+            MvcResult minAboveCap = createGroupRaw(leader, tableId, null, 7);
+            assertEquals(PARAM_ERROR, code(minAboveCap),
+                    "成团人数超过夹后上限应 4001，实际：" + body(minAboveCap));
+
+            groupId = createGroup(leader, tableId);
+            JsonNode formed = detail(leader, groupId);
+            assertEquals(BizConstants.GROUP_MAX_MEMBERS, formed.path("maxMembers").asInt(),
+                    "★ 省略上限取 min(本桌座位数, 6)：桌子多大不决定一队人数，产品口径才决定"
+                            + "（桌位 seatCount 允许到 12，只靠家具尺寸约束等于放弃 PRD §12-6/16）");
+
+            for (int i = 0; i < BizConstants.GROUP_MAX_MEMBERS - 1; i++) {
+                MvcResult invited = invite(leader, groupId, newMember()[0]);
+                assertEquals(0, code(invited), "第 " + (i + 2) + " 人应能入队：" + body(invited));
+            }
+            MvcResult seventh = invite(leader, groupId, newMember()[0]);
+            assertEquals(STATUS_NOT_ALLOWED, code(seventh),
+                    "满 6 人后第 7 个邀请必须被拒，实际：" + body(seventh));
+            assertTrue(msg(seventh).contains("6"), "要给出上限数字，实际：" + msg(seventh));
+        } finally {
+            dropGroupArtifacts(groupId, tableId);
+        }
+    }
 }

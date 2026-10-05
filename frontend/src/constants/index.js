@@ -212,6 +212,8 @@ export const GROUP_INVITE_TTL_MIN = 10;
 
 export const GROUP_MIN_MEMBERS = 2;
 
+export const GROUP_MAX_MEMBERS = 6;
+
 export const GROUP_ATTEND_GRACE_MIN = 30;
 
 /** 组队页轮询间隔：锁定与邀请过期都按分钟推进，30 秒会让倒计时看起来「卡住」。 */

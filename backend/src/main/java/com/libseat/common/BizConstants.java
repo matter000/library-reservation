@@ -120,6 +120,15 @@ public final class BizConstants {
     /** 成团最少人数（组长自己算一个）。 */
     public static final int GROUP_MIN_MEMBERS = 2;
 
+    /**
+     * 一队最多几人（PRD §6.3「2~6 人一组」、§12-6/16 同一条）。
+     *
+     * <p>★ 这是流程口径而不是运营旋钮，所以走常量：桌位 {@code seat_count} 允许到 12，
+     *   如果只在保存桌位时限制座位数，就等于把"一组 6 人"这条产品承诺交给了家具尺寸。
+     *   省略人数上限时按 {@code min(本桌座位数, 本值)} 取值，而不是按座位数。
+     */
+    public static final int GROUP_MAX_MEMBERS = 6;
+
     /** 邀请码位数。 */
     public static final int GROUP_INVITE_CODE_LENGTH = 6;
 

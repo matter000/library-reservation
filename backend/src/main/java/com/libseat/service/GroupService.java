@@ -118,8 +118,18 @@ public class GroupService {
             throw new BusinessException(ErrorCode.STATUS_NOT_ALLOWED,
                     "该桌可用座位不足 " + BizConstants.GROUP_MIN_MEMBERS + " 个，无法组队");
         }
-        int maxMembers = request.getMaxMembers() == null ? seats.size() : request.getMaxMembers();
+        // ★ PRD §6.3「2~6 人一组」：桌位可以建模到 12 座，但一队的人数上限是流程口径，
+        //   不能因为"桌子够大"就组出 8 个人的队 —— 那会把组长签到=全队签到、
+        //   成员缺席各记一次违规这两条规则的后果放大到没人敢用的程度。
+        //   省略时取「本桌座位数与 6 的较小值」，而不是本桌座位数。
+        int maxMembers = request.getMaxMembers() == null
+                ? Math.min(seats.size(), BizConstants.GROUP_MAX_MEMBERS) : request.getMaxMembers();
         int minMembers = request.getMinMembers() == null ? BizConstants.GROUP_MIN_MEMBERS : request.getMinMembers();
+        if (maxMembers > BizConstants.GROUP_MAX_MEMBERS) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR,
+                    "一组最多 " + BizConstants.GROUP_MAX_MEMBERS + " 人，本桌 " + seats.size()
+                            + " 座请拆成多队预约");
+        }
         if (minMembers > maxMembers) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "成团人数不能大于人数上限");
         }

@@ -433,7 +433,9 @@ CREATE TABLE IF NOT EXISTS t_group (
     invite_code VARCHAR(10) NULL,             -- 6 位，10 分钟有效
     invite_expire_time TIMESTAMP NULL,
     min_members INT NOT NULL DEFAULT 2,
-    max_members INT NOT NULL DEFAULT 6,
+    max_members INT NOT NULL DEFAULT 6,        -- ★ 上限是流程口径（BizConstants.GROUP_MAX_MEMBERS），
+                                                --   省略时取 min(本桌座位数, 6)：桌位 seatCount 可到 12，
+                                                --   让家具决定一队人数等于放弃 PRD §12-6/16
     lock_time   TIMESTAMP   NOT NULL,         -- 开始前 30 分钟
     status      VARCHAR(20) NOT NULL,         -- FORMING/LOCKED/RESERVED/CHECKED_IN/COMPLETED/CANCELLED/FAILED
     create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

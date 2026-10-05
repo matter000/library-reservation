@@ -27,6 +27,7 @@ export default function GroupCreate() {
 
   const {
     advanceDays, allowedDurations, durationOptions, defaultDuration, groupLockBeforeMin, groupMinMembers,
+    groupMaxMembers,
   } = useBookingConfig();
   const bookableDates = useMemo(() => getBookableDates(advanceDays), [advanceDays]);
 
@@ -191,16 +192,19 @@ export default function GroupCreate() {
 
   const memberCountChoices = useMemo(() => {
     const usable = selectedTable ? selectedTable.usable : 0;
+    // ★ 上限取「本桌座位数与一组人数上限的较小值」：桌子可以建模到 12 座，
+    //   但 PRD §6.3 的 2~6 人是流程口径。选项里给出 7~12 就等于让用户挑一个必然被拒的值。
+    const cap = Math.min(usable, groupMaxMembers);
     const min = Array.from(
-      { length: Math.max(0, usable - groupMinMembers + 1) },
+      { length: Math.max(0, cap - groupMinMembers + 1) },
       (_, i) => ({ value: groupMinMembers + i, label: `${groupMinMembers + i} 人` }),
     );
     const max = Array.from(
-      { length: usable },
+      { length: cap },
       (_, i) => ({ value: i + 1, label: `${i + 1} 人` }),
     );
-    return { min, max };
-  }, [selectedTable, groupMinMembers]);
+    return { min, max, cap };
+  }, [selectedTable, groupMinMembers, groupMaxMembers]);
 
   const handleSubmit = async (values) => {
     setSubmitting(true);
@@ -330,7 +334,7 @@ export default function GroupCreate() {
             <Form.Item
               label="人数上限"
               name="maxMembers"
-              tooltip="省略时按本桌可用座位数"
+              tooltip={`省略时按本桌可用座位数，且不超过 ${groupMaxMembers} 人（PRD §6.3 的一组人数上限）`}
             >
               <Select
                 style={{ width: 140 }}

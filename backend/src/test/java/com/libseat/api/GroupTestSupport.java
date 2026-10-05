@@ -53,6 +53,9 @@ abstract class GroupTestSupport extends ApiTestBase {
     /** 状态不允许。 */
     protected static final int STATUS_NOT_ALLOWED = 4093;
 
+    /** 参数不合法（人数上下限都从这里出）。 */
+    protected static final int PARAM_ERROR = 4001;
+
     /** 组队预约时长（小时）。 */
     protected static final int DURATION_HOURS = 2;
 
@@ -137,17 +140,29 @@ abstract class GroupTestSupport extends ApiTestBase {
     }
 
     protected long createGroup(String token, long tableId) throws Exception {
+        MvcResult result = createGroupRaw(token, tableId, null, null);
+        assertEquals(0, code(result), "建队应成功：" + body(result));
+        return data(result).path("groupId").asLong();
+    }
+
+    /** 建队的原始入口：要断言「被拒」与「人数上下限」时必须能显式传值（null 表示用服务端默认）。 */
+    protected MvcResult createGroupRaw(String token, long tableId, Integer maxMembers, Integer minMembers)
+            throws Exception {
         Map<String, Object> body = new HashMap<>();
         body.put("zoneId", seminarZoneId());
         body.put("tableId", tableId);
         body.put("date", date());
         body.put("startSlot", startSlot());
         body.put("duration", DURATION_HOURS);
-        MvcResult result = exec(post("/api/groups")
+        if (maxMembers != null) {
+            body.put("maxMembers", maxMembers);
+        }
+        if (minMembers != null) {
+            body.put("minMembers", minMembers);
+        }
+        return exec(post("/api/groups")
                 .contentType(MediaType.APPLICATION_JSON).content(json(body))
                 .header("Authorization", bearer(token)));
-        assertEquals(0, code(result), "建队应成功：" + body(result));
-        return data(result).path("groupId").asLong();
     }
 
     /** 建队 + 邀请 count 人并让其确认，返回队伍 ID（多个用例都需要这个「已就绪」现场）。 */

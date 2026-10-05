@@ -131,6 +131,9 @@ public class FloorDTO {
         /** 组队：成团最少人数。 */
         private Integer groupMinMembers;
 
+        /** 组队：一队最多几人（PRD §6.3 的 2~6 人；前端人数选项按它生成，别让选项里能选、提交被拒）。 */
+        private Integer groupMaxMembers;
+
         /** 组队：组长签到后成员确认入座的宽限（分钟）。 */
         private Integer groupAttendGraceMin;
 

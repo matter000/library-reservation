@@ -492,6 +492,26 @@ Expect '32.3 字典带本人今日已用次数（选择器靠它置灰，不让�
 Expect '32.4 标了用满的原因必须给文案' (@(
     $dict.data | Where-Object { $_.exhausted -eq $true -and [string]::IsNullOrEmpty($_.exhaustedReason) }).Count) 0
 
+# ---------- 33. 组队人数上限（PRD §6.3「2~6 人一组」；桌子多大不决定队伍上限） ----------
+$cfg = Invoke-Api GET '/api/config/booking' $null $stuToken
+Expect '33.1 配置里给出一组人数上限（前端选项按它生成）' $cfg.data.groupMaxMembers 6
+Expect '33.2 成团下限也在配置里' $cfg.data.groupMinMembers 2
+$grpTables = Invoke-Api GET "/api/staff/tables?zoneId=$($groupZone.zoneId)" $null $lib.data.token
+$grpTableId = ($grpTables.data | Select-Object -First 1).tableId
+if ($null -eq $grpTableId) {
+    Skip '33.3 超限建队被拒' '仅组队分区下没有建模桌位'
+} else {
+    Expect '33.3 超过上限的建队被拒（4001）' (Biz-Code (Invoke-Api POST '/api/groups' @{
+        zoneId = $groupZone.zoneId; tableId = $grpTableId; date = $tomorrow2; startSlot = 18; duration = 2
+        maxMembers = ($cfg.data.groupMaxMembers + 3)
+    } $smoke2)) 4001
+    # 省略上限时夹到 min(座位数, 6)，所以「成团 7 人」也不能被放过
+    Expect '33.4 成团人数超过夹后上限同样被拒（两条上下限同源）' (Biz-Code (Invoke-Api POST '/api/groups' @{
+        zoneId = $groupZone.zoneId; tableId = $grpTableId; date = $tomorrow2; startSlot = 18; duration = 2
+        minMembers = ($cfg.data.groupMaxMembers + 1)
+    } $smoke2)) 4001
+}
+
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ("冒烟脚本执行完毕：PASS {0} / FAIL {1} / SKIP {2}" -f $script:passCount, $script:failCount, $script:warnCount) `
     -ForegroundColor $(if ($script:failCount -gt 0) { 'Red' } else { 'Green' })
