@@ -99,6 +99,16 @@ abstract class ApiTestBase {
     }
 
     /**
+     * 夹具能安全使用的最远日期偏移。
+     *
+     * <p>★ 这里跟的不再是全局 {@code book.advance-days}，而是**分区口径**：
+     * V2 起「分区值取代全局默认」（PRD §12-5 分区是规则载体），种子里多数分区写的是提前 3 天（含当天），
+     * 也就是 {@code today..today+2}。以前按全局 7 天取日期，等于所有用例都默认活在最宽的那档分区里，
+     * 一旦某个分区的本区口径更紧就整批失真。
+     */
+    protected static final int FIXTURE_MAX_OFFSET = 2;
+
+    /**
      * 第 n 个<b>工作日</b>的日期偏移（周六周日跳过）。
      *
      * <p>V2 起开放窗口按日型不同（工作日 08:00-22:00、周末 09:00-21:00），
@@ -117,8 +127,8 @@ abstract class ApiTestBase {
                 counted++;
             }
         }
-        // 仍需落在 7 天可约窗口内，否则用例会因为窗口校验而失真
-        return Math.min(step, com.libseat.common.BizConstants.ADVANCE_DAYS - 1);
+        // 仍需落在分区可约窗口内，否则用例会因为窗口校验而失真
+        return Math.min(step, FIXTURE_MAX_OFFSET);
     }
 
     /**
@@ -282,6 +292,32 @@ abstract class ApiTestBase {
 
     protected static String d(int offset) {
         return LocalDate.now().plusDays(offset).toString();
+    }
+
+    /**
+     * 取某日某格上第一个「空闲可约」的座位 ID。
+     *
+     * <p>夹具以前靠"约到 3~5 天后"来躲开种子数据占用的格子，V2 起分区口径把窗口收紧到 2 天以内，
+     * 那条路不再通用；与其给每个用例挑一个不会撞车的座位号，不如直接问平面图要一个空的。
+     *
+     * @param floorId 楼层
+     * @param date    yyyy-MM-dd
+     * @param slot    起始时段格
+     * @return 空闲座位 ID
+     */
+    protected long freeSeatOn(long floorId, String date, int slot) throws Exception {
+        MvcResult result = exec(get("/api/seats/map")
+                .param("floorId", String.valueOf(floorId))
+                .param("date", date)
+                .param("slot", String.valueOf(slot))
+                .header("Authorization", bearer(admin)));
+        assertEquals(0, code(result), "平面图查询失败：" + body(result));
+        for (JsonNode seat : data(result).path("seats")) {
+            if ("FREE".equals(seat.path("displayStatus").asText())) {
+                return seat.path("seatId").asLong();
+            }
+        }
+        throw new AssertionError(date + " 第 " + slot + " 格没有空闲座位，用例需要换时段");
     }
 
     protected String displayStatus(long floorId, long seatId, String date, int slot) throws Exception {

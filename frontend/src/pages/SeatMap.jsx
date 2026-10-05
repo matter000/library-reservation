@@ -470,7 +470,9 @@ export default function SeatMap() {
           showIcon
           style={{ marginBottom: 12 }}
           message={`${zoneRules.zoneName}（${zoneRules.zoneTypeText}）：`
-            + `单次最长 ${zoneRules.maxDurationMin} 分钟 · 提前 ${zoneRules.advanceDays} 天`
+            // 分区没写本区口径时吃全馆默认值，这里必须显示"生效值"，否则学生按分区空值理解窗口会算错
+            + `单次最长 ${zoneRules.maxDurationMin} 分钟 · 提前 `
+            + `${zoneRules.advanceDays ?? advanceDays} 天${zoneRules.advanceDays == null ? '（全馆默认）' : ''}`
             + ` · ${zoneRules.leaveAllowed ? `可暂离 ${zoneRules.leaveMaxMin} 分钟` : '不支持暂离'}`
             + (zoneRules.groupRequired ? ' · 仅整组预约' : (zoneRules.allowGroup ? ' · 可组队' : ''))
             + (zoneRules.peakFlag ? ' · 当前时段为高峰' : '')}

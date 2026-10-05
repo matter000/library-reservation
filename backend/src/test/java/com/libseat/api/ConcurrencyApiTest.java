@@ -210,11 +210,11 @@ class ConcurrencyApiTest extends ApiTestBase {
         try {
             futures.add(pool.submit(() -> {
                 start.await(5, TimeUnit.SECONDS);
-                return createReservation(t1, seat, d(4), slot(10), 2);
+                return createReservation(t1, seat, d(1), slot(10), 2);
             }));
             futures.add(pool.submit(() -> {
                 start.await(5, TimeUnit.SECONDS);
-                return createReservation(t2, seat, d(5), slot(10), 2);
+                return createReservation(t2, seat, d(2), slot(10), 2);
             }));
             start.countDown();
             List<Integer> codes = new ArrayList<>();

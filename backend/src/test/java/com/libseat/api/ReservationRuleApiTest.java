@@ -33,22 +33,6 @@ class ReservationRuleApiTest extends ApiTestBase {
         return data(exec(get("/api/auth/me").header("Authorization", bearer(token)))).path("userId").asLong();
     }
 
-    /** 在指定楼层 / 日期 / 时段上找一个当前为 FREE 的座位（避开种子数据占用的座位）。 */
-    private long freeSeatOn(long floorId, String date, int slot) throws Exception {
-        MvcResult result = exec(get("/api/seats/map")
-                .param("floorId", String.valueOf(floorId))
-                .param("date", date)
-                .param("slot", String.valueOf(slot))
-                .header("Authorization", bearer(u1)));
-        assertEquals(0, code(result));
-        for (JsonNode seat : data(result).path("seats")) {
-            if ("FREE".equals(seat.path("displayStatus").asText())) {
-                return seat.path("seatId").asLong();
-            }
-        }
-        throw new AssertionError("楼层 " + floorId + " 在 " + date + " 时段 " + slot + " 没有空闲座位");
-    }
-
     private Reservation insertReservation(Long userId, long seatId, LocalDate date, int startSlot,
                                           int duration, ReservationStatus status) {
         Reservation reservation = Reservation.builder()
@@ -129,21 +113,39 @@ class ReservationRuleApiTest extends ApiTestBase {
     @Test
     @DisplayName("【date】昨天 / 今天+7 返回 4001；今天+6 边界应成功")
     void dateWindow() throws Exception {
-        long seat = seatId(floor1, "A21");
+        long seat = seatId(floor1, "A21");   // 1F-SILENT：本区口径「提前 3 天（含当天）」→ today..today+2
         String me = newUser();
 
         MvcResult yesterday = reserveRaw(me, seat, d(-1), slot(10), 2);
         assertEquals(PARAM_ERROR, code(yesterday), "昨天应 4001，实际：" + body(yesterday));
 
-        MvcResult tooFar = reserveRaw(me, seat, d(7), slot(10), 2);
-        assertEquals(PARAM_ERROR, code(tooFar), "今天+7 应 4001，实际：" + body(tooFar));
+        MvcResult beyondZone = reserveRaw(me, seat, d(3), slot(10), 2);
+        assertEquals(PARAM_ERROR, code(beyondZone), "静音区第 4 天应 4001，实际：" + body(beyondZone));
+        assertTrue(msg(beyondZone).contains("静音自习区"),
+                "★ 报错必须点名是哪一区的口径，否则用户会去怪全局配置：" + msg(beyondZone));
+        assertTrue(msg(beyondZone).contains("3 天"), "要给出本区可提前天数：" + msg(beyondZone));
 
-        JsonNode edge = reserveOk(me, seat, d(6), slot(10), 2);
-        assertEquals(d(6), edge.path("date").asText(), "今天+6 是最远可约日期，应成功");
+        JsonNode edge = reserveOk(me, seat, d(2), slot(10), 2);
+        assertEquals(d(2), edge.path("date").asText(), "today+2 是静音区最远可约日期，应成功");
 
         if (LocalDateTime.now().getHour() < 21) {
             JsonNode todayOk = reserveOk(me, seat, d(0), slot(21), 1);
             assertEquals(d(0), todayOk.path("date").asText(), "今天最晚时段（21:00-22:00）应可预约");
+        }
+
+        // ★ 分区没配本区口径时才回落全局规则值（book.advance-days，默认 7 → today..today+6）。
+        //   与上面那条 d(3) 成对：只看这条会以为"全局说了算"，只看上面那条会以为"分区是硬天花板"。
+        Long zoneId = jdbc.queryForObject("select zone_id from t_seat where id = ?", Long.class, seat);
+        assertTrue(zoneId != null, "A21 应已归属分区");
+        jdbc.update("update t_zone set advance_days = null where id = ?", zoneId);
+        try {
+            JsonNode globalEdge = reserveOk(newUser(), seat, d(6), slot(10), 2);
+            assertEquals(d(6), globalEdge.path("date").asText(),
+                    "分区未配时应吃全局 7 天窗口，today+6 应成功，实际：" + globalEdge);
+            MvcResult tooFar = reserveRaw(newUser(), seat, d(7), slot(10), 2);
+            assertEquals(PARAM_ERROR, code(tooFar), "today+7 应被全局窗口拦下，实际：" + body(tooFar));
+        } finally {
+            jdbc.update("update t_zone set advance_days = 3 where id = ?", zoneId);
         }
     }
 

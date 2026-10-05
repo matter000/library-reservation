@@ -229,6 +229,26 @@ public class ZoneService {
     }
 
     /**
+     * 可提前预约天数：**分区是本区口径**（PRD §12-5「分区是规则载体」，§5 的分区表逐区写明「提前预约 3 天 / 1 天」），
+     * 规则中心的 {@code book.advance-days} 只在分区没配时兜底。
+     *
+     * <p>★ 这里刻意不取 {@code min(全局, 分区)}：min 只能收紧、不能放宽，
+     *   种子里所有比默认更宽的分区值（考研专座可提前 7 天、暂离放宽到 120 分钟）都会变成永远不生效的死配置。
+     *   本轮逐条对账 PRD §12 抓出的 B6（考研专座每日 5 次被原因的 3 夹掉）就是同一个形状的错误，
+     *   口径已确认按「分区取代全局默认」执行。
+     *
+     * @param zone       座位所属分区，可为 null（座位未归区/历史数据）
+     * @param globalDays 规则中心当前值
+     * @return 本区生效的可提前天数
+     */
+    public static int effectiveAdvanceDays(Zone zone, int globalDays) {
+        if (zone == null || zone.getAdvanceDays() == null || zone.getAdvanceDays() <= 0) {
+            return globalDays;
+        }
+        return zone.getAdvanceDays();
+    }
+
+    /**
      * 校验并规范化角色列表为 CSV（每段必须是合法 {@link UserRole}）。
      *
      * @param roles 角色名列表

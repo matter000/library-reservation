@@ -175,10 +175,14 @@ public class ReservationService {
             }
         }
 
-        // ---------- 第 2 步：日期在 [今天, 今天 + advance-days - 1] ----------
-        int advanceDays = ruleConfigService.advanceDays();
+        // ---------- 第 2 步：日期在 [今天, 今天 + 可提前天数 - 1] ----------
+        // ★ 可提前天数取**分区口径**（本区没配才回落到全局规则值），见 ZoneService#effectiveAdvanceDays。
+        int advanceDays = ZoneService.effectiveAdvanceDays(seatZone, ruleConfigService.advanceDays());
         if (date.isBefore(today) || date.isAfter(today.plusDays(advanceDays - 1L))) {
-            throw new BusinessException(ErrorCode.PARAM_ERROR, "只能预约今天起 " + advanceDays + " 天内的座位");
+            throw new BusinessException(ErrorCode.PARAM_ERROR,
+                    (seatZone == null ? "" : seatZone.getName() + " 只能")
+                            + "预约今天起 " + advanceDays + " 天内的座位"
+                            + (seatZone == null ? "" : "（本区口径，含当天）"));
         }
 
         // ---------- 第 2b 步：该日不开放（日型整体闭馆或日历临时闭馆）----------

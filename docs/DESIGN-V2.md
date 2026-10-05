@@ -810,7 +810,18 @@ CREATE INDEX IF NOT EXISTS idx_patrol_status ON t_patrol_task (status, level, cr
 | `V13__notice.sql` | S5 | `t_notice` |
 | `V14__patrol.sql` | S6 | `t_patrol_task` + `uk_patrol_open` + 巡查阈值规则种子 |
 | `V15__leave_reason_limit.sql` | S7 | T-V2-24 收口：把「就餐每日 2 次」真正写进数据（暂离计次拆成两条口径后，原因表的 `daily_limit` 不再夹分区总数） |
-| ~~`V16__seed_demo.sql`~~ | S7 | **仍未做**：演示数据补齐（教师/馆员账号样例、历史违规样例）。造历史违规必须同时写 `t_violation`+`t_credit_log`+`t_user.credit_score`，否则破 `sum(delta)==credit_score` 对账不变式 |
+| `V16__zone_advance_days_nullable.sql` | S7 | `t_zone.advance_days` 放开 NOT NULL：分区没配时才由全局 `book.advance-days` 兜底，否则"跟随全馆"这个状态在库里无法表达，全局规则就成了死配置 |
+| ~~`V17__seed_demo.sql`~~ | S7 | **仍未做**：演示数据补齐（教师/馆员账号、历史违规样例）。造历史违规必须同时写 `t_violation`+`t_credit_log`+`t_user.credit_score`，否则破 `sum(delta)==credit_score` 对账不变式 |
+
+### 14.1 全局规则值与分区值的合成口径（2026-10-05 裁定）
+
+**分区值 = 本区口径，非空即取代全局默认；全局值只在分区没配时兜底。**
+天数一律按「含当天」解释：`[今天, 今天 + N - 1]`。
+
+★ 刻意不用 `min(全局, 分区)`：min 只能收紧、不能放宽，会让种子里所有比默认更宽的分区值
+（考研专座可提前 7 天、暂离放宽到 120 分钟、单日上限 480 分钟）变成永远不生效的死配置。
+本轮逐条对账 PRD §12 抓出的 B6（考研专座每日 5 次被原因的 3 夹掉）就是同一个形状。
+消费点：`ZoneService#effectiveAdvanceDays`（预约闸门与建队校验共用同一处判定）。
 
 **必须同时做的配置改动**：停用 `spring.sql.init.mode`（否则与 Flyway 双跑建表），改为 `spring.flyway.baseline-on-migrate=true` + `baseline-version=1`；MySQL/H2 双方言目录 `db/migration/{h2,mysql}`。
 

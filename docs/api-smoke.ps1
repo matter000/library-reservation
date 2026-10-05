@@ -63,6 +63,17 @@ function Biz-Code {
     return $null
 }
 
+# 报错文案同理：4xx 走 __body，成功走 .message。这里只量长度不比中文
+# （PS 5.1 按本地代码页解 UTF-8，中文字面量比较必然假失败），
+# "空话"与"给了具体天数"的长度差别足够把问题暴露出来。
+function Biz-Message {
+    param([object]$Response)
+    if ($null -ne $Response.__body) {
+        try { return ([string](ConvertFrom-Json $Response.__body).message) } catch { return '' }
+    }
+    return [string]$Response.message
+}
+
 $script:passCount = 0
 $script:failCount = 0
 $script:warnCount = 0
@@ -167,7 +178,10 @@ Show '9. 时段选项条数/首项' @{
 # ★ 必须按「目标日期 + 目标时段」查平面图：第 8 步的 map 是「当前时段」的空闲态，
 #   拿它选出的座位去约明天 14 点，重复执行时必然撞 uk_slot_seat_date_idx → 4091。
 $tomorrow = (Get-Date).AddDays(1).ToString('yyyy-MM-dd')
-$smokeStart = Get-Random -Minimum 8 -Maximum 20
+# ★ 随机起始格只能取 8~15：第 22 步会用同一个账号约「18 点起 2 小时」，
+#   取到 17~20 就会与它时段重叠 → 22.1 变成 4092。这个坑以前有约三成概率出现，
+#   只是每次都被当成"脚本偶发"，其实是两步共用了同一个测试账号。
+$smokeStart = Get-Random -Minimum 8 -Maximum 16
 $targetMap = Invoke-Api GET "/api/seats/map?floorId=$floorId&date=$tomorrow&slot=$smokeStart" $null $stuToken
 $freeSeat = ($targetMap.data.seats | Where-Object { $_.displayStatus -eq 'FREE' } | Select-Object -First 1)
 $smokeLogin = Invoke-Api POST '/api/auth/login' @{ username = "smoke$stamp"; password = '123456' }
@@ -510,6 +524,27 @@ if ($null -eq $grpTableId) {
         zoneId = $groupZone.zoneId; tableId = $grpTableId; date = $tomorrow2; startSlot = 18; duration = 2
         minMembers = ($cfg.data.groupMaxMembers + 1)
     } $smoke2)) 4001
+}
+
+# ---------- 34. 可提前天数取「本区口径」（V2 起分区值取代全局默认，全局只在分区没配时兜底） ----------
+$tightZone = @($zones | Where-Object { $_.advanceDays -eq 1 })[0]
+if ($null -eq $tightZone) {
+    Skip '34 分区窗口' '本楼层没有「提前 1 天」的分区，无法演示本区口径比全馆更紧'
+} else {
+    $tightMap = Invoke-Api GET "/api/seats/map?floorId=$floorId&date=$tomorrow2&slot=20" $null $stuToken
+    $tightSeat = $tightMap.data.seats |
+        Where-Object { $_.displayStatus -eq 'FREE' -and $_.zoneId -eq $tightZone.zoneId } | Select-Object -First 1
+    if ($null -eq $tightSeat) {
+        Skip '34 分区窗口' "$($tightZone.name) 在 $tomorrow2 20:00 无空座"
+    } else {
+        $beyond = Invoke-Api POST '/api/reservations' @{
+            seatId = $tightSeat.seatId; date = $tomorrow2; startSlot = 20; duration = 1
+        } $smoke2
+        $beyondMsg = Biz-Message $beyond
+        Show '34. 超本区窗口的预约' @{ code = (Biz-Code $beyond); msgLen = $beyondMsg.Length }
+        Expect '34.1 超出本区可提前天数应 4001' (Biz-Code $beyond) 4001
+        Expect '34.2 报错必须给出天数而不是空话' ($beyondMsg.Length -gt 8) $true
+    }
 }
 
 Write-Host "========================================" -ForegroundColor Green

@@ -217,19 +217,27 @@ class ZoneSeatApiTest extends ApiTestBase {
     @DisplayName("【分区上限】休闲阅览 60 分钟，学生约 2 小时 → 4001")
     void zoneMaxDurationEnforced() throws Exception {
         long lounge = zoneIdOf(u1, floor1, "1F-LOUNGE");
-        JsonNode map = seatMap(floor1, dw(3), slot(10), lounge, u1);
-        long seat = map.path("seats").get(0).path("seatId").asLong();
-        MvcResult tooLong = exec(post("/api/reservations")
-                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                .content(json(java.util.Map.of("seatId", seat, "date", dw(3), "startSlot", slot(10), "duration", 2)))
-                .header("Authorization", bearer(u1)));
-        assertEquals(PARAM_ERROR, code(tooLong), "超过分区上限应被拒：" + body(tooLong));
-        assertTrue(msg(tooLong).contains("60"), "提示应给出分区上限，实际：" + msg(tooLong));
+        // ★ 本用例测的是「分区单次时长上限」，而休闲阅览区的本区口径是「只能约当天」——
+        //   夜间当天已无可约时段，窗口校验会抢在时长校验前面报 4001，报的还不是本用例要验的那条。
+        //   所以这里临时把该分区的窗口放宽到 3 天，把时长规则单独隔离出来，用完立刻复原。
+        jdbc.update("update t_zone set advance_days = 3 where id = ?", lounge);
+        try {
+            JsonNode map = seatMap(floor1, dw(3), slot(10), lounge, u1);
+            long seat = map.path("seats").get(0).path("seatId").asLong();
+            MvcResult tooLong = exec(post("/api/reservations")
+                    .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                    .content(json(java.util.Map.of("seatId", seat, "date", dw(3), "startSlot", slot(10), "duration", 2)))
+                    .header("Authorization", bearer(u1)));
+            assertEquals(PARAM_ERROR, code(tooLong), "超过分区上限应被拒：" + body(tooLong));
+            assertTrue(msg(tooLong).contains("60"), "提示应给出分区上限，实际：" + msg(tooLong));
 
-        assertEquals(0, code(exec(post("/api/reservations")
-                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                .content(json(java.util.Map.of("seatId", seat, "date", dw(3), "startSlot", slot(10), "duration", 1)))
-                .header("Authorization", bearer(u1)))), "1 小时在上限内应成功");
+            assertEquals(0, code(exec(post("/api/reservations")
+                    .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                    .content(json(java.util.Map.of("seatId", seat, "date", dw(3), "startSlot", slot(10), "duration", 1)))
+                    .header("Authorization", bearer(u1)))), "1 小时在上限内应成功");
+        } finally {
+            jdbc.update("update t_zone set advance_days = 1 where id = ?", lounge);
+        }
     }
 
     @Test

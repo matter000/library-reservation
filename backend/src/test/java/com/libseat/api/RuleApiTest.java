@@ -84,18 +84,32 @@ class RuleApiTest extends ApiTestBase {
         String me = newUser();
         long seatA06 = seatId(floor1, "A06");
         long seatA07 = seatId(floor1, "A07");
-        // 种子数据只覆盖 今天-6 ~ 今天+2，故第 5 个工作日一定无人占用，可稳定验证「窗口」这一步校验。
+        // 种子数据只覆盖 今天-6 ~ 今天+2，故窗口内最远那天一定无人占用，可稳定验证「窗口」这一步校验。
         // 必须取工作日：周末档案是 09:00-21:00，晚间时段会被开放窗口拒绝，用例就变成星期敏感。
         String beyond = dw(5);
 
-        assertEquals(0, code(reserveRaw(me, seatA06, beyond, slot(14), 1)), "默认 7 天窗口内应可预约");
+        assertEquals(0, code(reserveRaw(me, seatA06, beyond, slot(14), 1)), "默认窗口内应可预约");
+
+        Long zoneId = jdbc.queryForObject("select zone_id from t_seat where id = ?", Long.class, seatA06);
+        assertTrue(zoneId != null, "A06 应已归属分区（V2 起分区是规则载体）");
         try {
             assertEquals(0, code(updateRule(admin, "book.advance-days", "1")), "修改规则应成功");
-            MvcResult rejected = reserveRaw(me, seatA06, beyond, slot(15), 1);
+
+            // ① 分区配了本区口径时，改全局值不牵连它 —— 口径是「分区取代全局」，不是取小。
+            //    若哪天有人把它改回 min(全局, 分区)，这条就会红。
+            MvcResult zoneWins = reserveRaw(me, seatA06, beyond, slot(16), 1);
+            assertEquals(0, code(zoneWins),
+                    "静音区写着提前 3 天，全局收窄到 1 天也不该牵连它：" + body(zoneWins));
+
+            // ② 分区没配时才回落到全局规则值，此时改全局立即生效
+            jdbc.update("update t_zone set advance_days = null where id = ?", zoneId);
+            MvcResult rejected = reserveRaw(me, seatA06, beyond, slot(18), 1);
             assertEquals(PARAM_ERROR, code(rejected),
-                    "★ 窗口收窄为 1 天后，第 5 天必须被拒；若通过说明消费路径没接上配置：" + body(rejected));
+                    "★ 分区未配 → 走全局值；窗口收窄为 1 天后 today+2 必须被拒；"
+                            + "若通过说明消费路径没接上配置：" + body(rejected));
             assertTrue(msg(rejected).contains("1 天"), "提示文案应反映当前配置，实际：" + msg(rejected));
         } finally {
+            jdbc.update("update t_zone set advance_days = 3 where id = ?", zoneId);
             updateRule(admin, "book.advance-days", "7");
         }
         assertEquals(0, code(reserveRaw(newUser(), seatA07, beyond, slot(14), 1)), "恢复默认后应重新可预约");

@@ -434,12 +434,15 @@ class CreditPenaltyApiTest extends ApiTestBase {
                 .param("slot", String.valueOf(otherStart))
                 .header("Authorization", bearer(me))));
         for (JsonNode node : floor2Zones) {
-            if (node.path("dailyCapMin").isNull() && node.path("eligible").asBoolean(false)) {
+            // 对照分区还必须有「装得下这个日期」的窗口：2F 电子阅览区本区口径是提前 1 天，
+            // 拿它当对照会被窗口校验先拦成 4001，那条断言验的就不是「单日累计是分区口径」了。
+            if (node.path("dailyCapMin").isNull() && node.path("eligible").asBoolean(false)
+                    && node.path("advanceDays").asInt(0) >= 2) {
                 otherZoneId = node.path("zoneId").asLong();
                 break;
             }
         }
-        assertTrue(otherZoneId > 0, "2F 应有「本人可约且无单日上限」的分区，否则本用例要换对照分区："
+        assertTrue(otherZoneId > 0, "2F 应有「本人可约、无单日上限且窗口覆盖本日期」的分区，否则本用例要换对照分区："
                 + floor2Zones);
         assertEquals(0, code(book(me, freeSeatOfZone(floor2, otherZoneId, date, otherStart, 2, 0),
                         date, otherStart, 1)),

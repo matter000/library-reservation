@@ -624,9 +624,12 @@ public class GroupService {
      */
     private void validateTimeWindow(Zone zone, LocalDate date, int startSlot, int duration) {
         LocalDate today = LocalDate.now();
-        int advanceDays = ruleConfigService.advanceDays();
+        // ★ 与散客下单同一口径：可提前天数取分区值（本区没配才用全局规则值），
+        //   否则「建队时放行、锁定时拒绝」，队伍已经邀请了人，退回来就是白折腾一轮。
+        int advanceDays = ZoneService.effectiveAdvanceDays(zone, ruleConfigService.advanceDays());
         if (date.isBefore(today) || date.isAfter(today.plusDays(advanceDays - 1L))) {
-            throw new BusinessException(ErrorCode.PARAM_ERROR, "只能预约今天起 " + advanceDays + " 天内的座位");
+            throw new BusinessException(ErrorCode.PARAM_ERROR,
+                    zone.getName() + " 只能预约今天起 " + advanceDays + " 天内的座位（本区口径，含当天）");
         }
         OpenRuleService.DayRule day = openRuleService.resolve(date);
         if (day.isClosed()) {

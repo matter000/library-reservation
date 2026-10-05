@@ -193,7 +193,8 @@ class ZoneApiTest extends ApiTestBase {
     @DisplayName("【删除守卫】分区内存在未来有效预约时 4109")
     void deleteBlockedByActiveReservation() throws Exception {
         long zoneId = zoneIdOf(zones(admin, floor1), "1F-SILENT");
-        String date = d(3);
+        // 静音区本区口径是「提前 3 天（含当天）」→ 最远只能到 today+2，d(3) 会先被窗口拦下
+        String date = d(2);
         // 静音区是 1F 的主力分区（1~4 行 = A01~A40），逐个试到约上为止
         List<Long> booked = new ArrayList<>();
         for (int no = 1; no <= 40 && booked.isEmpty(); no++) {

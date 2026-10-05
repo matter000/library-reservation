@@ -183,7 +183,7 @@ export default function ZoneManage() {
       render: (_, row) => (
         <Space size={4} wrap>
           <Tag>{`≤${Math.round((row.maxDurationMin / 60) * 10) / 10}h`}</Tag>
-          <Tag>{`提前 ${row.advanceDays} 天`}</Tag>
+          <Tag>{row.advanceDays == null ? '提前 跟随全馆' : `提前 ${row.advanceDays} 天`}</Tag>
           <Tag color={row.leaveAllowed ? 'green' : 'default'}>
             {row.leaveAllowed ? `可暂离 ${row.leaveMaxMin}min×${row.leaveDailyLimit}` : '不可暂离'}
           </Tag>
@@ -288,8 +288,12 @@ export default function ZoneManage() {
             <Form.Item name="dailyCapMin" label="单日上限(分钟)" extra="留空表示不设分区级上限">
               <InputNumber min={30} max={840} step={30} style={{ width: 140 }} />
             </Form.Item>
-            <Form.Item name="advanceDays" label="可提前天数" rules={[{ required: true }]}>
-              <InputNumber min={1} max={30} style={{ width: 120 }} />
+            <Form.Item
+              name="advanceDays"
+              label="可提前天数"
+              extra="留空 = 跟随全馆规则（规则中心 book.advance-days）；填了就以本区口径为准，可以比全馆更宽"
+            >
+              <InputNumber min={1} max={30} style={{ width: 120 }} placeholder="跟随全馆" />
             </Form.Item>
             <Form.Item name="allowDiscuss" label="讨论音量" rules={[{ required: true }]}>
               <Select style={{ width: 130 }} options={DISCUSS_OPTIONS} />

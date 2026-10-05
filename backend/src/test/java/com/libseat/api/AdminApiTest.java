@@ -308,9 +308,12 @@ class AdminApiTest extends ApiTestBase {
     @Test
     @DisplayName("【强制释放】空原因 → 4001；正常释放 → ADMIN_CANCELLED 且座位立即释放")
     void releaseRules() throws Exception {
-        long seat = seatId(floor1, "A40");
+        // 座位直接向平面图要一个空的：V2 起分区口径把可约窗口收到 2 天内，
+        // 原来"约到 3 天后躲开种子占用"的写法会撞 uk_slot_seat_date_idx（表现为 4091）。
+        String releaseDate = dw(3);
+        long seat = freeSeatOn(floor1, releaseDate, slot(10));
         String owner = newUser();
-        JsonNode created = reserveOk(owner, seat, dw(3), slot(10), 2);
+        JsonNode created = reserveOk(owner, seat, releaseDate, slot(10), 2);
         long reservationId = created.path("reservationId").asLong();
 
         MvcResult empty = release(reservationId, "");
