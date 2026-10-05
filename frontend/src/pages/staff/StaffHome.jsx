@@ -35,7 +35,12 @@ export default function StaffHome() {
       path: '/staff/patrol',
       note: '疑点生成 · 提醒 / 释放 / 裁定',
     },
-    { title: '全馆监控大屏', stage: 'S6 巡查' },
+    {
+      title: '全馆监控大屏',
+      stage: 'S6 巡查',
+      path: '/staff/dashboard',
+      note: '占用 / 暂离 / 异常一格看全馆',
+    },
   ];
 
   return (

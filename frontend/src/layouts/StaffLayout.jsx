@@ -1,6 +1,8 @@
 import React from 'react';
 import { Button, Layout, Menu, Typography } from 'antd';
-import { AuditOutlined, DesktopOutlined, LogoutOutlined, WarningOutlined } from '@ant-design/icons';
+import {
+  AuditOutlined, DashboardOutlined, DesktopOutlined, LogoutOutlined, WarningOutlined,
+} from '@ant-design/icons';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/AuthContext';
 import NoticeBell from '../components/NoticeBell';
@@ -11,6 +13,7 @@ const { Header, Content } = Layout;
 const MENU_ITEMS = [
   { key: '/staff', icon: <DesktopOutlined />, label: '作业台' },
   { key: '/staff/patrol', icon: <WarningOutlined />, label: '巡查看板' },
+  { key: '/staff/dashboard', icon: <DashboardOutlined />, label: '监控大屏' },
   { key: '/staff/appeals', icon: <AuditOutlined />, label: '申诉复核' },
 ];
 

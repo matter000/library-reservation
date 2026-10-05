@@ -128,6 +128,37 @@ body {
   background: #f5f5f5;
 }
 
+/* ============ 监控大屏热力条 ============ */
+.dash-heat {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.dash-heat-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 34px;
+}
+
+.dash-heat-bar {
+  width: 22px;
+  background: #1677ff;
+  border-radius: 2px 2px 0 0;
+  min-height: 2px;
+}
+
+.dash-heat-label {
+  margin-top: 4px;
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+}
+
 /* ============ 通用 ============ */
 .page-title {
   margin-bottom: 16px;

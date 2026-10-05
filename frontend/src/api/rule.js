@@ -21,3 +21,13 @@ export function fetchRules(rgroup) {
 export function updateRules(items) {
   return request.put('/admin/rules', items);
 }
+
+/**
+ * 规则变更历史（读审计里的 oldValue/newValue，T-V2-22）。
+ *
+ * @param {string} [rkey] 只看某个键，省略表示全部
+ * @returns {Promise<Array>} 新的在前
+ */
+export function fetchRuleHistory(rkey) {
+  return request.get('/admin/rules/history', { params: rkey ? { rkey } : {} });
+}

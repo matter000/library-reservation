@@ -48,4 +48,15 @@ public interface AppealRepository extends JpaRepository<Appeal, Long> {
      * @return 申诉列表
      */
     List<Appeal> findAllByOrderByIdAsc();
+
+    /**
+     * 某状态的申诉条数（监控大屏的「待复核 / 待终审」计数，T-V2-22）。
+     *
+     * <p>只要数字不要明细：大屏每 30 秒刷一次，把整张申诉表连违规证据一起装进内存
+     * 是纯粹的浪费，而队列页仍是唯一的明细出处。
+     *
+     * @param status 申诉状态
+     * @return 条数
+     */
+    long countByStatus(AppealStatus status);
 }

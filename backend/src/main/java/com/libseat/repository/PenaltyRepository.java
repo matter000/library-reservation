@@ -33,4 +33,16 @@ public interface PenaltyRepository extends JpaRepository<Penalty, Long> {
      * @return 已有处罚
      */
     Optional<Penalty> findFirstByUserIdAndTypeAndStatus(Long userId, PenaltyType type, PenaltyStatus status);
+
+    /**
+     * 全部处于 ACTIVE 的处罚行（监控大屏与信用导出用，T-V2-22）。
+     *
+     * <p>★ 这里只按状态粗筛，是否真生效仍要交给 {@code Penalty#activeAt(now)}：
+     * 「墙钟到了却没被扫描置回」这段时间里，行仍是 ACTIVE 却已过期，
+     * 判活口径必须只有一个出处（S5 的抖动坑就是在这里修掉的）。
+     *
+     * @param status 传 {@link PenaltyStatus#ACTIVE}
+     * @return 处罚列表
+     */
+    List<Penalty> findByStatusOrderByIdAsc(PenaltyStatus status);
 }

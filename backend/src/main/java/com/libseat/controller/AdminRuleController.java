@@ -4,7 +4,9 @@ import com.libseat.common.Result;
 import com.libseat.dto.RuleDTO;
 import com.libseat.entity.RuleConfig;
 import com.libseat.security.UserContext;
+import com.libseat.service.CreditService;
 import com.libseat.service.RuleConfigService;
+import com.libseat.service.RuleHistoryService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,7 +29,9 @@ public class AdminRuleController {
 
     private final RuleConfigService ruleConfigService;
 
-    private final com.libseat.service.CreditService creditService;
+    private final CreditService creditService;
+
+    private final RuleHistoryService ruleHistoryService;
 
     /**
      * ★ 账本一致性巡检：{@code sum(t_credit_log.delta)} 与 {@code t_user.credit_score} 的差异清单。
@@ -40,6 +44,17 @@ public class AdminRuleController {
     @GetMapping("/consistency")
     public Result<List<String>> consistency() {
         return Result.ok(creditService.consistencyReport());
+    }
+
+    /**
+     * 规则变更历史（谁在什么时候把哪个键从什么改成了什么）。
+     *
+     * @param rkey 只看某个键，省略表示全部
+     * @return 新的在前
+     */
+    @GetMapping("/history")
+    public Result<List<RuleDTO.RuleHistoryVO>> history(@RequestParam(required = false) String rkey) {
+        return Result.ok(ruleHistoryService.history(rkey));
     }
 
     /**

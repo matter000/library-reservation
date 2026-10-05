@@ -25,8 +25,11 @@ import ZoneManage from '../pages/admin/ZoneManage';
 import TableManage from '../pages/admin/TableManage';
 import OpenRuleManage from '../pages/admin/OpenRuleManage';
 import ViolationManage from '../pages/admin/ViolationManage';
+import RuleHistory from '../pages/admin/RuleHistory';
+import ExportCenter from '../pages/admin/ExportCenter';
 import StaffHome from '../pages/staff/StaffHome';
 import PatrolBoard from '../pages/staff/PatrolBoard';
+import Dashboard from '../pages/staff/Dashboard';
 import AppealQueue from '../pages/staff/AppealQueue';
 import { useAuth } from '../store/AuthContext';
 import { USER_ROLE, roleHomePath } from '../constants';
@@ -82,6 +85,7 @@ export default function AppRoutes() {
       >
         <Route index element={<StaffHome />} />
         <Route path="patrol" element={<PatrolBoard />} />
+        <Route path="dashboard" element={<Dashboard />} />
         <Route path="appeals" element={<AppealQueue />} />
       </Route>
 
@@ -106,6 +110,8 @@ export default function AppRoutes() {
         <Route path="zones" element={<ZoneManage />} />
         <Route path="tables" element={<TableManage />} />
         <Route path="open" element={<OpenRuleManage />} />
+        <Route path="rules/history" element={<RuleHistory />} />
+        <Route path="export" element={<ExportCenter />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

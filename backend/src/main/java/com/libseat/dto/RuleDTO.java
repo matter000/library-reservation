@@ -50,6 +50,55 @@ public final class RuleDTO {
     }
 
     /**
+     * 规则变更历史行（T-V2-22）。
+     *
+     * <p>★ 前后值取自审计 detail 的 {@code oldValue}/{@code newValue}，不是「当前值 + 猜的旧值」：
+     * 一条规则被改过三次，第三条必须显示「A→B」而不是「B→B」。
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class RuleHistoryVO {
+
+        /** 审计日志 ID。 */
+        private Long logId;
+
+        /** 变更时刻。 */
+        private String createTime;
+
+        /** 规则键。 */
+        private String rkey;
+
+        /** 规则说明（规则已删除时为空）。 */
+        private String description;
+
+        /** 分组。 */
+        private String rgroup;
+
+        /** 作用域。 */
+        private String scope;
+
+        /** 作用域对象 ID。 */
+        private String scopeId;
+
+        /** 改前值。 */
+        private String oldValue;
+
+        /** 改后值。 */
+        private String newValue;
+
+        /** 操作人 ID。 */
+        private Long operatorId;
+
+        /** 操作人姓名或账号。 */
+        private String operatorName;
+
+        /** 操作人角色。 */
+        private String operatorRole;
+    }
+
+    /**
      * 规则更新请求。
      */
     @Data

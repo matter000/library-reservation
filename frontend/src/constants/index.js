@@ -266,6 +266,14 @@ export const PATROL_STATUS_META = {
 /** 巡查看板轮询间隔：任务由 10 分钟一轮的生成器产生，30 秒足够「刚报的能在巡楼路上看到」。 */
 export const PATROL_BOARD_POLL_INTERVAL = 30000;
 
+/**
+ * 监控大屏轮询间隔。
+ *
+ * ★ 大屏是给前台值班一直开着的页面：30 秒足够「有人刚签到就看得见」，
+ * 又不像 5 秒那样把统计接口打成负载。闭馆日也一样刷，因为闭馆只是数字小，不是没有数据。
+ */
+export const DASHBOARD_POLL_INTERVAL = 30000;
+
 /** 违规状态下拉项。 */
 export const VIOLATION_STATUS_OPTIONS = Object.entries(VIOLATION_STATUS_META)
   .map(([value, meta]) => ({ value, label: meta.text }));

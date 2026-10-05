@@ -3,8 +3,8 @@ import { Button, Layout, Menu, Typography } from 'antd';
 import {
   AppstoreOutlined,
   BarChartOutlined,
-  ClockCircleOutlined,
-  DatabaseOutlined,
+  ClockCircleOutlined, HistoryOutlined,
+  DatabaseOutlined, DownloadOutlined,
   LogoutOutlined,
   PartitionOutlined,
   ProfileOutlined,
@@ -28,6 +28,8 @@ const MENU_ITEMS = [
   { key: '/admin/violations', icon: <WarningOutlined />, label: '违规管理' },
   { key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' },
   { key: '/admin/rules', icon: <SettingOutlined />, label: '规则配置' },
+  { key: '/admin/rules/history', icon: <HistoryOutlined />, label: '规则变更历史' },
+  { key: '/admin/export', icon: <DownloadOutlined />, label: '台账导出' },
   { key: '/admin/open', icon: <ClockCircleOutlined />, label: '开放时间' },
 ];
 
@@ -41,10 +43,18 @@ export default function AdminLayout() {
   const location = useLocation();
   const { user, logout } = useAuth();
 
-  /** 座位管理挂在楼层管理下：/admin/floors/:id/seats */
+  /**
+   * 座位管理挂在楼层管理下：/admin/floors/:id/seats
+   *
+   * ★ 前缀匹配要先按长度倒序：/admin/rules/history 若让 /admin/rules 先命中，
+   *   变更历史页打开时高亮的却是「规则配置」，看起来像还没进去。
+   */
   const pathname = location.pathname;
   const selectedKey =
-    MENU_ITEMS.map((item) => item.key).find((key) => pathname.startsWith(key)) ||
+    [...MENU_ITEMS]
+      .sort((a, b) => b.key.length - a.key.length)
+      .map((item) => item.key)
+      .find((key) => pathname.startsWith(key)) ||
     '/admin/statistics';
 
   return (

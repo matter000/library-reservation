@@ -94,4 +94,16 @@ public interface LeaveRecordRepository extends JpaRepository<LeaveRecord, Long> 
      */
     List<LeaveRecord> findByStatusAndOpenFlagAndPlannedEndTimeBetween(
             LeaveStatus status, Integer openFlag, LocalDateTime from, LocalDateTime to);
+
+    /**
+     * 全馆此刻暂离中的人数（监控大屏的「暂离保留」指标，T-V2-22）。
+     *
+     * <p>只要条数不要明细，所以用 count 而不是 findAll ——
+     * 大屏每 30 秒刷一次，别为了一个数字把整张暂离表搬进内存。
+     *
+     * @param status   OPEN
+     * @param openFlag 固定传 1
+     * @return 条数
+     */
+    long countByStatusAndOpenFlag(LeaveStatus status, Integer openFlag);
 }
