@@ -533,9 +533,9 @@ Expect '33.1 配置里给出一组人数上限（前端选项按它生成）' $c
 Expect '33.2 成团下限也在配置里' $cfg.data.groupMinMembers 2
 $grpTables = Invoke-Api GET "/api/staff/tables?zoneId=$($groupZone.zoneId)" $null $lib.data.token
 $grpTableId = ($grpTables.data | Select-Object -First 1).tableId
-if ($null -eq $grpTableId) {
-    Skip '33.3 超限建队被拒' '仅组队分区下没有建模桌位'
-} else {
+# ★ B12：拿不到桌位不再是"跳过"的理由。桌位现在由 Java 种子保证，缺桌=缺数据，必须红；
+#   以前这句 Skip 让"全新部署无法开箱组队"活过了每一轮回归（净库上它只是 SKIP，不是 FAIL）。
+Expect '33.0 组队分区必须拿到可用桌位（B12：缺桌是缺数据，不许静默跳过）' ($null -ne $grpTableId) $True
     Expect '33.3 超过上限的建队被拒（4001）' (Biz-Code (Invoke-Api POST '/api/groups' @{
         zoneId = $groupZone.zoneId; tableId = $grpTableId; date = $tomorrow2; startSlot = 18; duration = 2
         maxMembers = ($cfg.data.groupMaxMembers + 3)
@@ -545,7 +545,6 @@ if ($null -eq $grpTableId) {
         zoneId = $groupZone.zoneId; tableId = $grpTableId; date = $tomorrow2; startSlot = 18; duration = 2
         minMembers = ($cfg.data.groupMaxMembers + 1)
     } $smoke2)) 4001
-}
 
 # ---------- 34. 可提前天数取「本区口径」（V2 起分区值取代全局默认，全局只在分区没配时兜底） ----------
 $tightZone = @($zones | Where-Object { $_.advanceDays -eq 1 })[0]
