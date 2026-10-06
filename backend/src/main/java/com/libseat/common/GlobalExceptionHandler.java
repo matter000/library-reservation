@@ -11,7 +11,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.http.HttpMethod;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -19,6 +21,7 @@ import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 
 /**
@@ -117,6 +120,25 @@ public class GlobalExceptionHandler {
             }
         }
         return build(ErrorCode.PARAM_ERROR.getCode(), message);
+    }
+
+    /**
+     * HTTP 方法用错（例如对只有 POST 的路径发 GET）。
+     *
+     * <p>★ 这类请求此前落到兜底的 Exception 处理器上，返回 5000「系统内部错误」——
+     *   但用错方法是**客户端**的错：500 会把一次误调用在监控里变成一次故障，
+     *   调用方也拿不到"该换哪个方法"的信息。现场复现路径：GET /api/reservations/{id}/cancel。
+     *
+     * @param e 方法不匹配异常
+     * @return 统一响应（4001 + 该路径支持的方法）
+     */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<Result<Void>> handleMethodNotSupported(HttpRequestMethodNotSupportedException e) {
+        Set<HttpMethod> supported = e.getSupportedHttpMethods();
+        String hint = (supported == null || supported.isEmpty())
+                ? "" : "，该接口支持的方法：" + supported;
+        return build(ErrorCode.PARAM_ERROR.getCode(),
+                "该接口不支持 " + e.getMethod() + " 方法" + hint);
     }
 
     /**

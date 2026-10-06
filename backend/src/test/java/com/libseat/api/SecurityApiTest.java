@@ -273,6 +273,18 @@ class SecurityApiTest extends ApiTestBase {
     }
 
     @Test
+    @DisplayName("【错误映射】方法用错是 4001 并说明支持的方法，不能被报成 5000 系统内部错误")
+    void wrongMethodIsNotServerFailure() throws Exception {
+        String me = newUser();
+        // /cancel 只有 POST；GET 打过去以前会落到兜底处理器变成 5000
+        MvcResult r = exec(get("/api/reservations/1/cancel").header("Authorization", bearer(me)));
+        String raw = r.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        assertNotEquals(5000, code(r), "客户端用错方法不该算服务端故障：" + raw);
+        assertEquals(4001, code(r), "应回参数类错误码：" + raw);
+        assertTrue(raw.contains("POST"), "要告诉调用方该用哪个方法：" + raw);
+    }
+
+    @Test
     @DisplayName("【隐私】/api/admin/usage 占用人给 realName + studentNo + username，不得含手机号")
     void usageOccupantHasNoPhone() throws Exception {
         long seat = seatId(floor1, "A03");
