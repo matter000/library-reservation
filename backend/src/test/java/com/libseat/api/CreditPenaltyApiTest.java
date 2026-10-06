@@ -339,6 +339,38 @@ class CreditPenaltyApiTest extends ApiTestBase {
     }
 
     @Test
+    @DisplayName("【验收2】加分不得把生效中的禁约期往后推（只有重复违规才延长）")
+    void positiveScoreChangeMustNotExtendActiveBan() throws Exception {
+        String me = newUser();
+        long id = uid(me);
+        for (int i = 0; i < 4; i++) {
+            creditService.applyViolation(id, ViolationType.NO_SHOW, null, evidence(), null, null);
+        }
+        assertEquals(60, score(id));
+        assertEquals(List.of(PenaltyType.BOOK_BAN_3D), types(id), ladderInputs(id));
+
+        // ★ 把禁约期改成"还剩 2 天"：否则"延长"与"不动"只差几毫秒，断言红了也说明不了问题
+        Penalty ban = penaltyRepository.findByUserIdAndStatusOrderByIdDesc(id, PenaltyStatus.ACTIVE).get(0);
+        LocalDateTime twoDaysLeft = LocalDateTime.now().plusDays(2);
+        ban.setEndTime(twoDaysLeft);
+        penaltyRepository.save(ban);
+
+        // 取一整段都在过去的"上一自然周"，好让刚造的 4 条违规落在窗口之外
+        LocalDateTime weekEnd = LocalDateTime.now().minusDays(1);
+        assertTrue(creditService.awardWeeklyBonus(id, weekEnd.minusDays(7), weekEnd),
+                "上一周无违规就该拿到 +5");
+        assertEquals(65, score(id));
+        assertEquals(List.of(PenaltyType.BOOK_BAN_3D), types(id),
+                "★ 65 仍在 50..69 这一档，禁约不得凭空消失｜" + ladderInputs(id));
+        // ★ 比较按"秒"而不是 equals：H2 的 TIMESTAMP 只留到微秒，纳秒会被截掉
+        LocalDateTime endAfterBonus = penaltyRepository.findById(ban.getId()).orElseThrow().getEndTime();
+        long driftSeconds = java.time.Duration.between(twoDaysLeft, endAfterBonus).abs().getSeconds();
+        assertTrue(driftSeconds == 0,
+                "★ 加分是把处境变好，绝不能把恢复时刻重置成 now+3 天（漂移 " + driftSeconds + " 秒，实际 end="
+                        + endAfterBonus + "）｜" + ladderInputs(id));
+    }
+
+    @Test
     @DisplayName("【验收3】受限预约 4100 且带恢复时间；关掉开关后不限制；学期禁只能系统管理员解")
     void bookingGateAndEscapeHatch() throws Exception {
         String me = newUser();

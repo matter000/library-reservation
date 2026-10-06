@@ -54,7 +54,7 @@ public class PenaltyService {
     }
 
     /**
-     * 把 ACTIVE 处罚收敛到当前档位：降档则解除旧的、升档则新建或延长。
+     * 扣分后收敛阶梯：降档解除旧的，同档的重复违规要<b>延长</b>（PRD §9.3「重复违规从严」）。
      *
      * @param userId 用户 ID
      * @param score  变动后的信用分
@@ -62,7 +62,37 @@ public class PenaltyService {
      * @param now    参照时刻
      */
     @Transactional
-    public void syncLadder(Long userId, int score, String reason, LocalDateTime now) {
+    public void syncLadderAfterViolation(Long userId, int score, String reason, LocalDateTime now) {
+        syncLadder(userId, score, reason, now, true);
+    }
+
+    /**
+     * 加分后收敛阶梯：只解除已被更高分数换掉的档位，<b>绝不延长</b>现有禁约期。
+     *
+     * <p>★ 同一段代码服务两种相反的意图：扣分时"同档就再延一次"是对的，
+     * 加分时（周恢复 +5、连续主动结束奖励、申诉/撤销回补）它会把恢复时刻重置成 now+3 天 ——
+     * 用户做了好事，禁约却更长。判据是"剩 2 天"和"重置成 3 天"差一整天，不是差几毫秒。
+     *
+     * @param userId 用户 ID
+     * @param score  变动后的信用分
+     * @param reason 触发说明
+     * @param now    参照时刻
+     */
+    @Transactional
+    public void syncLadderAfterBonus(Long userId, int score, String reason, LocalDateTime now) {
+        syncLadder(userId, score, reason, now, false);
+    }
+
+    /**
+     * 把 ACTIVE 处罚收敛到当前档位：档位变了就解除旧的，同档时按调用意图决定是否延长。
+     *
+     * @param userId             用户 ID
+     * @param score              变动后的信用分
+     * @param reason             触发说明
+     * @param now                参照时刻
+     * @param extendSameCategory 同档 ACTIVE 是否延长（只有重复违规该为 true）
+     */
+    private void syncLadder(Long userId, int score, String reason, LocalDateTime now, boolean extendSameCategory) {
         PenaltyType desired = typeForScore(score);
         for (Penalty existing : penaltyRepository.findByUserIdAndStatusOrderByIdDesc(userId, PenaltyStatus.ACTIVE)) {
             if (existing.getType() == desired) {
@@ -92,6 +122,9 @@ public class PenaltyService {
             return;
         }
         // 同类重复违规：只延长，不再插一条（否则「当前是否受限」要看多条记录才能判定）
+        if (!extendSameCategory) {
+            return;
+        }
         LocalDateTime extended = endTimeOf(desired, now);
         if (extended != null && (active.getEndTime() == null || extended.isAfter(active.getEndTime()))) {
             active.setEndTime(extended);

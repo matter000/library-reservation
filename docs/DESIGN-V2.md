@@ -389,7 +389,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_appeal_violation ON t_appeal (violation_id)
 `CreditService.applyViolation(userId, type, scoreDelta, evidenceJson, refReservationId)`，`@Transactional` 内顺序完成：
 1. 写 `t_violation`（含证据，缺证据直接抛异常——PRD §12-22「无证据不得裁定」）；
 2. 扣减：`credit_score = max(0, credit_score + delta)`，同时写 `t_credit_log`（`balance_after` 必填）；
-3. 评估阶梯并生成 `t_penalty`（幂等：同 `user_id + type` 已有 ACTIVE 则只延长 `end_time`，不重复插入）；
+3. 评估阶梯并生成 `t_penalty`（幂等：同 `user_id + type` 已有 ACTIVE 则不重复插入）。
+   ★ "只延长 `end_time`" **只对扣分方向成立**：`syncLadderAfterViolation` 同档延长（PRD §9.3 重复违规从严），
+   `syncLadderAfterBonus` 同档一律不动 —— 周恢复 +5、连续主动结束奖励、申诉/撤销回补都走后者。
+   两者曾经共用一个入口，结果是"分数变好了，禁约期却被重置成 now+3 天"（收口轮抓到，见门表 §3 与
+   `CreditPenaltyApiTest.positiveScoreChangeMustNotExtendActiveBan`）；
 4. 写站内通知（含申诉入口 deeplink）。
 
 | 信用分 | 处罚（自动） | 实现 |
@@ -869,6 +873,11 @@ CREATE INDEX IF NOT EXISTS idx_patrol_status ON t_patrol_task (status, level, cr
    "最早可约"文案读**默认窗口**那组，所以放宽网格不会凭空多出订不满的格子，
    也不会把演示预约种到闭馆之后。
 3. **最后放宽网格 + 改档**（本轮 `V23`）。
+4. **然后回头查前端的陈述句**（`5139a17`）：窗口变成"按当日档案"之后，页脚那句
+   「开放时间 08:00-22:00 · 单次最多 4 小时」和管理员页那句「工作日档案仍是 08:00-22:00」就成了
+   对用户陈述假事实；`constants` 的时段上下界（`nowSlot()` 钳制与规则接口不可用时的兜底档用）也要跟上网格。
+   ★ **文案只能按渲染后的 DOM 验收**：第一版把 Markdown 的 `**` 直接写进 JSX 文本，
+   构建、296 条单测、96 步冒烟没有任何一条会红。
 
 关键点是时段序号本来就是**绝对小时×2**：07:00=14、23:00=46 早就算得出来，`slot 16` 依然是 08:00
 ⇒ **不需要搬任何已有占用行**。此前把它记成"时间模型重构、需要单独批准"是规模误判，

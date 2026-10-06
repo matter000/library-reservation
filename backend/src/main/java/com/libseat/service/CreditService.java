@@ -91,7 +91,7 @@ public class CreditService {
 
         int balance = moveScore(user, CreditLogKind.PENALTY, delta, "VIOLATION", violation.getId(),
                 type.getText() + " " + delta);
-        penaltyService.syncLadder(userId, balance, type.getText() + "后信用分 " + balance, LocalDateTime.now());
+        penaltyService.syncLadderAfterViolation(userId, balance, type.getText() + "后信用分 " + balance, LocalDateTime.now());
         // 违规即时通知（DESIGN §6.2）：扣分与处罚已经生效，用户必须在不点开的情况下
         // 也能看清「扣了多少、现在多少分、什么时候前能申诉」——链接指向 /credit，那里就是申诉入口。
         noticeService.push(userId, NoticeType.VIOLATION,
@@ -152,7 +152,7 @@ public class CreditService {
         user.setActiveFinishStreak(0);
         userRepository.save(user);
         int balance = user.getCreditScore();
-        penaltyService.syncLadder(userId, balance, "良好使用奖励后信用分 " + balance, LocalDateTime.now());
+        penaltyService.syncLadderAfterBonus(userId, balance, "良好使用奖励后信用分 " + balance, LocalDateTime.now());
         return true;
     }
 
@@ -188,7 +188,7 @@ public class CreditService {
         moveScore(user, CreditLogKind.WEEKLY_BONUS, bonus, "WEEKLY", null,
                 "上一自然周无违规 +" + bonus);
         int balance = user.getCreditScore();
-        penaltyService.syncLadder(userId, balance, "周恢复奖励后信用分 " + balance, LocalDateTime.now());
+        penaltyService.syncLadderAfterBonus(userId, balance, "周恢复奖励后信用分 " + balance, LocalDateTime.now());
         return true;
     }
 
@@ -309,7 +309,7 @@ public class CreditService {
         }
         User user = requireUser(userId);
         moveScore(user, CreditLogKind.RESTORE, amount, "APPEAL", appealId, note);
-        penaltyService.syncLadder(userId, user.getCreditScore(), "申诉回补后信用分 " + user.getCreditScore(),
+        penaltyService.syncLadderAfterBonus(userId, user.getCreditScore(), "申诉回补后信用分 " + user.getCreditScore(),
                 LocalDateTime.now());
     }
 
