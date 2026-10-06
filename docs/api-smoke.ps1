@@ -194,17 +194,25 @@ Show '9. 时段选项条数/首项' @{
 # ★ 必须按「目标日期 + 目标时段」查平面图：第 8 步的 map 是「当前时段」的空闲态，
 #   拿它选出的座位去约明天 14 点，重复执行时必然撞 uk_slot_seat_date_idx → 4091。
 $tomorrow = (Get-Date).AddDays(1).ToString('yyyy-MM-dd')
-# ★ 随机起始格只能取 8~15：第 22 步会用同一个账号约「18 点起 2 小时」，
-#   取到 17~20 就会与它时段重叠 → 22.1 变成 4092。这个坑以前有约三成概率出现，
-#   只是每次都被当成"脚本偶发"，其实是两步共用了同一个测试账号。
-$smokeStart = Get-Random -Minimum 8 -Maximum 16
+# ★ 起始格取 24（12:00），不再随机 8~15：V2 的 slotIndex 是绝对小时×2（07:30=15），
+#   8~14 其实是 04:00~07:00 —— 在开放窗口之前，这一步大部分时候直接 4001（实测：21:17 那跑取到 8 →
+#   「预约时段超出开放时间（07:30-22:30）」）；而取到 15（07:30）才会成功 —— 而成功那次之前从未取消，
+#   就是 B14 那条残留（概率约 1/8，所以多数收口检查看起来是干净的）。
+#   12:00 落在四档日型的窗口内（工作日/周末/考试周/节假日 10:00-18:00），也不与第 22 步（18/19 格）
+#   和第 34 步（20 格）重叠；固定格号还顺带消除了"每跑一次换个坐标"造成的不可复现。
+$smokeStart = 24
 $targetMap = Invoke-Api GET "/api/seats/map?floorId=$floorId&date=$tomorrow&slot=$smokeStart" $null $stuToken
 $freeSeat = ($targetMap.data.seats | Where-Object { $_.displayStatus -eq 'FREE' } | Select-Object -First 1)
 $smokeLogin = Invoke-Api POST '/api/auth/login' @{ username = "smoke$stamp"; password = '123456' }
 $smokeToken = $smokeLogin.data.token
-Show '10. 提交预约' (Invoke-Api POST '/api/reservations' @{
+$r10 = Invoke-Api POST '/api/reservations' @{
     seatId = $freeSeat.seatId; date = $tomorrow; startSlot = $smokeStart; duration = 1
-} $smokeToken)
+} $smokeToken
+Show '10. 提交预约' $r10
+# ★ 这一步以前只 Show 不 Expect：4001 能在 PASS 97 / FAIL 0 的绿面前静默过去（本轮就这么踩中的）。
+Expect '10.1 新注册用户可下单（窗口内的固定格 12:00）' (Biz-Code $r10) 0
+$r10Id = $r10.data.reservationId
+Expect '10.2 预约返回带 reservationId（收尾步靠它取消）' ($null -ne $r10Id) $true
 
 # ---------- 11. 我的预约 ----------
 Show '11. 我的预约（upcoming）' (Invoke-Api GET '/api/reservations/my?tab=upcoming' $null $stuToken)
@@ -634,6 +642,14 @@ Expect '37.1 四档日型档案（含考试周）' @($examProfiles.data).Count 4
 Expect '37.2 考试周档案存在且可解析' ($null -ne $examProfile) $true
 Expect '37.3 考试周单日上限规则已播种（480 分钟）' ($null -ne $examCap -and $examCap.rvalue -eq '480') $true
 Expect '37.4 全馆单日上限仍在（360 分钟）' (@($bookRules.data | Where-Object { $_.rkey -eq 'book.daily-cap-min' -and $_.rvalue -eq '360' }).Count) 1
+
+# ---------- 38. 收尾：脚本自己建的预约自己清（B14） ----------
+# 第 10 步以前只建不收，每跑一次就在明天的演示库里留一条 CONFIRMED（实测 id=210，明天 slots 15..17）。
+# 取消结果当断言看：没清干净必须由 FAIL 说话；残留总数只 Show，因为演示库可能有真人预约。
+$r10cancel = Invoke-Api POST "/api/reservations/$r10Id/cancel" $null $smokeToken
+Expect '38.1 第 10 步的预约已取消（不给演示库留下冒泡占用）' (Biz-Code $r10cancel) 0
+$left = (Invoke-Api GET ("/api/admin/reservations?status=CONFIRMED&dateFrom=" + $tomorrow + "&dateTo=" + $tomorrow + "&page=1&size=50") $null $admToken).data.total
+Show '38. 明日残留的 CONFIRMED 数（信息项，不作判据）' $left
 
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ("冒烟脚本执行完毕：PASS {0} / FAIL {1} / SKIP {2}" -f $script:passCount, $script:failCount, $script:warnCount) `
