@@ -128,7 +128,7 @@ export default function MyReservations() {
     setReasonCode(null);
     setLeaveNote('');
     try {
-      const list = await fetchLeaveReasons();
+      const list = await fetchLeaveReasons(item.reservationId);
       setReasons(Array.isArray(list) ? list : []);
     } catch (e) {
       // 错误提示由拦截器统一弹出

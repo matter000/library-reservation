@@ -235,7 +235,7 @@ class LeaveApiTest extends ApiTestBase {
     }
 
     @Test
-    @DisplayName("【验收1】planned_end = min(原因上限, 分区上限, 预约结束)，剩余不足按剩余封顶而非报错")
+    @DisplayName("【验收1】planned_end = 本区生效上限与预约剩余时刻取小，剩余不足按剩余封顶而非报错")
     void plannedEndIsCapped() throws Exception {
         String me = newUser();
         long uid = userId(me);
@@ -243,17 +243,17 @@ class LeaveApiTest extends ApiTestBase {
         LocalDate tomorrow = today.plusDays(1);
         int nowSlot = BizConstants.slotOf(LocalTime.now());
 
-        // 考研专座 leave_max_min=120；原因 MEAL=60 → 原因更紧，取 60
+        // 考研专座 leave_max_min=120，「就餐」是 relaxable 原因 → 分区把 60 放宽到 120（B8 裁定口径）。
         // 结束时刻刻意放在明天：无论几点跑，预约结束都不会先被触发
         Reservation r1 = checkedIn(uid, freeSeatOfZone(floor3, "3F-EXAM", tomorrow, 16, 8, 0),
                 floor3, tomorrow, 16, 8);
         JsonNode vo1 = startOk(me, r1.getId(), "MEAL", null);
         assertEquals("OPEN", vo1.path("status").asText());
         assertEquals(false, vo1.path("returned").asBoolean());
-        assertTrue(vo1.path("remainMin").asInt() >= 58 && vo1.path("remainMin").asInt() <= 60,
-                "就餐上限 60 分钟应生效，实际 remainMin=" + vo1.path("remainMin").asInt());
+        assertTrue(vo1.path("remainMin").asInt() >= 118 && vo1.path("remainMin").asInt() <= 120,
+                "可放宽的原因应吃到本区上限 120 分钟，实际 remainMin=" + vo1.path("remainMin").asInt());
 
-        // 更短的原因（取物 15）→ 15 生效
+        // 更短的原因（取物 15，不可放宽）→ 15 生效，分区不得放大它
         returnOpenLeave(me, r1.getId());
         JsonNode vo2 = startOk(me, r1.getId(), "PICKUP", null);
         assertTrue(vo2.path("remainMin").asInt() >= 13 && vo2.path("remainMin").asInt() <= 15,
@@ -645,30 +645,87 @@ class LeaveApiTest extends ApiTestBase {
         long uid = userId(me);
         LocalDate tomorrow = tomorrowOf(LocalDate.now());
 
-        // 六个种子原因的单次上限最长只有 60 分钟，分区侧 120（考研专座）与 60（静音区）因此分不出来。
-        // 把就餐临时放宽到 180，让「分区天花板」成为真正的约束值 —— 这才是 PRD §12-7「放宽至 120min」
-        // 可被验证的形态。整个测试 JVM 共用同一个内存库，所以用完必须在 finally 里复原。
-        jdbc.update("update t_leave_reason set max_min = 180 where code = 'MEAL'");
-        try {
-            Reservation exam = checkedIn(uid, freeSeatOfZone(floor3, "3F-EXAM", tomorrow, 16, 8, 0),
-                    floor3, tomorrow, 16, 8);
-            JsonNode examLeave = startOk(me, exam.getId(), "MEAL", null);
-            assertTrue(examLeave.path("remainMin").asInt() >= 118
-                            && examLeave.path("remainMin").asInt() <= 120,
-                    "考研专座应给满分区上限 120 分钟，实际 remainMin=" + examLeave.path("remainMin").asInt());
+        // ★ B8 落地的判据：**不改动任何种子值**，120 分钟就该可见。
+        //   以前这条用例必须先把「就餐」的 max_min 临时改成 180，才能让分区上限成为约束值 ——
+        //   那本身就说明 §12-7 的「考研专座放宽至 120 分钟」在 min(原因, 分区) 模型下永远打不开。
+        //   现在合成规则是：relaxable 的原因可被分区拉长，非 relaxable 的原因只会被分区收紧。
+        Reservation exam = checkedIn(uid, freeSeatOfZone(floor3, "3F-EXAM", tomorrow, 16, 8, 0),
+                floor3, tomorrow, 16, 8);
+        JsonNode mealLeave = startOk(me, exam.getId(), "MEAL", null);
+        assertTrue(mealLeave.path("remainMin").asInt() >= 118
+                        && mealLeave.path("remainMin").asInt() <= 120,
+                "考研专座里「就餐」应被分区放宽到 120 分钟，实际 remainMin="
+                        + mealLeave.path("remainMin").asInt());
+        returnOpenLeave(me, exam.getId());
 
-            // 同一人、同一原因，只换分区：静音区 60 立刻把 180 夹下来。两区之差就是分区配置本身。
-            returnOpenLeave(me, exam.getId());
-            Reservation silent = checkedIn(uid, freeSeatOfZone(floor1, "1F-SILENT", tomorrow, 16, 8, 0),
-                    floor1, tomorrow, 16, 8);
-            JsonNode silentLeave = startOk(me, silent.getId(), "MEAL", null);
-            assertTrue(silentLeave.path("remainMin").asInt() >= 58
-                            && silentLeave.path("remainMin").asInt() <= 60,
-                    "静音区应被分区上限夹到 60 分钟，实际 remainMin=" + silentLeave.path("remainMin").asInt());
-            returnOpenLeave(me, silent.getId());
-        } finally {
-            jdbc.update("update t_leave_reason set max_min = 60 where code = 'MEAL'");
+        // 同一分区、同一个「取物」：原因上限 15 分钟必须原地不动，分区不得放大它
+        JsonNode pickupLeave = startOk(me, exam.getId(), "PICKUP", null);
+        assertTrue(pickupLeave.path("remainMin").asInt() >= 13
+                        && pickupLeave.path("remainMin").asInt() <= 15,
+                "★ 非 relaxable 的原因不能被分区拉长（否则「取物」也变 120 分钟，§12-12 失效），实际 remainMin="
+                        + pickupLeave.path("remainMin").asInt());
+        returnOpenLeave(me, exam.getId());
+
+        // 同一人、同一原因，只换分区：静音区 60 就是 60 —— 两区之差是分区配置本身
+        Reservation silent = checkedIn(uid, freeSeatOfZone(floor1, "1F-SILENT", tomorrow, 16, 8, 0),
+                floor1, tomorrow, 16, 8);
+        JsonNode silentLeave = startOk(me, silent.getId(), "MEAL", null);
+        assertTrue(silentLeave.path("remainMin").asInt() >= 58
+                        && silentLeave.path("remainMin").asInt() <= 60,
+                "静音区「就餐」仍按 60 分钟，实际 remainMin=" + silentLeave.path("remainMin").asInt());
+        returnOpenLeave(me, silent.getId());
+    }
+
+    @Test
+    @DisplayName("【B8】原因字典按分区给出生效上限：选择器的数字与提交判定同源")
+    void reasonDictionaryReflectsZoneCeiling() throws Exception {
+        String me = newUser();
+        long uid = userId(me);
+        LocalDate tomorrow = tomorrowOf(LocalDate.now());
+        Reservation exam = checkedIn(uid, freeSeatOfZone(floor3, "3F-EXAM", tomorrow, 16, 8, 0),
+                floor3, tomorrow, 16, 8);
+
+        JsonNode scoped = data(exec(get("/api/leaves/reasons")
+                .param("reservationId", String.valueOf(exam.getId()))
+                .header("Authorization", bearer(me))));
+        int mealScoped = maxMinOf(scoped, "MEAL");
+        int pickupScoped = maxMinOf(scoped, "PICKUP");
+        assertEquals(120, mealScoped, "考研专座里「就餐」的可选上限就该是 120 分钟");
+        assertEquals(15, pickupScoped, "「取物」不因分区而变宽");
+        assertTrue(flagOf(scoped, "MEAL"), "「就餐」应标记为可放宽，界面才能解释它为什么更久");
+        assertFalse(flagOf(scoped, "PICKUP"), "「取物」不可放宽");
+
+        // 不带预约时退回原因自身上限 —— 字典本身不是"哪个区都能 120"的承诺书
+        JsonNode global = data(exec(get("/api/leaves/reasons")
+                .header("Authorization", bearer(me))));
+        assertEquals(60, maxMinOf(global, "MEAL"), "不带分区上下文时按原因自身的 60 分钟");
+
+        // ★ 同源判据：字典给 120，提交就必须真给到 120；两者不一致就是 B2 那轮的分裂形态
+        JsonNode submitted = startOk(me, exam.getId(), "MEAL", null);
+        assertTrue(submitted.path("remainMin").asInt() >= mealScoped - 2
+                        && submitted.path("remainMin").asInt() <= mealScoped,
+                "提交后的 remainMin 必须与字典显示的上限一致，实际=" + submitted.path("remainMin").asInt());
+        returnOpenLeave(me, exam.getId());
+    }
+
+    /** 从原因字典里取某个原因的生效上限。 */
+    private int maxMinOf(JsonNode list, String code) {
+        for (JsonNode node : list) {
+            if (code.equals(node.path("code").asText())) {
+                return node.path("maxMin").asInt();
+            }
         }
+        throw new AssertionError("原因字典里应有 " + code);
+    }
+
+    /** 从原因字典里取某个原因的 relaxable 标记。 */
+    private boolean flagOf(JsonNode list, String code) {
+        for (JsonNode node : list) {
+            if (code.equals(node.path("code").asText())) {
+                return node.path("relaxable").asBoolean();
+            }
+        }
+        throw new AssertionError("原因字典里应有 " + code);
     }
 
     @Test

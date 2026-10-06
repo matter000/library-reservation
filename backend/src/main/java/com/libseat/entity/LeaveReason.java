@@ -50,6 +50,16 @@ public class LeaveReason {
     @Column(name = "need_note", nullable = false)
     private Boolean needNote = Boolean.FALSE;
 
+    /**
+     * 单次上限能否被**分区**放宽（PRD §12-7「考研专座放宽至 120 分钟」，口径见 DESIGN §14.1）。
+     *
+     * <p>TRUE = 标准上限级（就餐/上课），分区的 {@code leave_max_min} 可以把它们拉长；
+     * FALSE = 短暂离级（接听/短休/取物/其他），分区只能收紧、不能放大，
+     * 否则"取物 15 分钟"在考研专座里也会变成 120 分钟，§12-12 的原因级上限就整条失效。
+     */
+    @Column(name = "relaxable", nullable = false)
+    private Boolean relaxable = Boolean.FALSE;
+
     /** 是否启用。 */
     @Column(name = "enabled", nullable = false)
     private Boolean enabled = Boolean.TRUE;

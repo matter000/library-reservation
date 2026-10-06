@@ -832,7 +832,8 @@ CREATE INDEX IF NOT EXISTS idx_patrol_status ON t_patrol_task (status, level, cr
 | `V18__teacher_duration_cap.sql` | S7 | 教师单次时长上限从 240 改回 360（PRD §12-2 的 6 小时）—— V11 种的 240 与学生完全相同，这条规则从落库那天起就是空转；顺带改准说明（非高峰时分区单次上限仍然优先，见 §14.1） |
 | `V19__exam_day_type.sql` | S7 | 日型新增 `EXAM`（考试周）：播种考试周开放档案 + 规则 `book.daily-cap-exam-min=480`，让 PRD §12-3「考试周 8 小时」第一次有承载点 |
 | `V20__zone_daily_cap_seed.sql` | S7 | T-V2-24 收口（B9）：把 1F-SILENT 的 `daily_cap_min` 追平到当前种子值 360 —— 老库那行是在 B3 加值之前种的，停在 NULL，于是"已迁移库"与"新建库"对同一条分区规则取值不同（详见 §14.3） |
-| ~~`V21__seed_demo.sql`~~ | S7 | **仍未做**：演示数据补齐（教师/馆员账号、历史违规样例）。造历史违规必须同时写 `t_violation`+`t_credit_log`+`t_user.credit_score`，否则破 `sum(delta)==credit_score` 对账不变式 |
+| `V21__leave_reason_relaxable.sql` | S7 | T-V2-24 收口（B8，用户裁定方案 ②）：`t_leave_reason` 加 `relaxable`，就餐/上课标 TRUE。分区值从此**只放宽可放宽的原因、只收紧其余原因**，§12-7「考研专座暂离放宽至 120 分钟」在 `min(原因, 分区)` 模型下第一次真的可见 |
+| ~~`V22__seed_demo.sql`~~ | S7 | **仍未做**：演示数据补齐（教师/馆员账号、历史违规样例）。造历史违规必须同时写 `t_violation`+`t_credit_log`+`t_user.credit_score`，否则破 `sum(delta)==credit_score` 对账不变式。★ 而且**不能写成迁移**：`t_user` 由 `DataInitializer` 播种、跑在迁移之后，空库上迁移面对空的用户表一行也插不进去（§14.3），演示数据应落在 Java 侧 |
 
 ### 14.1 全局规则值与分区值的合成口径（2026-10-05 裁定）
 

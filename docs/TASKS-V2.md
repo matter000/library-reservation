@@ -478,7 +478,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 | --- | --- |
 | 前置依赖 | S0–S6 |
 | 优先级 | P1 |
-| 涉及文件 | 前端 `layouts/MobileLayout.jsx`（底部 Tab：首页/找座/我的座位/信用/我的）、`/m/*` 路由、`styles/global.css`、`styles/seat.css`（热区 ≥44px、横向滚动不缩放）、`components/SeatGrid.jsx`（焦点可达 + `prefers-reduced-motion`）<br/>`db/migration/*/V21__seed_demo.sql`（**本片未做**，仍欠，见 DESIGN-V2 §14；V20 这个号已被 `V20__zone_daily_cap_seed.sql` 用于 B9 的口径追平）（演示数据补齐：教师/馆员账号、分区样例、历史违规样例）<br/>**`WebConfig.SpaFallbackController` 同步新增 `/m`、`/m/**` 白名单** |
+| 涉及文件 | 前端 `layouts/MobileLayout.jsx`（底部 Tab：首页/找座/我的座位/信用/我的）、`/m/*` 路由、`styles/global.css`、`styles/seat.css`（热区 ≥44px、横向滚动不缩放）、`components/SeatGrid.jsx`（焦点可达 + `prefers-reduced-motion`）<br/>`V22__seed_demo`（**本片未做**，仍欠，见 DESIGN-V2 §14；V20 已被 B9 的口径追平占用、V21 已被 B8 的 `relaxable` 占用。★ 而且演示数据**不该写成迁移**：`t_user`/`t_zone`/`t_floor`/`t_seat` 由 `DataInitializer` 播种且跑在迁移之后，空库上迁移面对空用户表写不进去 ⇒ 应落在 Java 侧，见 DESIGN §14.3）（演示数据补齐：教师/馆员账号、分区样例、历史违规样例）<br/>**`WebConfig.SpaFallbackController` 同步新增 `/m`、`/m/**` 白名单** |
 
 **验收标准**：375px 宽度下主流程（找座→点座→确认）≤3 次点击；键盘 Tab 可达全部操作且焦点可见；`prefers-reduced-motion` 下无动画；`/m/seat` 等深链刷新不白屏。
 

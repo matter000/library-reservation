@@ -77,14 +77,37 @@ public class LeaveService {
      */
     @Transactional(readOnly = true)
     public List<LeaveDTO.ReasonVO> reasons(Long userId) {
+        return reasons(userId, null);
+    }
+
+    /**
+     * 原因字典，可选按"这次要暂离的是哪条预约"给出**本区生效上限**。
+     *
+     * <p>★ 带上 reservationId 是为了让选择器显示的数字与提交时的判定同源（B2 那轮的教训：
+     * 选项与校验各算一遍，用户就会点到一个必然被拒的值）。不传则退回原因自身上限。
+     *
+     * @param userId        当前用户
+     * @param reservationId 本人的一条使用中预约（可空）
+     * @return 原因列表
+     */
+    @Transactional(readOnly = true)
+    public List<LeaveDTO.ReasonVO> reasons(Long userId, Long reservationId) {
         Map<String, Long> usedByReason = new HashMap<>();
         if (userId != null) {
             LocalDateTime dayStart = LocalDate.now().atStartOfDay();
             leaveRecordRepository.countTodayByReason(userId, dayStart, dayStart.plusDays(1))
                     .forEach(row -> usedByReason.put((String) row[0], (Long) row[1]));
         }
+        Zone zone = null;
+        if (reservationId != null) {
+            Reservation reservation = reservationRepository.findById(reservationId)
+                    .filter(r -> r.getUserId().equals(userId))
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "预约不存在"));
+            zone = zoneOfSeat(reservation.getSeatId());
+        }
+        final Zone leaveZone = zone;
         return leaveReasonRepository.findByEnabledTrueOrderBySortOrderAscCodeAsc().stream()
-                .map(reason -> toReasonVO(reason, usedByReason.getOrDefault(reason.getCode(), 0L)))
+                .map(reason -> toReasonVO(reason, usedByReason.getOrDefault(reason.getCode(), 0L), leaveZone))
                 .toList();
     }
 
@@ -152,14 +175,12 @@ public class LeaveService {
                     "「" + reason.getName() + "」需要填写事由");
         }
 
-        // 6. 应返回时刻：原因上限、分区上限、预约结束时刻三者取最小
+        // 6. 应返回时刻：先按本区口径合成单次上限（原因 × 分区，见 #effectiveLeaveMaxMin），再按剩余封顶
         //    剩余不足时按剩余封顶而不是报错（PRD §6.2-4），界面据此显示「仅剩 N 分钟」
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime reservationEnd = BizConstants.slotEnd(reservation.getReserveDate(), reservation.getEndSlot());
         LocalDateTime plannedEnd = minNonNull(
-                now.plusMinutes(reason.getMaxMin()),
-                zone == null || zone.getLeaveMaxMin() == null
-                        ? null : now.plusMinutes(zone.getLeaveMaxMin()),
+                now.plusMinutes(effectiveLeaveMaxMin(reason, zone)),
                 reservationEnd);
 
         // 7. 落库；并发下由 uk_leave_open 兜底
@@ -323,6 +344,32 @@ public class LeaveService {
         }
     }
 
+    /**
+     * 单次暂离的生效上限（分钟）：原因上限与本区上限的合成口径（PRD §12-7 / §12-12，B8）。
+     *
+     * <p>★ 只有 {@code relaxable} 的原因（就餐/上课）允许被**分区拉长**：考研专座把 60 分钟的
+     *   「就餐」放宽到 120。其余短暂离级（接听/短休/取物/其他）仍只能被分区**收紧** ——
+     *   否则「取物 15 分钟」在考研专座里也变成 120 分钟，§12-12 的原因级上限就整条失效。
+     *   这与 §14.1 的分区口径一致：分区值是本区口径，可以取代全局默认，但不能把"本来就短的原因"喊长。
+     *
+     * <p>★ 合成只允许发生在这一个方法里：原因字典（{@link #reasons(Long, Long)}）与登记暂离
+     *   （{@link #start}）读同一个出处，否则又会出现「选择器显示 60 分钟、提交却给 120」这类分裂。
+     *
+     * @param reason 暂离原因
+     * @param zone   座位所属分区（可为 null，按原因自身上限）
+     * @return 生效上限（分钟）
+     */
+    static int effectiveLeaveMaxMin(LeaveReason reason, Zone zone) {
+        int reasonMax = reason.getMaxMin() == null ? 0 : reason.getMaxMin();
+        Integer zoneMax = zone == null ? null : zone.getLeaveMaxMin();
+        if (zoneMax == null || zoneMax <= 0) {
+            return reasonMax;
+        }
+        return Boolean.TRUE.equals(reason.getRelaxable())
+                ? Math.max(reasonMax, zoneMax)
+                : Math.min(reasonMax, zoneMax);
+    }
+
     private Zone zoneOfSeat(Long seatId) {
         if (seatId == null) {
             return null;
@@ -362,13 +409,14 @@ public class LeaveService {
         return zone.getLeaveDailyLimit();
     }
 
-    private LeaveDTO.ReasonVO toReasonVO(LeaveReason reason, long usedToday) {
+    private LeaveDTO.ReasonVO toReasonVO(LeaveReason reason, long usedToday, Zone zone) {
         int limit = reason.getDailyLimit() == null ? Integer.MAX_VALUE : reason.getDailyLimit();
         boolean exhausted = usedToday >= limit;
         return LeaveDTO.ReasonVO.builder()
                 .code(reason.getCode())
                 .name(reason.getName())
-                .maxMin(reason.getMaxMin())
+                .maxMin(effectiveLeaveMaxMin(reason, zone))
+                .relaxable(Boolean.TRUE.equals(reason.getRelaxable()))
                 .dailyLimit(reason.getDailyLimit())
                 .needNote(Boolean.TRUE.equals(reason.getNeedNote()))
                 .todayUsed((int) usedToday)

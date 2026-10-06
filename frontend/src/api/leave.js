@@ -3,10 +3,14 @@ import request from './request';
 /**
  * 暂离原因字典。
  *
- * @returns {Promise<Array>} 形如 [{code,name,maxMin,dailyLimit,needNote}]
+ * @param {number} [reservationId] 传本人那条要暂离的预约，服务端按所在分区
+ *        合成每个原因的生效上限（不传则回落到原因自身上限）
+ * @returns {Promise<Array>} 形如 [{code,name,maxMin,dailyLimit,needNote,relaxable}]
  */
-export function fetchLeaveReasons() {
-  return request.get('/leaves/reasons');
+export function fetchLeaveReasons(reservationId) {
+  return request.get('/leaves/reasons', {
+    params: reservationId ? { reservationId } : undefined
+  });
 }
 
 /**

@@ -110,6 +110,14 @@ public class LeaveDTO {
         /** 是否必须填事由。 */
         private Boolean needNote;
 
+        /**
+         * 该原因的单次上限能否被分区放宽（B8）。
+         *
+         * <p>前端可据此解释「为什么就餐在这里能选 120 分钟而取物不行」——上限数字本身已经在
+         * {@code maxMin} 里合成好了，这里只是把理由说出口（PRD §13「不可用必须给理由」）。
+         */
+        private Boolean relaxable;
+
         /** 本人今日已用该原因的次数（PRD §6.2 表：就餐每日 2 次）；未登录或无记录为 0。 */
         private Integer todayUsed;
 
