@@ -193,12 +193,17 @@ public class ReservationService {
                             ? "" : "（" + dayRule.getCalendarRemark() + "）"));
         }
 
-        // ---------- 第 3 步：时段落在当日开放窗口内（30 分钟格，不跨天）----------
+        // ---------- 第 3 步：时段落在**当日档案**的开放窗口内（30 分钟格，不跨天）----------
         // duration 是小时、startSlot 是 30 分钟格序号，必须先 slotsOf 换算再相加
         int endSlot = startSlot + BizConstants.slotsOf(duration);
-        if (!BizConstants.validSlotIndex(startSlot) || endSlot > openWindowEndSlot(date)) {
+        // ★ 上下界都要按当日档案判。下界此前只由 `validSlotIndex`（网格）挡着，而网格下界恰好等于
+        //   默认开窗 08:00 —— 于是"窗口下界"一直由网格代职：管理员把开门改到 10:00，08:00 的预约
+        //   照样成功。这条必须在放宽网格（B1：考试周 07:00–23:00）之前补上，否则"提前开门也能订"。
+        //   报错文案也跟着改成说当天的实际开窗，而不是网格常量。
+        if (!BizConstants.validSlotIndex(startSlot) || startSlot < dayRule.getOpenStart()
+                || endSlot > openWindowEndSlot(date)) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "预约时段超出开放时间（"
-                    + BizConstants.slotText(BizConstants.SLOT_INDEX_MIN) + "-"
+                    + BizConstants.slotText(dayRule.getOpenStart()) + "-"
                     + BizConstants.slotText(openWindowEndSlot(date)) + "）");
         }
 

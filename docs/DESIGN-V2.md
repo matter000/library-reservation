@@ -854,6 +854,9 @@ CREATE INDEX IF NOT EXISTS idx_patrol_status ON t_patrol_task (status, level, cr
 ### 14.2 日型（`DayType`）与仍未拉平的窗口差异
 
 日型有 `WORKDAY / WEEKEND / HOLIDAY / EXAM` 四档，管理员通过开放档案 + 开放日历覆盖。
+**窗口下界校验已补（ReservationService 第 3 步）**：起始格必须 ≥ 当日档案的 `open_start`。
+此前下界完全由 `BizConstants.SLOT_INDEX_MIN`（=16，恰好等于默认开窗）代职 —— 管理员把开门
+改到 10:00，09:00 的预约照样成功。这条是放宽窗口的前置条件（任务 #50）。
 **考试周目前只放宽规则、不延长窗口**：它的档案仍是 08:00–22:00，
 而 PRD §12-1 写的是 07:00–23:00。差的那两小时需要把 30 分钟网格的锚点
 （`BizConstants.SLOT_INDEX_MIN = 16`，即 08:00）前移，牵动全部时段运算、

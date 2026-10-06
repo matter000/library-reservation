@@ -163,6 +163,38 @@ class OpenRuleApiTest extends ApiTestBase {
     }
 
     @Test
+    @DisplayName("【窗口下界】把开门改到 10:00 后，09:00 起的预约必须被拒 —— 下界不能由网格代职")
+    void lowerBoundFollowsProfile() throws Exception {
+        Map<String, Object> req = new HashMap<>();
+        req.put("dayType", "WORKDAY");
+        req.put("name", "工作日 10:00-22:00");
+        req.put("openStart", 20);
+        req.put("openEnd", 44);
+        assertEquals(0, code(exec(post("/api/admin/open/profiles")
+                .contentType(MediaType.APPLICATION_JSON).content(json(req))
+                .header("Authorization", bearer(admin)))), "调整工作日开窗应成功");
+        try {
+            String me = newUser();
+            int start = slot(9);
+            long seat = freeSeatOn(floor1, dw(1), start, 2);
+            MvcResult r = exec(post("/api/reservations")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(json(Map.of("seatId", seat, "date", dw(1),
+                            "startSlot", start, "duration", 1)))
+                    .header("Authorization", bearer(me)));
+            String raw = r.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+            assertEquals(PARAM_ERROR, code(r),
+                    "★ 开窗已被管理员改到 10:00，09:00 起仍可约就说明没人校验下界（此前由 SLOT_INDEX_MIN=16 代职）：" + raw);
+            assertTrue(raw.contains("10:00"), "报错要说当天实际开窗时刻，而不是网格常量：" + raw);
+        } finally {
+            req.put("name", "工作日 08:00-22:00");
+            req.put("openStart", 16);
+            exec(post("/api/admin/open/profiles").contentType(MediaType.APPLICATION_JSON)
+                    .content(json(req)).header("Authorization", bearer(admin)));
+        }
+    }
+
+    @Test
     @DisplayName("【校验】结束时段不大于起始时段 → 4001")
     void profileValidation() throws Exception {
         Map<String, Object> req = new HashMap<>();
