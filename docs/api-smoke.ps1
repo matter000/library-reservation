@@ -363,22 +363,27 @@ $openNow = $slots | Where-Object { $_.bookable -eq $true } | Select-Object -Firs
 #   于是这条链路只在白天可验 —— 脚本因此只能在固定时刻跑，等于没有覆盖。
 $lastSlot = ($slots | Measure-Object -Property slotIndex -Maximum).Maximum
 $maxHours = [int][math]::Floor(($lastSlot + 1 - $openNow.slotIndex) / 2)
+# ★ 还要落进「可选时长」那一档：白天时段余量大，只按窗口算会得到 10 小时，
+#   于是被"时长只能选择 1/2/3/4 小时"拦下 —— 报的是 4001，看起来却像签到链路坏了。
+$allowHours = @((Invoke-Api GET '/api/config/booking' $null $stuToken).data.allowedDurations |
+    Where-Object { $_ -le $maxHours })
+$flowHours = if (@($allowHours).Count -gt 0) { ($allowHours | Measure-Object -Maximum).Maximum } else { 0 }
 # ★ 签到窗口 = 开始前 15 分钟 ~ 开始后 15 分钟（PRD §12-9），而 bookable 只给未开始的格子，
 #   所以只有距下一格开始不足 15 分钟时这一步才走得通。其余时刻如实 SKIP：
 #   把断言改成「签到应失败」测的是时钟，不是规则。
 $waitMin = [int]($openNow.slotIndex * 30 - [datetime]::Now.TimeOfDay.TotalMinutes)
-if ($null -eq $openNow -or $maxHours -lt 1) {
-    Skip '23 签到/暂离链路' ("当前时刻之后已不足一小时可约（首个可约格={0}，窗口末格={1}），交由用例覆盖" `
-        -f $(if ($openNow) { $openNow.slotIndex } else { '无' }), $lastSlot)
+if ($null -eq $openNow -or $flowHours -lt 1) {
+    Skip '23 签到/暂离链路' ("当前时刻之后没有「窗口内且档位内」的可约时段（首个可约格={0}，窗口末格={1}，窗口余量={2}h），交由用例覆盖" `
+        -f $(if ($openNow) { $openNow.slotIndex } else { '无' }), $lastSlot, $maxHours)
 } elseif ($waitMin -gt 15) {
     Skip '23 签到/暂离链路' ("距首个可约时段还有 {0} 分钟，还没进入签到窗口（开始前 15 分钟），交由用例覆盖" -f $waitMin)
 } else {
     $today2 = (Get-Date).ToString('yyyy-MM-dd')
-    $todayMap = Invoke-Api GET "/api/seats/map?floorId=$floorId&date=$today2&slot=$($openNow.slotIndex)" $null $stuToken
-    $nowSeat = $todayMap.data.seats |
-        Where-Object { $_.displayStatus -eq 'FREE' -and $_.zoneId -eq $plainZone.zoneId } | Select-Object -First 1
+    # ★ 按整段取座（$flowHours 小时 = flowHours*2 格）：只看起始格会撞 4091 假并发
+    $nowSeatId = Free-Seat -Floor $floorId -Date $today2 -Slot $openNow.slotIndex `
+        -Count ($flowHours * 2) -Zone $plainZone.zoneId -Token $stuToken
     $flow = Invoke-Api POST '/api/reservations' @{
-        seatId = $nowSeat.seatId; date = $today2; startSlot = $openNow.slotIndex; duration = $maxHours
+        seatId = $nowSeatId; date = $today2; startSlot = $openNow.slotIndex; duration = $flowHours
     } $smoke2
     Show '23. 当前时段链路预约结果' $flow
     if ((Biz-Code $flow) -eq 0) {
@@ -614,6 +619,22 @@ Expect '36.1 教师上限是 360 分钟（V18 修的数据）' $cfgTeacher.data.
 Expect '36.2 学生仍是 4 档' @($cfgStudent.data.allowedDurations).Count 4
 Expect '36.3 教师多出 5/6 两档（选项与校验同一出处）' @($cfgTeacher.data.allowedDurations).Count 6
 Expect '36.4 教师档位的最大值就是上限换算出来的 6 小时' (($cfgTeacher.data.allowedDurations | Measure-Object -Maximum).Maximum) 6
+
+# ---------- 37. 考试周是系统里的一个日型（PRD §12-1、§12-3「考试周 8 小时」） ----------
+# 只读断言：真的把某天标成考试周会在演示库里留下跨日的长预约，不值得。
+$examProfiles = Invoke-Api GET '/api/admin/open/profiles' $null $admToken
+$examProfile = @($examProfiles.data | Where-Object { $_.dayType -eq 'EXAM' })[0]
+$bookRules = Invoke-Api GET '/api/admin/rules?rgroup=BOOK' $null $admToken
+$examCap = @($bookRules.data | Where-Object { $_.rkey -eq 'book.daily-cap-exam-min' })[0]
+Show '37. 考试周承载点' @{
+    profileCount = @($examProfiles.data).Count
+    examWindow = if ($null -eq $examProfile) { $null } else { "$($examProfile.startTime)-$($examProfile.endTime)" }
+    examCap = if ($null -eq $examCap) { $null } else { $examCap.rvalue }
+}
+Expect '37.1 四档日型档案（含考试周）' @($examProfiles.data).Count 4
+Expect '37.2 考试周档案存在且可解析' ($null -ne $examProfile) $true
+Expect '37.3 考试周单日上限规则已播种（480 分钟）' ($null -ne $examCap -and $examCap.rvalue -eq '480') $true
+Expect '37.4 全馆单日上限仍在（360 分钟）' (@($bookRules.data | Where-Object { $_.rkey -eq 'book.daily-cap-min' -and $_.rvalue -eq '360' }).Count) 1
 
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ("冒烟脚本执行完毕：PASS {0} / FAIL {1} / SKIP {2}" -f $script:passCount, $script:failCount, $script:warnCount) `

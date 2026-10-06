@@ -820,9 +820,20 @@ CREATE INDEX IF NOT EXISTS idx_patrol_status ON t_patrol_task (status, level, cr
 | `V16__zone_advance_days_nullable.sql` | S7 | `t_zone.advance_days` 放开 NOT NULL：分区没配时才由全局 `book.advance-days` 兜底，否则"跟随全馆"这个状态在库里无法表达，全局规则就成了死配置 |
 | `V17__global_daily_cap_rule.sql` | S7 | 新增全馆规则 `book.daily-cap-min`（360 分钟 = PRD §12-3 的 6 小时，挂在用户身上、跨分区累加），并把考研专座那个比全馆更宽的 `daily_cap_min=480` 撤成 NULL（PRD 从未给任何分区放过单日额度，留着只会误导） |
 | `V18__teacher_duration_cap.sql` | S7 | 教师单次时长上限从 240 改回 360（PRD §12-2 的 6 小时）—— V11 种的 240 与学生完全相同，这条规则从落库那天起就是空转；顺带改准说明（非高峰时分区单次上限仍然优先，见 §14.1） |
-| ~~`V19__seed_demo.sql`~~ | S7 | **仍未做**：演示数据补齐（教师/馆员账号、历史违规样例）。造历史违规必须同时写 `t_violation`+`t_credit_log`+`t_user.credit_score`，否则破 `sum(delta)==credit_score` 对账不变式 |
+| `V19__exam_day_type.sql` | S7 | 日型新增 `EXAM`（考试周）：播种考试周开放档案 + 规则 `book.daily-cap-exam-min=480`，让 PRD §12-3「考试周 8 小时」第一次有承载点 |
+| ~~`V20__seed_demo.sql`~~ | S7 | **仍未做**：演示数据补齐（教师/馆员账号、历史违规样例）。造历史违规必须同时写 `t_violation`+`t_credit_log`+`t_user.credit_score`，否则破 `sum(delta)==credit_score` 对账不变式 |
 
 ### 14.1 全局规则值与分区值的合成口径（2026-10-05 裁定）
+
+### 14.2 日型（`DayType`）与仍未拉平的窗口差异
+
+日型有 `WORKDAY / WEEKEND / HOLIDAY / EXAM` 四档，管理员通过开放档案 + 开放日历覆盖。
+**考试周目前只放宽规则、不延长窗口**：它的档案仍是 08:00–22:00，
+而 PRD §12-1 写的是 07:00–23:00。差的那两小时需要把 30 分钟网格的锚点
+（`BizConstants.SLOT_INDEX_MIN = 16`，即 08:00）前移，牵动全部时段运算、
+既有热力图格数与已落库的种子，属于时间模型重构，单独立项而不是塞进收口补丁。
+档案的 `remark` 里写明了这一点，避免运营以为"考试周档案已经等于 PRD"。
+
 
 **分区值 = 本区口径，非空即取代全局默认；全局值只在分区没配时兜底。**
 天数一律按「含当天」解释：`[今天, 今天 + N - 1]`。

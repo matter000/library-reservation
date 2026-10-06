@@ -61,6 +61,14 @@ public final class BizConstants {
      */
     public static final int DAILY_CAP_MIN = 360;
 
+    /**
+     * 考试周的单日累计上限（分钟）= 8 小时，PRD §12-3 括号里那半句。
+     *
+     * <p>只有日型为 {@code EXAM} 的日期才用它；日型从开放档案/日历解析而来，
+     * 所以"考试周"必须先是系统里的一个状态，这半句规则才有承载点（V19 之前它无处生效）。
+     */
+    public static final int DAILY_CAP_EXAM_MIN = 480;
+
     /** 开始前可签到分钟数。 */
     public static final int CHECK_IN_BEFORE_MIN = 15;
 

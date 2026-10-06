@@ -253,8 +253,10 @@ public class ReservationService {
         }
         long globalUsedTodayMin = (long) reservationRepository.sumSlotsOfUser(
                 userId, date, OccupancyService.OCCUPYING_STATUSES) * BizConstants.SLOT_MINUTES;
+        // ★ 全馆上限按当天日型取：考试周放宽到 8 小时（PRD §12-3），日型来自第 2b 步已解析的开放档案/日历
         creditService.checkBookingGate(userId, date, startSlot, duration * 60,
-                dailyCapMin, usedTodayMin, ruleConfigService.dailyCapMin(), globalUsedTodayMin, targetPeak);
+                dailyCapMin, usedTodayMin,
+                ruleConfigService.dailyCapMin(dayRule.getDayType()), globalUsedTodayMin, targetPeak);
 
         // ---------- 第 5 步：今天时起始时段未过期 ----------
         LocalDateTime start = BizConstants.slotStart(date, startSlot);

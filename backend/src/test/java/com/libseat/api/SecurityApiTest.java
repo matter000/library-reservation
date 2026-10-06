@@ -205,7 +205,9 @@ class SecurityApiTest extends ApiTestBase {
     @Test
     @DisplayName("【4040】USER A 不能查看 / 取消 / 签到 USER B 的预约")
     void horizontalEscalation() throws Exception {
-        long seat = seatId(floor1, "A01");
+        // ★ 不写死 A01：别的用例在同一天更靠前的时段造数时，A01 就不空了，
+        //   于是这条越权用例先撞在 4091 上 —— 报的是"座位被占"，测的却不再是权限。
+        long seat = freeSeatOn(floor1, dw(3), slot(10), 4);
         String owner = newUser();
         String attacker = newUser();
         JsonNode created = reserveOk(owner, seat, dw(3), slot(10), 2);

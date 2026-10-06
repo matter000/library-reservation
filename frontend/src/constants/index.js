@@ -123,11 +123,12 @@ export const DISCUSS_OPTIONS = [
   { value: 'YES', label: '允许讨论' },
 ];
 
-/** 日型（与后端 DayType 对齐）。 */
+/** 日型（与后端 DayType 对齐；缺一项就等于管理员无法在日历上标出那一天）。 */
 export const DAY_TYPE_OPTIONS = [
   { value: 'WORKDAY', label: '工作日' },
   { value: 'WEEKEND', label: '周末' },
   { value: 'HOLIDAY', label: '节假日' },
+  { value: 'EXAM', label: '考试周' },
 ];
 
 /**

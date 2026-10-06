@@ -19,8 +19,11 @@ public final class RuleKeys {
     /** 可提前预约天数（含当天）。 */
     public static final String BOOK_ADVANCE_DAYS = "book.advance-days";
 
-    /** 单日累计预约上限（分钟，挂在用户身上的全馆口径，PRD §12-3）。 */
+    /** 单日累计预约上限（分钟，全馆口径）。 */
     public static final String BOOK_DAILY_CAP_MIN = "book.daily-cap-min";
+
+    /** 考试周单日累计预约上限（分钟，PRD §12-3「考试周 8 小时」）。 */
+    public static final String BOOK_DAILY_CAP_EXAM_MIN = "book.daily-cap-exam-min";
 
     /** 预约默认时长（小时）。 */
     public static final String BOOK_DEFAULT_DURATION = "book.default-duration";

@@ -44,6 +44,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -484,6 +485,60 @@ class CreditPenaltyApiTest extends ApiTestBase {
                 "全馆累计 360 分钟后再约 1 小时应 4098，实际：" + body(over));
         assertTrue(msg(over).contains("全馆"), "必须说明这是全馆口径，否则用户会换个区再试：" + msg(over));
         assertTrue(msg(over).contains("360"), "要给出上限数字，便于用户自己算：" + msg(over));
+    }
+
+    @Test
+    @DisplayName("【B1】考试周把单日累计放宽到 8 小时：同一序列，普通日被拒、考试周放行")
+    void examWeekRelaxesDailyCap() throws Exception {
+        long silent1 = zoneIdByCode("1F-SILENT");
+        long silent3 = zoneIdByCode("3F-SILENT");
+
+        // ① 普通日：4h + 2h 已顶满全馆 360，再 2h 必须被拒 —— 这是 B3 那条用例的同一序列
+        MvcResult normalThird = bookThreeSegments(newUser(), d(1), silent1, silent3);
+        assertEquals(DAILY_CAP_EXCEEDED, code(normalThird),
+                "普通日第 7~8 小时应 4098，实际：" + body(normalThird));
+
+        // ② 把某天标成考试周（管理员在开放日历上覆盖日型），同一序列必须走得通
+        String examDate = d(2);
+        long calendarId = markDayType(examDate, "EXAM");
+        try {
+            JsonNode day = data(exec(get("/api/admin/open/day-rule")
+                    .param("date", examDate).header("Authorization", bearer(admin))));
+            assertEquals("EXAM", day.path("dayType").asText(),
+                    "日历覆盖必须真的改变当天日型，否则 §12-3 那半句仍然无处生效：" + day);
+
+            MvcResult examThird = bookThreeSegments(newUser(), examDate, silent1, silent3);
+            assertEquals(0, code(examThird),
+                    "考试周放宽到 480 分钟后，同样 8 小时应约得下来，实际：" + body(examThird));
+        } finally {
+            exec(delete("/api/admin/open/calendar/" + calendarId).header("Authorization", bearer(admin)));
+        }
+    }
+
+    /** 同一用户在同一日约 4h(1F 静音) + 2h(3F 静音) + 2h(3F 静音)，返回第三段的原始响应。 */
+    private MvcResult bookThreeSegments(String user, String date, long zone1, long zone3) throws Exception {
+        int start = windowStart(date);
+        MvcResult first = book(user, freeSeatOfZone(floor1, zone1, date, start, 8, 0), date, start, 4);
+        assertEquals(0, code(first), "第一段 4 小时应成功：" + body(first));
+        MvcResult second = book(user, freeSeatOfZone(floor3, zone3, date, start + 8, 4, 0), date, start + 8, 2);
+        assertEquals(0, code(second), "第二段 2 小时应成功：" + body(second));
+        return book(user, freeSeatOfZone(floor3, zone3, date, start + 12, 4, 0), date, start + 12, 2);
+    }
+
+    private long zoneIdByCode(String code) {
+        return jdbc.queryForObject("select id from t_zone where code = ?", Long.class, code);
+    }
+
+    /** 用开放日历把某天覆盖成指定日型，返回覆盖行 ID（用例结束要删掉，别污染共享库）。 */
+    private long markDayType(String date, String dayType) throws Exception {
+        Map<String, Object> body = new HashMap<>();
+        body.put("date", date);
+        body.put("dayType", dayType);
+        MvcResult saved = exec(post("/api/admin/open/calendar")
+                .contentType(MediaType.APPLICATION_JSON).content(json(body))
+                .header("Authorization", bearer(admin)));
+        assertEquals(0, code(saved), "覆盖日型应成功：" + body(saved));
+        return data(saved).path("id").asLong();
     }
 
     @Test

@@ -5,6 +5,7 @@ import com.libseat.common.BusinessException;
 import com.libseat.common.ErrorCode;
 import com.libseat.common.RuleKeys;
 import com.libseat.entity.RuleConfig;
+import com.libseat.enums.DayType;
 import com.libseat.enums.UserRole;
 import com.libseat.repository.RuleConfigRepository;
 import jakarta.annotation.PostConstruct;
@@ -176,6 +177,25 @@ public class RuleConfigService {
     /** 单日累计上限（分钟，全馆口径，挂在用户身上）。 */
     public int dailyCapMin() {
         return getInt(RuleKeys.BOOK_DAILY_CAP_MIN, BizConstants.DAILY_CAP_MIN);
+    }
+
+    /** 考试周的单日累计上限（分钟，PRD §12-3 的 8 小时）。 */
+    public int dailyCapExamMin() {
+        return getInt(RuleKeys.BOOK_DAILY_CAP_EXAM_MIN, BizConstants.DAILY_CAP_EXAM_MIN);
+    }
+
+    /**
+     * 按日型给出当天生效的全馆单日累计上限（PRD §12-3「6 小时，考试周 8 小时」）。
+     *
+     * <p>★ 日型必须从 {@code OpenRuleService#resolve} 取，不要在调用处自己看星期：
+     *   考试周是管理员在开放日历上标的，用 {@code DayOfWeek} 猜会把考试周算成普通工作日，
+     *   那正是"规则写在配置里但没人按正确口径读它"的老毛病。
+     *
+     * @param dayType 当天日型（null 按普通日处理）
+     * @return 生效上限（分钟）
+     */
+    public int dailyCapMin(DayType dayType) {
+        return dayType == DayType.EXAM ? dailyCapExamMin() : dailyCapMin();
     }
 
     /** 预约默认时长（小时）。 */

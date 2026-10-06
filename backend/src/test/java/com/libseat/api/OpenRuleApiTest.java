@@ -46,7 +46,15 @@ class OpenRuleApiTest extends ApiTestBase {
     void profilesSeeded() throws Exception {
         JsonNode profiles = data(exec(get("/api/admin/open/profiles")
                 .header("Authorization", bearer(admin))));
-        assertEquals(3, profiles.size(), "应种子 WORKDAY / WEEKEND / HOLIDAY 三档");
+        assertEquals(4, profiles.size(), "应种子 WORKDAY / WEEKEND / HOLIDAY / EXAM 四档");
+        boolean exam = false;
+        for (JsonNode node : profiles) {
+            if ("EXAM".equals(node.path("dayType").asText())) {
+                exam = true;
+            }
+        }
+        assertTrue(exam, "★ 考试周必须是系统里的一个日型：PRD §12-3「考试周 8 小时」全靠它才有承载点，"
+                + "否则那条规则只能永远无处生效");
         JsonNode workday = null;
         for (JsonNode node : profiles) {
             if ("WORKDAY".equals(node.path("dayType").asText())) {

@@ -306,18 +306,46 @@ abstract class ApiTestBase {
      * @return 空闲座位 ID
      */
     protected long freeSeatOn(long floorId, String date, int slot) throws Exception {
-        MvcResult result = exec(get("/api/seats/map")
-                .param("floorId", String.valueOf(floorId))
-                .param("date", date)
-                .param("slot", String.valueOf(slot))
-                .header("Authorization", bearer(admin)));
-        assertEquals(0, code(result), "平面图查询失败：" + body(result));
-        for (JsonNode seat : data(result).path("seats")) {
-            if ("FREE".equals(seat.path("displayStatus").asText())) {
-                return seat.path("seatId").asLong();
+        return freeSeatOn(floorId, date, slot, 1);
+    }
+
+    /**
+     * 取某日起 {@code slotCount} 格内**每一格**都空闲的座位。
+     *
+     * <p>★ 只看起始格是共享内存库里的经典陷阱：另一个用例在同格更晚的位置造了数，
+     *   预约就会撞 {@code uk_slot_seat_date_idx}，表现为 4091「该座位刚被他人预约」——
+     *   看起来像并发问题，其实是夹具选座选错了（而且只在特定运行顺序/时段才复现）。
+     *
+     * @param floorId   楼层
+     * @param date      yyyy-MM-dd
+     * @param slot      起始时段格
+     * @param slotCount 需要连续空闲的格数
+     * @return 空闲座位 ID
+     */
+    protected long freeSeatOn(long floorId, String date, int slot, int slotCount) throws Exception {
+        java.util.Set<Long> candidates = null;
+        for (int i = 0; i < slotCount; i++) {
+            MvcResult result = exec(get("/api/seats/map")
+                    .param("floorId", String.valueOf(floorId))
+                    .param("date", date)
+                    .param("slot", String.valueOf(slot + i))
+                    .header("Authorization", bearer(admin)));
+            assertEquals(0, code(result), "平面图查询失败：" + body(result));
+            java.util.Set<Long> free = new java.util.LinkedHashSet<>();
+            for (JsonNode seat : data(result).path("seats")) {
+                if ("FREE".equals(seat.path("displayStatus").asText())) {
+                    free.add(seat.path("seatId").asLong());
+                }
+            }
+            if (candidates == null) {
+                candidates = free;
+            } else {
+                candidates.retainAll(free);
             }
         }
-        throw new AssertionError(date + " 第 " + slot + " 格没有空闲座位，用例需要换时段");
+        assertTrue(candidates != null && !candidates.isEmpty(),
+                date + " 第 " + slot + " 起 " + slotCount + " 格内没有空闲座位，用例需要换时段");
+        return candidates.iterator().next();
     }
 
     protected String displayStatus(long floorId, long seatId, String date, int slot) throws Exception {
