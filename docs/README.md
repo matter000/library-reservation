@@ -118,6 +118,10 @@ powershell -ExecutionPolicy Bypass -File docs\api-smoke.ps1 -Base http://localho
   只经环境变量传给子进程，不落盘、不进命令行、不进日志；默认建**专用库** `library_seat_v2check`，脚本不 DROP 任何东西）。
   它跑三条判据：Flyway 到 v24、`flyway_schema_history` 成功记录 24 条、三档窗口逐值相等（另附表数/用户数/`t_table` 只报不判）。
   ★ 脚本本身已过语法检查与预检失败路径（`-MysqlCli` 指错时 `exit 2`），但**真 MySQL 上的执行仍未做过一次**，因为这台机器没有可用凭据。
+  打包侧已用离线探针排除两类假故障：jar 里 `BOOT-INF/lib/mysql-connector-j-8.3.0.jar` 与 24 个 `db/migration/mysql/V*.sql` 都在；
+  以 `SPRING_PROFILES_ACTIVE=mysql` 指向一个**没有服务的端口**启动，日志是 `The following 1 profile is active: "mysql"` 之后
+  直接 `CommunicationsException … Connection refused`（栈帧来自那个驱动 jar），
+  **没有** `No suitable driver` / `Cannot load driver class` / profile 不解析这类错误 ⇒ 你只需要给一个可达的 MySQL + 凭据，剩下的是迁移本身。
 
 - 规则全部可在 `/admin/rules` 改，**改后立即生效、无需重启**；变更前后值在 `/admin/rules/history`。
 - 已知的产品口径请读 `docs/DESIGN.md` §0.1（V2 生效范围）与 `docs/DESIGN-V2.md`；
