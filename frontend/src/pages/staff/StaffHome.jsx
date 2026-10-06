@@ -51,7 +51,7 @@ export default function StaffHome() {
       >
         <Typography.Paragraph>
           当前已具备馆员权限（可访问 <Typography.Text code>/api/staff/**</Typography.Text>）。
-          以下作业模块将随 V2 分片交付：
+          下面是馆员的日常作业入口：
         </Typography.Paragraph>
         <Row gutter={[16, 16]}>
           {modules.map((item) => (
@@ -59,23 +59,21 @@ export default function StaffHome() {
               <Card
                 size="small"
                 title={item.title}
-                actions={item.path
-                  ? [(
-                    <Button
-                      key="go"
-                      type="link"
-                      size="small"
-                      onClick={() => navigate(item.path)}
-                    >
-                      前往
-                    </Button>
-                  )]
-                  : undefined}
+                actions={[(
+                  <Button
+                    key="go"
+                    type="link"
+                    size="small"
+                    onClick={() => navigate(item.path)}
+                  >
+                    前往
+                  </Button>
+                )]}
               >
                 <Space direction="vertical">
-                  <Tag color={item.path ? 'green' : 'default'}>{item.stage}</Tag>
+                  <Tag color="green">{item.stage}</Tag>
                   <Typography.Text type="secondary">
-                    {item.path ? item.note : '待交付'}
+                    {item.note}
                   </Typography.Text>
                 </Space>
               </Card>
