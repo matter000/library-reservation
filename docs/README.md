@@ -109,7 +109,11 @@ powershell -ExecutionPolicy Bypass -File docs\api-smoke.ps1 -Base http://localho
   已做过的静态对账是：两套脚本的数据语句逐字同径、表/索引/DML 目标一致
   （方法与逐条排除的误报见 `.workbuddy/regression-v2-s7/S7-24-GATE.md` §4.4）。
   要在 MySQL 上真验收，请先改成可用凭据、建一个**专用**库（如 `library_seat_v2check`），
-  看启动日志是否 `now at version v24`，再核对 `t_open_profile` 三档窗口 = 15/45、16/44、14/46。
+  看启动日志是否 `now at version v24`，再核对 `t_open_profile` 三档窗口 = 15/45、16/44、14/46 —— 这件事已经写成一条命令：
+  `powershell -ExecutionPolicy Bypass -File docs\mysql-acceptance.ps1 -SqlUser 你的账号`（密码用 `Read-Host -AsSecureString` 现场输入，
+  只经环境变量传给子进程，不落盘、不进命令行、不进日志；默认建**专用库** `library_seat_v2check`，脚本不 DROP 任何东西）。
+  它跑三条判据：Flyway 到 v24、`flyway_schema_history` 成功记录 24 条、三档窗口逐值相等（另附表数/用户数/`t_table` 只报不判）。
+  ★ 脚本本身已过语法检查与预检失败路径（`-MysqlCli` 指错时 `exit 2`），但**真 MySQL 上的执行仍未做过一次**，因为这台机器没有可用凭据。
 
 - 规则全部可在 `/admin/rules` 改，**改后立即生效、无需重启**；变更前后值在 `/admin/rules/history`。
 - 已知的产品口径请读 `docs/DESIGN.md` §0.1（V2 生效范围）与 `docs/DESIGN-V2.md`；
