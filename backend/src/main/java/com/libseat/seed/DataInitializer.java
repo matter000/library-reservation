@@ -82,6 +82,9 @@ public class DataInitializer implements ApplicationRunner {
 
     private final com.libseat.repository.ViolationRepository violationRepository;
 
+    /** 桌位种子（B12）：组队分区必须有桌才能整组下单。 */
+    private final com.libseat.repository.SeatTableRepository seatTableRepository;
+
     private final org.springframework.core.env.Environment environment;
 
     /** 演示历史的可识别标记：证据里带它，重启时认得出"这条是种子造的"，不重复追加。 */
@@ -138,6 +141,7 @@ public class DataInitializer implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         if (userRepository.count() > 0) {
             log.info("种子数据已存在，跳过初始化（幂等）");
+            seedTables();
             seedDemoHistory();
             printDemoAccounts();
             return;
@@ -148,6 +152,7 @@ public class DataInitializer implements ApplicationRunner {
         List<Floor> floors = seedFloors();
         List<Seat> seats = seedSeats(floors);
         seedReservations(users, seats);
+        seedTables();
         seedDemoHistory();
 
         log.info("种子数据初始化完成：用户 {} 个，楼层 {} 个，座位 {} 个，预约 {} 条",
@@ -222,6 +227,59 @@ public class DataInitializer implements ApplicationRunner {
         saved.forEach(user -> creditService.initAccount(user.getId()));
         return saved;
     }
+
+
+    /**
+     * 组队分区的种子桌位（B12）。
+     *
+     * <p>★ 为什么不能交给迁移：{@code t_seat} 由 Java 种子创建，而迁移永远跑在种子之前（DESIGN §14.3），
+     * 空库里 {@code UPDATE t_seat SET table_id ...} 是空操作 —— 只会让"新建库"与"迁移库"长出两种状态（B9 的同形问题）。
+     * 判重按"该分区当前还没有任何桌"，所以当年手工建过 T01 的演示库不会被重复建桌。
+     *
+     * <p>没有这一步，全新部署的研讨协作区一张桌都没有，PRD §12-6「仅支持组队预约（按桌）」开箱即用是假的
+     * —— 这是拿最终 jar 在**净库**上跑冒烟才暴露出来的（演示库因为手工数据一直 PASS）。
+     */
+    private void seedTables() {
+        if (java.util.Arrays.asList(environment.getActiveProfiles()).contains("test")) {
+            return;
+        }
+        com.libseat.entity.Zone seminar = zoneRepository.findAll().stream()
+                .filter(z -> "1F-SEMINAR".equals(z.getCode()))
+                .findFirst().orElse(null);
+        if (seminar == null) {
+            log.warn("桌位种子跳过：找不到 1F-SEMINAR 分区");
+            return;
+        }
+        if (!seatTableRepository.findByZoneIdOrderByTableNoAsc(seminar.getId()).isEmpty()) {
+            return;
+        }
+        List<Seat> pool = new ArrayList<>();
+        for (Seat seat : seatRepository.findAll()) {
+            if (seminar.getId().equals(seat.getZoneId()) && seat.getTableId() == null) {
+                pool.add(seat);
+            }
+        }
+        if (pool.size() < 4) {
+            log.warn("桌位种子跳过：1F-SEMINAR 可用座位不足 4 个，实际 {}", pool.size());
+            return;
+        }
+        com.libseat.entity.SeatTable table = com.libseat.entity.SeatTable.builder()
+                .zoneId(seminar.getId())
+                .floorId(seminar.getFloorId())
+                .tableNo("T01")
+                .seatCount(4)
+                .status(com.libseat.enums.SeatStatus.AVAILABLE)
+                .remark("种子桌位：整组预约演示（B12）")
+                .build();
+        seatTableRepository.save(table);
+        List<Seat> members = pool.subList(0, 4);
+        for (Seat seat : members) {
+            seat.setTableId(table.getId());
+        }
+        seatRepository.saveAll(members);
+        log.info("桌位种子完成：1F-SEMINAR 建桌 T01（4 座），绑定座位 {} 个", members.size());
+    }
+
 
     private List<Floor> seedFloors() {
         List<Floor> floors = new ArrayList<>();
