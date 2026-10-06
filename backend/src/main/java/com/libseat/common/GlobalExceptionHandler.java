@@ -92,14 +92,19 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 请求体解析失败（常见于日期格式错误）。
+     * 请求体解析失败（JSON 语法坏了、编码不是 UTF-8、体为空等）。
+     *
+     * <p>★ 这里<b>不要</b>提日期格式：真正"日期写错了"的分支各有精确文案
+     * （请求参数上的 {@code @DateTimeFormat} 走类型不匹配，Service 里 {@code LocalDate.parse}
+     * 失败回「日期格式应为 yyyy-MM-dd」，字段类型不符走下面的 {@link MismatchedInputException}）。
+     * 兜底文案一旦替日期说话，非日期问题就会被引导去查完全无关的地方。
      *
      * @param e 解析异常
      * @return 统一响应
      */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<Result<Void>> handleNotReadable(HttpMessageNotReadableException e) {
-        String message = "请求参数格式错误，日期格式应为 yyyy-MM-dd";
+        String message = "请求体解析失败，请检查 JSON 语法与字符编码（应为 UTF-8）";
         Throwable cause = e.getCause();
         if (cause instanceof MismatchedInputException mismatch) {
             // 只取最后一个路径节点的字段名，避免带上 "com.libseat.dto.XxxRequest" 前缀

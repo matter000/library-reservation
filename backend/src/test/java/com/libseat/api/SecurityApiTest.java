@@ -285,6 +285,30 @@ class SecurityApiTest extends ApiTestBase {
     }
 
     @Test
+    @DisplayName("【错误映射】请求体解析失败不该赖给日期；真的是日期错时才点名日期")
+    void unreadableBodyIsNotBlamedOnDates() throws Exception {
+        // ① 语法就坏了（本轮现场是 curl 的 argv 把中文弄成非法 UTF-8，效果等同于这段坏 JSON）
+        MvcResult broken = exec(post("/api/admin/open/calendar")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"date\":")
+                .header("Authorization", bearer(admin)));
+        String brokenRaw = broken.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        assertEquals(4001, code(broken), "仍是参数类错误码：" + brokenRaw);
+        assertFalse(brokenRaw.contains("日期"),
+                "★ 这个失败跟日期毫无关系，兜底文案却写着「日期格式应为 yyyy-MM-dd」：" + brokenRaw);
+
+        // ② 日期真的错了：Service 的显式文案要保留（这是它该出现的地方）
+        MvcResult badDate = exec(post("/api/admin/open/calendar")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"date\":\"2026-13-99\",\"closed\":false}")
+                .header("Authorization", bearer(admin)));
+        String badDateRaw = badDate.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        assertEquals(4001, code(badDate), "非法日期该拒：" + badDateRaw);
+        assertTrue(badDateRaw.contains("yyyy-MM-dd"),
+                "★ 只有这一刻才该提日期格式：" + badDateRaw);
+    }
+
+    @Test
     @DisplayName("【隐私】/api/admin/usage 占用人给 realName + studentNo + username，不得含手机号")
     void usageOccupantHasNoPhone() throws Exception {
         long seat = seatId(floor1, "A03");
