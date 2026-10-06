@@ -241,8 +241,12 @@ public class DataInitializer implements ApplicationRunner {
                 .eligibleRoles("TEACHER,LIBRARIAN,SYS_ADMIN")
                 .sortOrder(3).remark("学生面不可见").build());
 
+        // ★ 这里的值必须与 V17 对 3F-EXAM 的处理一致：分区表**不设**比全馆口径更宽的日累计。
+        //   迁移永远跑在 DataInitializer 之前，空库上 `UPDATE t_zone ... WHERE code='3F-EXAM'`
+        //   面对的是 0 行 —— 指望迁移去纠正 Java 种出来的行，等于对新建库什么都没改（B9）。
+        //   单次上限 480 仍保留：那是"本区口径可放宽"的正例，且只有考试周（全馆 480）才真约得下。
         zones.add(Zone.builder().floorId(f3.getId()).name("考研专座").code("3F-EXAM")
-                .zoneType(ZoneType.EXAM_PREP).maxDurationMin(480).advanceDays(7).dailyCapMin(480)
+                .zoneType(ZoneType.EXAM_PREP).maxDurationMin(480).advanceDays(7)
                 .allowDiscuss(DiscussLevel.NO).allowLeave(true).leaveMaxMin(120).leaveDailyLimit(5)
                 .allowGroup(false).groupRequired(false).sortOrder(1)
                 .remark("长时段，暂离上限放宽").build());

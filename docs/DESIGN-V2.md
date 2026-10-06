@@ -805,7 +805,7 @@ CREATE INDEX IF NOT EXISTS idx_patrol_status ON t_patrol_task (status, level, cr
 | `V1__baseline.sql` | S0 | 与现有 `schema-h2.sql` 逐字一致（新库直接建全） |
 | `V2__role.sql` | S0 | 角色值迁移（USER→STUDENT、ADMIN→SYS_ADMIN）+ `t_user` 新列（`credit_score`/`student_no`/`active_finish_streak`） |
 | `V3__rule_audit.sql` | S0 | `t_rule_config` + `t_audit_log` + 默认规则种子 |
-| `V4__space_zone.sql` | S1 | `t_zone` + `t_seat.zone_id/full_day` + `uk_zone_floor_code` + 分区种子 |
+| `V4__space_zone.sql` | S1 | `t_zone` + `t_seat.zone_id/full_day` + `uk_zone_floor_code` + **遗留库回填**：给已有楼层补一个 `DEFAULT` 分区（★ 那 8 个演示分区不在这里，是 `DataInitializer` 写的，见 §14.3） |
 | `V5__seat_table.sql` | S1 | `t_table` + `t_seat.table_id` + `uk_seat_pos`（坐标唯一，先跑冲突检测） |
 | `V6__open_time.sql` | S1 | **时段 ×2 迁移** + `t_open_profile` / `t_open_calendar` / `t_peak_window` + 日型种子 |
 | `V7__leave.sql` | S2 | `t_leave_reason`（含种子）/ `t_leave_record` + `uk_leave_open` |
@@ -818,12 +818,26 @@ CREATE INDEX IF NOT EXISTS idx_patrol_status ON t_patrol_task (status, level, cr
 | `V14__patrol.sql` | S6 | `t_patrol_task` + `uk_patrol_open` + 巡查阈值规则种子 |
 | `V15__leave_reason_limit.sql` | S7 | T-V2-24 收口：把「就餐每日 2 次」真正写进数据（暂离计次拆成两条口径后，原因表的 `daily_limit` 不再夹分区总数） |
 | `V16__zone_advance_days_nullable.sql` | S7 | `t_zone.advance_days` 放开 NOT NULL：分区没配时才由全局 `book.advance-days` 兜底，否则"跟随全馆"这个状态在库里无法表达，全局规则就成了死配置 |
-| `V17__global_daily_cap_rule.sql` | S7 | 新增全馆规则 `book.daily-cap-min`（360 分钟 = PRD §12-3 的 6 小时，挂在用户身上、跨分区累加），并把考研专座那个比全馆更宽的 `daily_cap_min=480` 撤成 NULL（PRD 从未给任何分区放过单日额度，留着只会误导） |
+| `V17__global_daily_cap_rule.sql` | S7 | 新增全馆规则 `book.daily-cap-min`（360 分钟 = PRD §12-3 的 6 小时，挂在用户身上、跨分区累加），并把考研专座那个比全馆更宽的 `daily_cap_min=480` 撤成 NULL（PRD 从未给任何分区放过单日额度，留着只会误导）。★ 后半句对**新建库当时是空操作** —— 分区行不是这条迁移种的，见 §14.3（B9） |
 | `V18__teacher_duration_cap.sql` | S7 | 教师单次时长上限从 240 改回 360（PRD §12-2 的 6 小时）—— V11 种的 240 与学生完全相同，这条规则从落库那天起就是空转；顺带改准说明（非高峰时分区单次上限仍然优先，见 §14.1） |
 | `V19__exam_day_type.sql` | S7 | 日型新增 `EXAM`（考试周）：播种考试周开放档案 + 规则 `book.daily-cap-exam-min=480`，让 PRD §12-3「考试周 8 小时」第一次有承载点 |
-| ~~`V20__seed_demo.sql`~~ | S7 | **仍未做**：演示数据补齐（教师/馆员账号、历史违规样例）。造历史违规必须同时写 `t_violation`+`t_credit_log`+`t_user.credit_score`，否则破 `sum(delta)==credit_score` 对账不变式 |
+| `V20__zone_daily_cap_seed.sql` | S7 | T-V2-24 收口（B9）：把 1F-SILENT 的 `daily_cap_min` 追平到当前种子值 360 —— 老库那行是在 B3 加值之前种的，停在 NULL，于是"已迁移库"与"新建库"对同一条分区规则取值不同（详见 §14.3） |
+| ~~`V21__seed_demo.sql`~~ | S7 | **仍未做**：演示数据补齐（教师/馆员账号、历史违规样例）。造历史违规必须同时写 `t_violation`+`t_credit_log`+`t_user.credit_score`，否则破 `sum(delta)==credit_score` 对账不变式 |
 
 ### 14.1 全局规则值与分区值的合成口径（2026-10-05 裁定）
+
+**分区值 = 本区口径，非空即取代全局默认；全局值只在分区没配时兜底。**
+天数一律按「含当天」解释：`[今天, 今天 + N - 1]`。
+
+★ 刻意不用 `min(全局, 分区)`：min 只能收紧、不能放宽，会让种子里所有比默认更宽的分区值
+（考研专座可提前 7 天、暂离放宽到 120 分钟、单次放宽到 480 分钟）变成永远不生效的死配置。
+本轮逐条对账 PRD §12 抓出的 B6（考研专座每日 5 次被原因的 3 夹掉）就是同一个形状。
+消费点：`ZoneService#effectiveAdvanceDays`（预约闸门与建队校验共用同一处判定）。
+
+> 注意这条口径**不适用于"单日累计"**：PRD §12-3 把它写在**人**身上而不是分区上，
+> 所以它是全馆规则 `book.daily-cap-min`（考试周换 `book.daily-cap-exam-min`），
+> `Zone#dailyCapMin` 只能是本区收紧。种子曾经给考研专座放过 480，与全馆 360 直接矛盾
+> （一次 8 小时的预约就破全馆口径），V17 撤成 NULL —— 见 §14.3 里那次撤得不完全的教训。
 
 ### 14.2 日型（`DayType`）与仍未拉平的窗口差异
 
@@ -834,14 +848,31 @@ CREATE INDEX IF NOT EXISTS idx_patrol_status ON t_patrol_task (status, level, cr
 既有热力图格数与已落库的种子，属于时间模型重构，单独立项而不是塞进收口补丁。
 档案的 `remark` 里写明了这一点，避免运营以为"考试周档案已经等于 PRD"。
 
+### 14.3 ★ 种子有两个写者，而迁移永远跑在前面（B9）
 
-**分区值 = 本区口径，非空即取代全局默认；全局值只在分区没配时兜底。**
-天数一律按「含当天」解释：`[今天, 今天 + N - 1]`。
+这张表里"谁写种子"其实是混的，而收口时踩到的分歧正是从这儿来的：
 
-★ 刻意不用 `min(全局, 分区)`：min 只能收紧、不能放宽，会让种子里所有比默认更宽的分区值
-（考研专座可提前 7 天、暂离放宽到 120 分钟、单日上限 480 分钟）变成永远不生效的死配置。
-本轮逐条对账 PRD §12 抓出的 B6（考研专座每日 5 次被原因的 3 夹掉）就是同一个形状。
-消费点：`ZoneService#effectiveAdvanceDays`（预约闸门与建队校验共用同一处判定）。
+| 表 | 谁写数据 | 后果 |
+| --- | --- | --- |
+| `t_rule_config` / `t_open_profile` / `t_leave_reason` / `t_peak_window` | **SQL 迁移**（V3/V6/V7/V11…） | `UPDATE` 类修正在新建库上同样生效（已用冷启动逐值比对验过） |
+| `t_user` / `t_floor` / `t_seat` / **`t_zone`** | **`DataInitializer`（Java）** | 迁移里的 `UPDATE` 在空库上面对 **0 行** —— 对已迁移库生效，对新建库是空操作 |
+
+`V4` 那条 `INSERT INTO t_zone ... SELECT FROM t_floor WHERE NOT EXISTS(...)` 只给遗留库回填
+`DEFAULT` 分区；空库跑到这一步时 `t_floor` 还是空的，所以它一行都不写。8 个演示分区是之后
+`DataInitializer` 种的。于是 `V17` 的 `UPDATE t_zone SET daily_cap_min = NULL WHERE code='3F-EXAM'`
+在演示库里撤成功了，在任何一个新建库里却又是 480 —— 而 480 > 全馆 360，正是 §14.1 那条口径
+要消灭的死配置。**这类分歧只看测试永远不会暴露**：测试库与新建库走同一条"迁移 + Java 种子"路径，
+两边一起错；必须把新建库与已迁移库逐值对比才能看见。
+
+**规矩**：要改 Java 种子写下的值，就改 `DataInitializer`（必要时再加一条迁移修老库）；
+迁移只用来改 SQL 自己种的数据或做 DDL。守卫用例 `RuleApiTest.seedCapsMustNotContradict`
+断言"任何分区的日累计都不得比全馆口径更宽、考试周档不得比平常窄"，
+它跑在同一条冷启动路径上，所以这个形状的分歧一出现就会红。
+
+**两个方向都要修**（`V20` 就是反方向那一例）：种子改了，老库要靠迁移追平；
+老库的值是历史遗留、而当前种子已经更新的，同样是分歧 —— 判据不是"哪边新"，而是
+**"同一个规则在两条建库路径下必须取同一个值"**。收口时用「新建库 vs 已迁移库逐值 diff」来验，
+不要只跑测试：测试库与新建库同路，两边一起错就永远绿。
 
 **必须同时做的配置改动**：停用 `spring.sql.init.mode`（否则与 Flyway 双跑建表），改为 `spring.flyway.baseline-on-migrate=true` + `baseline-version=1`；MySQL/H2 双方言目录 `db/migration/{h2,mysql}`。
 

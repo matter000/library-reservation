@@ -65,6 +65,24 @@ class RuleApiTest extends ApiTestBase {
     }
 
     @Test
+    @DisplayName("【种子自洽】分区日累计不得比全馆口径更宽，考试周档不得比平常窄")
+    void seedCapsMustNotContradict() throws Exception {
+        int globalCap = Integer.parseInt(ruleValue("book.daily-cap-min"));
+        int examCap = Integer.parseInt(ruleValue("book.daily-cap-exam-min"));
+        assertTrue(examCap >= globalCap,
+                "考试周是「放宽」：daily-cap-exam-min(" + examCap + ") 不得小于全馆口径(" + globalCap + ")");
+
+        // ★ 分区级上限只能「本区收紧」。种得比全馆宽并不是更宽松 —— 全馆那道先拦，
+        //   分区那道用户永远看不见，但配置面上写着"考研专座 8 小时"，人会按它理解系统。
+        List<Map<String, Object>> wider = jdbc.queryForList(
+                "select code, daily_cap_min from t_zone"
+                        + " where daily_cap_min is not null and daily_cap_min > ?",
+                globalCap);
+        assertTrue(wider.isEmpty(),
+                "以下分区段的日累计上限比全馆口径更宽，属于永不生效的死配置：" + wider);
+    }
+
+    @Test
     @DisplayName("【校验】非法值与未知键都返回 4001 且不落库")
     void ruleValidation() throws Exception {
         assertEquals(PARAM_ERROR, code(updateRule(admin, "book.advance-days", "abc")),
