@@ -945,7 +945,11 @@ sequenceDiagram
 
 - 所有 Controller 方法返回 `Result<T>`；不要用 `ResponseEntity`。
 - 业务失败统一 `throw new BusinessException(ErrorCode.XXX, "中文提示")`；参数校验失败由 `GlobalExceptionHandler` 捕获 `MethodArgumentNotValidException` 并取首个字段错误文案返回 4001。
-- 日期解析失败（`HttpMessageConversionException`）→ 4001「日期格式应为 yyyy-MM-dd」。
+- 请求体解析失败（`HttpMessageNotReadableException`）→ 4001，文案分两种（V2 收口时拆开）：
+  字段类型不符由 `MismatchedInputException` 给出「参数类型错误：字段 应为 类型」；
+  其余（JSON 语法坏、编码不是 UTF-8、空体）给「请求体解析失败，请检查 JSON 语法与字符编码（应为 UTF-8）」。
+  ★ 兜底文案**不再提日期**：真正"日期写错"另有精确去处（参数上的 `@DateTimeFormat`、
+  Service 里 `LocalDate.parse` 失败回「日期格式应为 yyyy-MM-dd」），让兜底替日期说话会把调用方带去查不相干的地方。
 
 ### 8.2 DTO 命名规范
 
