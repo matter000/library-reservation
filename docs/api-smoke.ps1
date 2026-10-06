@@ -138,10 +138,16 @@ function Skip {
 $stamp = Get-Random -Maximum 99999
 
 # ---------- 1. 注册 ----------
-Show '1. 注册新用户（后端强制 role=STUDENT）' (Invoke-Api POST '/api/auth/register' @{
+$reg1 = Invoke-Api POST '/api/auth/register' @{
     username = "smoke$stamp"; password = '123456'; confirmPassword = '123456'
     realName = '冒烟用户'; phone = '13900001234'; role = 'SYS_ADMIN'
-})
+}
+Show '1. 注册新用户（后端强制 role=STUDENT）' $reg1
+# 本步以前只 Show：注册失败会让后面一串步骤带着空 token 继续跑（B14 同族）。
+Expect '1.1 注册成功（后续冒烟步骤都基于这个账号）' (Biz-Code $reg1) 0
+# ★ 注册接口返回的是用户信息而不是 token（前端注册成功后跳回登录页，这是设计）；
+#   所以断言改成核它真正的契约：角色由后端强制（本步请求体里故意写了 role=SYS_ADMIN）。
+Expect '1.2 自带 role=SYS_ADMIN 被忽略，新用户落库是 STUDENT' $reg1.data.role 'STUDENT'
 
 # ---------- 2. 重复注册 → 4090 ----------
 Show '2. 重复注册（期望 4090）' (Invoke-Api POST '/api/auth/register' @{
@@ -235,10 +241,13 @@ Show '14. 预约记录' (Invoke-Api GET '/api/admin/reservations?page=1&size=5' 
 # rowFrom=9 是关键：楼层 1~6 行被种子座位占满，不设行起点时新座位会整批撞坐标被跳过
 # （V2 修掉的正是「只校验编号、不校验坐标」导致的同格叠座）。
 $batchStart = Get-Random -Minimum 100 -Maximum 900
-Show "15a. 批量生成 1x3 @第9行（Z$batchStart 起）" (Invoke-Api POST '/api/admin/seats/batch' @{
+$batch1 = Invoke-Api POST '/api/admin/seats/batch' @{
     floorId = $floorId; rows = 1; cols = 3; prefix = 'Z'; startNo = $batchStart; zone = 'Z区'
     rowFrom = 9; colFrom = 1
-} $admToken).data
+} $admToken
+Show "15a. 批量生成 1x3 @第9行（Z$batchStart 起）" $batch1.data
+# 只断调用本身成功（created 数量不当判据：随机编号也许与已有 Z 座位碰，那是预期行为）
+Expect '15a.1 批量生成调用本身成功（写操作不能静默）' (Biz-Code $batch1) 0
 Show '15b. 再执行一次（期望 created=0, skippedPositions=3）' (Invoke-Api POST '/api/admin/seats/batch' @{
     floorId = $floorId; rows = 1; cols = 3; prefix = 'Z'; startNo = $batchStart; zone = 'Z区'
     rowFrom = 9; colFrom = 1
@@ -609,7 +618,12 @@ $capThird = Invoke-Api POST '/api/reservations' @{
 Show '35. 全馆单日上限' @{ code = (Biz-Code $capThird); msgLen = (Biz-Message $capThird).Length }
 Expect '35.2 第 7 小时必须被拦（4098，本区累计仅 300 分钟，只可能是全馆口径）' (Biz-Code $capThird) 4098
 Expect '35.3 报错要给出上限数字' ((Biz-Message $capThird).Length -gt 8) $true
-foreach ($id in $capSeats) { Invoke-Api POST "/api/reservations/$id/cancel" $null $capToken | Out-Null }
+$capCancelFail = 0
+foreach ($id in $capSeats) {
+    $cx = Invoke-Api POST "/api/reservations/$id/cancel" $null $capToken
+    if ((Biz-Code $cx) -ne 0) { $capCancelFail++ }
+}
+Expect '35.4 脚本自己的 6 小时占用取消干净（不给演示库留残渣，同 38.1）' $capCancelFail 0
 
 # ---------- 36. 教师单次 6 小时（PRD §12-2）：可选档位按角色给 ----------
 # V11 把 book.max-duration-teacher-min 种成 240，与学生的 4 小时同值 —— 这条规则从落库起就是空转。
