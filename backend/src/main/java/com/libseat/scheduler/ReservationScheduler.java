@@ -187,8 +187,15 @@ public class ReservationScheduler {
                 }
             } catch (Exception e) {
                 log.error("队伍锁定下单失败：groupId={}", group.getId(), e);
+                // ★ 通知必须写在这里而不是 lockAndOrder 里面：那一笔事务已经随异常回滚，
+                //   在里面写的通知会一起消失（B10 —— 组长看到的界面只会停在「等待按桌下单」）
                 try {
-                    groupService.abandonIfExpired(group.getId(), now);
+                    groupService.notifyLockAttemptFailed(group.getId(), e.getMessage());
+                } catch (Exception notifyEx) {
+                    log.error("队伍失败告知失败：groupId={}", group.getId(), notifyEx);
+                }
+                try {
+                    groupService.abandonIfExpired(group.getId(), now, e.getMessage());
                 } catch (Exception ex) {
                     log.error("队伍收尾失败：groupId={}", group.getId(), ex);
                 }

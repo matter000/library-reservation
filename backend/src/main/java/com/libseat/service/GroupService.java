@@ -15,6 +15,7 @@ import com.libseat.enums.AttendStatus;
 import com.libseat.enums.FloorStatus;
 import com.libseat.enums.GroupStatus;
 import com.libseat.enums.InviteStatus;
+import com.libseat.enums.NoticeType;
 import com.libseat.enums.SeatStatus;
 import com.libseat.enums.UserRole;
 import com.libseat.repository.GroupMemberRepository;
@@ -27,6 +28,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -79,6 +81,8 @@ public class GroupService {
     private final OpenRuleService openRuleService;
 
     private final GroupStateService groupStateService;
+
+    private final NoticeService noticeService;
 
     // ==================== 建队 ====================
 
@@ -372,6 +376,8 @@ public class GroupService {
             groupRepository.save(group);
             log.info("队伍未成团：groupId={}, 确认 {} 人 < 最少 {} 人",
                     groupId, confirmed.size(), group.getMinMembers());
+            notifyOrderFailed(group, "已确认 " + confirmed.size() + " 人，未达最少成团人数 "
+                    + group.getMinMembers() + " 人", true);
             return false;
         }
         List<Seat> seats = freeSeats(group.getTableId());
@@ -380,6 +386,8 @@ public class GroupService {
             groupRepository.save(group);
             log.warn("桌位可用座位不足，未成团：groupId={}, 需要 {} 人，可用 {} 座",
                     groupId, confirmed.size(), seats.size());
+            notifyOrderFailed(group, "该桌可用座位不足（本队需要 " + confirmed.size()
+                    + " 座，锁定时刻只剩 " + seats.size() + " 座）", true);
             return false;
         }
 
@@ -424,6 +432,16 @@ public class GroupService {
      */
     @Transactional
     public boolean abandonIfExpired(Long groupId, LocalDateTime now) {
+        return abandonIfExpired(groupId, now, null);
+    }
+
+    /**
+     * 同上，但带上「这一轮为什么没订上」的原因，用于给组长发一条解释（B10）。
+     *
+     * @param reason 失败原因（来自下单异常或状态判定），null 时用通用文案
+     */
+    @Transactional
+    public boolean abandonIfExpired(Long groupId, LocalDateTime now, String reason) {
         Group group = requireGroup(groupId);
         if (group.getStatus() != GroupStatus.FORMING) {
             return false;
@@ -436,7 +454,52 @@ public class GroupService {
         groupRepository.save(group);
         log.warn("队伍未能在开会时刻 {} 前完成整桌下单，置为未成团：groupId={}, 桌位={}",
                 start, groupId, group.getTableId());
+        notifyOrderFailed(group, StringUtils.hasText(reason)
+                ? "多次尝试后仍未订到座位（最近一次原因：" + reason + "）"
+                : "到开会时刻仍未完成整桌下单", true);
         return true;
+    }
+
+    /**
+     * 只解释、不改状态：本轮锁定下单抛了异常，队伍留在 {@code FORMING} 等下一轮重试（B10）。
+     *
+     * <p>★ 必须由调用方（调度器）在事务**外**调用：{@code lockAndOrder} 抛异常时它自己的事务已经回滚，
+     *   在那笔事务里写的通知会跟着一起消失。
+     *
+     * @param groupId 队伍
+     * @param reason  失败原因（一般是异常的文案）
+     */
+    @Transactional
+    public void notifyLockAttemptFailed(Long groupId, String reason) {
+        Group group = requireGroup(groupId);
+        if (group.getStatus() == GroupStatus.FORMING) {
+            notifyOrderFailed(group, "本轮锁定下单未完成（" + reason + "）", false);
+        }
+    }
+
+    /**
+     * 把「这队为什么没订上」讲给组长听（PRD §13「不可用必须给理由」，收口补的 B10）。
+     *
+     * <p>★ 去重交给 {@code uk_notice_ref}（谁 + 哪类 + 指向哪条业务记录）：
+     * 锁定失败会每分钟重试一次，若不去重，组长每收一条「还是没订上」而什么都做不了。
+     * 因此同一支队伍只发第一条 —— 后续状态变化（真的作废）不再重复打扰。
+     *
+     * @param group    队伍
+     * @param reason   为什么这一轮没订上
+     * @param terminal 是否已经终局（FAILED）；false 表示还会重试
+     */
+    private void notifyOrderFailed(Group group, String reason, boolean terminal) {
+        String range = BizConstants.formatDate(group.getReserveDate()) + " "
+                + BizConstants.rangeLabel(group.getStartSlot(),
+                BizConstants.hoursOfSlots(group.getEndSlot() - group.getStartSlot()));
+        noticeService.push(group.getLeaderId(), NoticeType.GROUP_ORDER_FAILED,
+                terminal ? "队伍没有订上座位" : "队伍本轮暂未订上座位",
+                "第 " + group.getId() + " 队（" + range + "）" + reason + "。"
+                        + (terminal
+                        ? "队伍已作废，本次没有占用任何座位；你可以重新建队，或改为预约散座。"
+                        : "系统每分钟仍会重试；若到开会时刻仍未成功，队伍会自动作废。"
+                        + "本次没有占用任何座位。"),
+                NoticeService.REF_GROUP, group.getId(), null);
     }
 
     // ==================== 签到与入座（T-V2-16） ====================

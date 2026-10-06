@@ -219,9 +219,59 @@ class GroupBookingApiTest extends GroupTestSupport {
             // 未成团不算违规：没人爽约，只是没凑够人
             assertEquals(0, violationRepository.findByUserIdOrderByIdDesc(uid(leader)).size(),
                     "未成团不该给任何人生成违规");
+            // ★ B10：没凑够人这件事只有组长自己看得见界面，必须留一条能看懂原因的通知
+            List<String> failedReason = noticeContentsToLeader(leader, groupId);
+            assertEquals(1, failedReason.size(), "未成团必须给组长一条解释，实际：" + failedReason);
+            assertTrue(failedReason.get(0).contains("最少"),
+                    "正文要写清是人数不足（确认了几人、最少要几人）：" + failedReason.get(0));
         } finally {
             dropGroupArtifacts(groupId, tableId);
         }
+    }
+
+    @Test
+    @DisplayName("【B10】下单失败走过调度器：组长收到一条写明原因的通知，反复重试不翻倍")
+    void lockFailureNotifiesLeaderExactlyOnce() throws Exception {
+        long tableId = newTable(4);
+        String leader = newUser();
+        String[] mate = newMember();
+        Long groupId = null;
+        try {
+            groupId = createConfirmedGroup(leader, tableId, List.<String[]>of(mate));
+            final long gid = groupId;
+            long stolen = tableSeats(tableId).get(0);
+            takeSeatExternally(stolen, mate[0]);
+            pushLockPast(gid);
+
+            scheduler.scanGroupLock();
+
+            assertEquals("FORMING", detail(leader, gid).path("status").asText(),
+                    "座位冲突后队伍要留在可重试状态");
+            List<String> reasons = noticeContentsToLeader(leader, gid);
+            assertEquals(1, reasons.size(),
+                    "★ 组长必须知道自己为什么没订上 —— 只有日志不算交付：" + reasons);
+            assertTrue(reasons.get(0).contains("他人预约") || reasons.get(0).contains("冲突"),
+                    "通知要写清失败原因（座位被抢），而不是只说「没订上」：" + reasons.get(0));
+
+            // 调度器每分钟一跳，失败原因也一样：重试可以有，骚扰不可以有
+            scheduler.scanGroupLock();
+            scheduler.scanGroupLock();
+            assertEquals(1, jdbc.queryForObject(
+                            "select count(1) from t_notice where user_id = ? and type = ?"
+                                    + " and ref_type = 'GROUP' and ref_id = ?",
+                            Integer.class, uid(leader), "GROUP_ORDER_FAILED", gid),
+                    "同一队伍同一类失败只能有一条（去重键是 谁+哪类+指向哪条业务记录）");
+        } finally {
+            dropGroupArtifacts(groupId, tableId);
+        }
+    }
+
+    /** 组长名下、指向这支队伍「未成团」通知的正文列表。 */
+    private List<String> noticeContentsToLeader(String leaderToken, long groupId) throws Exception {
+        return jdbc.queryForList(
+                "select content from t_notice where user_id = ? and type = ?"
+                        + " and ref_type = 'GROUP' and ref_id = ?",
+                String.class, uid(leaderToken), "GROUP_ORDER_FAILED", groupId);
     }
 
     @Test
