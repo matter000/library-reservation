@@ -70,7 +70,11 @@ PC 端顶栏有"手机版"入口，移动壳右上角有"PC 版"出口。
 ```powershell
 cd D:\Project\LibraryReservation
 powershell -ExecutionPolicy Bypass -File docs\api-smoke.ps1 -Base http://localhost:8081
-# 期望最后一行：冒烟脚本执行完毕：PASS 70 / FAIL 0 / SKIP 0，退出码 0
+# 期望最后一行（V2 收口后）：冒烟脚本执行完毕：PASS 104 / FAIL 0 / SKIP 0，退出码 0
+#   ① PASS 数会随断言增删变化，引用时连断言名一起看（B14/B15 新增了 10.1/10.2/38.1/1.1/1.2/15a.1/35.4）。
+#   ② 第 23 步「签到→暂离→返回→结束」只在签到窗口内跑（开始前 15 分钟到开始后 15 分钟），
+#      窗口外会合成一条 [SKIP] 且 PASS 变 98 —— 那是时刻口径，不是回归；FAIL 必须恒为 0。
+#   ③ 脚本自己建的预约自己收尾（38.1/35.4），跑完演示库不应留下 CONFIRMED 残留。
 ```
 
 脚本自带期望值与退出码（有 FAIL 就 `exit 1`），覆盖四角色×三命名空间权限矩阵、规则改值与历史、
