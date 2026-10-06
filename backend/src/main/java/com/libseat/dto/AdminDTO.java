@@ -13,7 +13,7 @@ import lombok.NoArgsConstructor;
 public class AdminDTO {
 
     /**
-     * 占用人信息（★ 隐私红线：只有 realName + username，无手机号）。
+     * 占用人信息（★ 隐私红线：只有 realName + username + studentNo，无手机号）。
      */
     @Data
     @Builder
@@ -23,6 +23,9 @@ public class AdminDTO {
 
         /** 姓名。 */
         private String realName;
+
+        /** 学号 / 教工号（PRD §12-24 要求馆员据此确认"是不是这个人"）。 */
+        private String studentNo;
 
         /** 账号。 */
         private String username;
@@ -180,6 +183,9 @@ public class AdminDTO {
 
         /** 姓名。 */
         private String realName;
+
+        /** 学号 / 教工号（PRD §12-24）。 */
+        private String studentNo;
 
         /** 账号。 */
         private String username;

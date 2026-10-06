@@ -131,7 +131,7 @@ export default function UsageQuery() {
       title: '占用人',
       dataIndex: 'occupant',
       render: (v) =>
-        v ? `${v.realName || ''}（${v.username || ''}）` : <Typography.Text type="secondary">-</Typography.Text>,
+        v ? `${v.realName || ''}（学号 ${v.studentNo || '—'} · ${v.username || ''}）` : <Typography.Text type="secondary">-</Typography.Text>,
     },
     { title: '预约时段', dataIndex: 'timeRange', width: 130, render: (v) => v || '-' },
     {

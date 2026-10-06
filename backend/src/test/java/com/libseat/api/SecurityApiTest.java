@@ -273,10 +273,16 @@ class SecurityApiTest extends ApiTestBase {
     }
 
     @Test
-    @DisplayName("【隐私】/api/admin/usage 占用人只含 realName + username，不得含手机号")
+    @DisplayName("【隐私】/api/admin/usage 占用人给 realName + studentNo + username，不得含手机号")
     void usageOccupantHasNoPhone() throws Exception {
         long seat = seatId(floor1, "A03");
-        reserveOk(newUser(), seat, dw(3), slot(12), 2);
+        String occupant = newUser();
+        reserveOk(occupant, seat, dw(3), slot(12), 2);
+        // ★ 学号由这里现填：它既证明馆员面真的把 student_no 送出去（B7 的可见半边），
+        //   又不依赖种子值 —— 换库、换演示数据都不会让这条用例变脆。
+        jdbc.update("update t_user set student_no = 'B7-TEST-001'"
+                        + " where id = (select user_id from t_reservation where seat_id = ? and reserve_date = ?)",
+                seat, java.time.LocalDate.parse(dw(3)));
 
         MvcResult result = exec(get("/api/admin/usage")
                 .param("floorId", String.valueOf(floor1))
@@ -287,16 +293,24 @@ class SecurityApiTest extends ApiTestBase {
         String raw = result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
         assertFalse(raw.contains("phone"), "使用情况响应不应含 phone 字段");
         assertFalse(raw.contains("13812345671"), "使用情况响应泄漏了完整手机号");
+        assertTrue(raw.contains("B7-TEST-001"),
+                "★ PRD §12-24 要求馆员能看到学号；现在占用人里没有 studentNo：" + raw);
 
+        boolean seen = false;
         for (JsonNode row : data(result).path("rows")) {
-            JsonNode occupant = row.path("occupant");
-            if (occupant.isNull()) {
+            JsonNode occupantVo = row.path("occupant");
+            if (occupantVo.isNull()) {
                 continue;
             }
             Set<String> fields = new java.util.HashSet<>();
-            occupant.fieldNames().forEachRemaining(fields::add);
-            assertEquals(Set.of("realName", "username"), fields, "占用人字段应只有 realName + username，实际：" + fields);
+            occupantVo.fieldNames().forEachRemaining(fields::add);
+            assertEquals(Set.of("realName", "username", "studentNo"), fields,
+                    "占用人字段只能是姓名+账号+学号，实际：" + fields);
+            if ("B7-TEST-001".equals(occupantVo.path("studentNo").asText())) {
+                seen = true;
+            }
         }
+        assertTrue(seen, "至少一行占用人要带出学号");
     }
 
     @Test

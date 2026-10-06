@@ -48,6 +48,15 @@ public class User {
     @Column(name = "real_name", nullable = false, length = 50)
     private String realName;
 
+    /**
+     * 学号 / 教工号（PRD §12-24：馆员看姓名时也要能确认"是不是这个人"）。
+     *
+     * <p>★ 允许为空：管理员或外部账号可能没有校园号。唯一索引 {@code uk_user_student_no}
+     * 在 H2/MySQL 下都不把多行 NULL 判成冲突，所以"很多人没有学号"不会撞约束。
+     */
+    @Column(name = "student_no", length = 30)
+    private String studentNo;
+
     /** 手机号（管理员端脱敏展示）。 */
     @Column(name = "phone", length = 20)
     private String phone;

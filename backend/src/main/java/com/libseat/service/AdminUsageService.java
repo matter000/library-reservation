@@ -212,12 +212,14 @@ public class AdminUsageService {
         List<Reservation> content = pageResult.getContent();
         Map<Long, String> usernameMap = new HashMap<>();
         Map<Long, String> realNameMap = new HashMap<>();
+        Map<Long, String> studentNoMap = new HashMap<>();
         Map<Long, Seat> seatMap = new HashMap<>();
         for (Reservation reservation : content) {
             if (!usernameMap.containsKey(reservation.getUserId())) {
                 userRepository.findById(reservation.getUserId()).ifPresent(user -> {
                     usernameMap.put(user.getId(), user.getUsername());
                     realNameMap.put(user.getId(), user.getRealName());
+                    studentNoMap.put(user.getId(), user.getStudentNo());
                 });
             }
             if (!seatMap.containsKey(reservation.getSeatId())) {
@@ -241,6 +243,7 @@ public class AdminUsageService {
                     .reservationId(reservation.getId())
                     .userId(reservation.getUserId())
                     .realName(realNameMap.get(reservation.getUserId()))
+                    .studentNo(studentNoMap.get(reservation.getUserId()))
                     .username(usernameMap.get(reservation.getUserId()))
                     .floorId(reservation.getFloorId())
                     .floorName(floorName)
@@ -366,6 +369,7 @@ public class AdminUsageService {
             userRepository.findById(reservation.getUserId()).ifPresent(user ->
                     map.put(user.getId(), AdminDTO.OccupantVO.builder()
                             .realName(user.getRealName())
+                            .studentNo(user.getStudentNo())
                             .username(user.getUsername())
                             .build()));
         }

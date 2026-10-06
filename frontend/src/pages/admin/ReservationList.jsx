@@ -113,7 +113,7 @@ export default function ReservationList() {
     {
       title: '用户',
       width: 150,
-      render: (_, row) => `${row.realName || ''}（${row.username || ''}）`,
+      render: (_, row) => `${row.realName || ''}（学号 ${row.studentNo || '—'} · ${row.username || ''}）`,
     },
     { title: '楼层', dataIndex: 'floorName', width: 130, render: (v) => v || '-' },
     { title: '座位', dataIndex: 'seatNo', width: 90 },
