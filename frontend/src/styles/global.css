@@ -468,6 +468,13 @@ body {
   padding: 12px 0;
 }
 
+/* tab 溢出时出现的「更多」箭头也是可点目标，实测 38px，同样抬到 44 */
+.m-layout .ant-tabs-nav-more {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
 .m-layout .ant-pagination-item,
 .m-layout .ant-pagination-prev .ant-pagination-item-link,
 .m-layout .ant-pagination-next .ant-pagination-item-link {
