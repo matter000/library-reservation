@@ -103,6 +103,14 @@ powershell -ExecutionPolicy Bypass -File docs\api-smoke.ps1 -Base http://localho
 
 ## 7. 数据与运维提示
 
+- **默认跑 H2**（`application-h2.yml`，文件库 `./data/library`）。仓库另备一份 `application-mysql.yml`
+  （`--spring.profiles.active=mysql`，Flyway 脚本分方言放在 `db/migration/{h2,mysql}`），
+  ★ 但 **mysql 那一套从未在真 MySQL 上执行过**：本机 3306 有服务，而配置里的占位凭据 `root/root` 被拒（`ERROR 1045`）。
+  已做过的静态对账是：两套脚本的数据语句逐字同径、表/索引/DML 目标一致
+  （方法与逐条排除的误报见 `.workbuddy/regression-v2-s7/S7-24-GATE.md` §4.4）。
+  要在 MySQL 上真验收，请先改成可用凭据、建一个**专用**库（如 `library_seat_v2check`），
+  看启动日志是否 `now at version v24`，再核对 `t_open_profile` 三档窗口 = 15/45、16/44、14/46。
+
 - 规则全部可在 `/admin/rules` 改，**改后立即生效、无需重启**；变更前后值在 `/admin/rules/history`。
 - 已知的产品口径请读 `docs/DESIGN.md` §0.1（V2 生效范围）与 `docs/DESIGN-V2.md`；
   PRD-V2 §12 二十六条基准的逐条映射与偏差登记在 `.workbuddy/regression-v2-s7/S7-24-GATE.md`。
