@@ -834,7 +834,7 @@ CREATE INDEX IF NOT EXISTS idx_patrol_status ON t_patrol_task (status, level, cr
 | `V20__zone_daily_cap_seed.sql` | S7 | T-V2-24 收口（B9）：把 1F-SILENT 的 `daily_cap_min` 追平到当前种子值 360 —— 老库那行是在 B3 加值之前种的，停在 NULL，于是"已迁移库"与"新建库"对同一条分区规则取值不同（详见 §14.3） |
 | `V21__leave_reason_relaxable.sql` | S7 | T-V2-24 收口（B8，用户裁定方案 ②）：`t_leave_reason` 加 `relaxable`，就餐/上课标 TRUE。分区值从此**只放宽可放宽的原因、只收紧其余原因**，§12-7「考研专座暂离放宽至 120 分钟」在 `min(原因, 分区)` 模型下第一次真的可见 |
 | `V22__user_student_no.sql` | S7 | T-V2-24 收口（B7）：给 `t_user.student_no` 回填演示账号的学号/教工号 —— 这一列与唯一索引自 V2 就在库里，但 Java 侧此前零引用，所以"馆员可见姓名+学号"其实不存在；★ 老库靠本迁移补齐、新库由 `DataInitializer` 写入，两处取值逐字一致（§14.3） |
-| ~~`V23__seed_demo.sql`~~ | S7 | **仍未做**：演示数据补齐（教师/馆员账号、历史违规样例）。造历史违规必须同时写 `t_violation`+`t_credit_log`+`t_user.credit_score`，否则破 `sum(delta)==credit_score` 对账不变式。★ 而且**不能写成迁移**：`t_user` 由 `DataInitializer` 播种、跑在迁移之后，空库上迁移面对空的用户表一行也插不进去（§14.3），演示数据应落在 Java 侧 |
+| （无 V23）| S7 | 演示数据补齐**改由 Java 落地**，不再欠迁移：`DataInitializer#seedDemoHistory` 给 student1~3 各补一条带证据的历史违规，一律走 `CreditService#applyViolation` 这个唯一写入口，所以 `t_violation`+`t_credit_log`+`t_user.credit_score` 同笔生效、`sum(delta)==credit_score` 天然成立。★ 为什么不写成迁移（§14.3）：违规行挂在用户身上，而用户由 `DataInitializer` 播种、跑在所有迁移之后 —— 空库上"给 student1 造违规"的迁移面对的是还不存在的用户。方法在"跳过初始化"分支里也调用，并按证据里的 `DEMO_HISTORY_MARK` 自己判重，所以老演示库当场补得齐、重启 N 次只有一条；测试 profile 直接跳过（演示数据是给演示库看的，不是给夹具看的） |
 
 ### 14.1 全局规则值与分区值的合成口径（2026-10-05 裁定）
 

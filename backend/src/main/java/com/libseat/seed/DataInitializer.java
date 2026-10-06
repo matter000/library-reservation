@@ -80,11 +80,65 @@ public class DataInitializer implements ApplicationRunner {
 
     private final com.libseat.service.CreditService creditService;
 
+    private final com.libseat.repository.ViolationRepository violationRepository;
+
+    private final org.springframework.core.env.Environment environment;
+
+    /** 演示历史的可识别标记：证据里带它，重启时认得出"这条是种子造的"，不重复追加。 */
+    private static final String DEMO_HISTORY_MARK = "DEMO-HISTORY";
+
+    /**
+     * 给三个学生演示账号补一段信用历史（T-V2-24 仍欠的"演示数据"项）。
+     *
+     * <p>★ 为什么写在 Java 而不是迁移里（DESIGN §14.3 / B9）：`t_violation` 的行要挂在用户身上，
+     *   而用户由本类播种、跑在所有迁移**之后** —— 空库上"给 student1 造一条违规"的迁移
+     *   面对的是还不存在的用户，写进去就是孤儿行或干脆 0 行。
+     *
+     * <p>★ 老演示库走的是上面那条"跳过初始化"分支，所以本方法**两条路径都调**，
+     *   并靠证据里的 {@code DEMO_HISTORY_MARK} 自己判重，不依赖"表空不空"——
+     *   重启 N 次也只有一条。
+     *
+     * <p>★ 一律走 {@code CreditService#applyViolation} 这个唯一写入口：它同笔写
+     *   `t_violation` + `t_credit_log` 并更新 `t_user.credit_score`，
+     *   因此 {@code sum(delta) == credit_score} 的对账不变式天然成立；
+     *   自己拼三条 INSERT 破的正是它（缺证据还会被入口直接 4001 拒掉）。
+     */
+    private void seedDemoHistory() {
+        // ★ 测试环境不补：用例自己用 newUser() 造隔离账号，演示历史只会让"某人的信用分是几分"
+        //   这种断言凭空多扣 10 分。演示数据是给演示库看的，不是给夹具看的。
+        if (java.util.Arrays.asList(environment.getActiveProfiles()).contains("test")) {
+            return;
+        }
+        for (String username : java.util.List.of("student1", "student2", "student3")) {
+            userRepository.findByUsername(username).ifPresent(this::seedDemoHistoryFor);
+        }
+    }
+
+    /** 为单个演示账号补一条带证据的爽约记录（已有标记则跳过）。 */
+    private void seedDemoHistoryFor(User user) {
+        boolean already = violationRepository.findByUserIdOrderByIdDesc(user.getId()).stream()
+                .anyMatch(v -> v.getEvidence() != null && v.getEvidence().contains(DEMO_HISTORY_MARK));
+        if (already) {
+            return;
+        }
+        java.util.LinkedHashMap<String, Object> evidence = new java.util.LinkedHashMap<>();
+        evidence.put("marker", DEMO_HISTORY_MARK);
+        evidence.put("scene", "演示数据：开馆巡查裁定");
+        evidence.put("judgedAt", BizConstants.formatDateTime(
+                java.time.LocalDateTime.now().minusDays(2)));
+        evidence.put("seatNo", "A07");
+        evidence.put("remark", "演示用历史爽约：预约后未在窗口内签到，按 PRD §12-20 扣 10 分；学生可在「信用与违规」页申诉");
+        creditService.applyViolation(user.getId(), com.libseat.enums.ViolationType.NO_SHOW, null,
+                creditService.buildEvidence(evidence), null, null);
+        log.info("演示信用历史已补一条：user={}", user.getUsername());
+    }
+
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
         if (userRepository.count() > 0) {
             log.info("种子数据已存在，跳过初始化（幂等）");
+            seedDemoHistory();
             printDemoAccounts();
             return;
         }
@@ -94,6 +148,7 @@ public class DataInitializer implements ApplicationRunner {
         List<Floor> floors = seedFloors();
         List<Seat> seats = seedSeats(floors);
         seedReservations(users, seats);
+        seedDemoHistory();
 
         log.info("种子数据初始化完成：用户 {} 个，楼层 {} 个，座位 {} 个，预约 {} 条",
                 userRepository.count(), floorRepository.count(), seatRepository.count(),
