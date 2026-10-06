@@ -834,7 +834,8 @@ CREATE INDEX IF NOT EXISTS idx_patrol_status ON t_patrol_task (status, level, cr
 | `V20__zone_daily_cap_seed.sql` | S7 | T-V2-24 收口（B9）：把 1F-SILENT 的 `daily_cap_min` 追平到当前种子值 360 —— 老库那行是在 B3 加值之前种的，停在 NULL，于是"已迁移库"与"新建库"对同一条分区规则取值不同（详见 §14.3） |
 | `V21__leave_reason_relaxable.sql` | S7 | T-V2-24 收口（B8，用户裁定方案 ②）：`t_leave_reason` 加 `relaxable`，就餐/上课标 TRUE。分区值从此**只放宽可放宽的原因、只收紧其余原因**，§12-7「考研专座暂离放宽至 120 分钟」在 `min(原因, 分区)` 模型下第一次真的可见 |
 | `V22__user_student_no.sql` | S7 | T-V2-24 收口（B7）：给 `t_user.student_no` 回填演示账号的学号/教工号 —— 这一列与唯一索引自 V2 就在库里，但 Java 侧此前零引用，所以"馆员可见姓名+学号"其实不存在；★ 老库靠本迁移补齐、新库由 `DataInitializer` 写入，两处取值逐字一致（§14.3） |
-| （无 V23）| S7 | 演示数据补齐**改由 Java 落地**，不再欠迁移：`DataInitializer#seedDemoHistory` 给 student1~3 各补一条带证据的历史违规，一律走 `CreditService#applyViolation` 这个唯一写入口，所以 `t_violation`+`t_credit_log`+`t_user.credit_score` 同笔生效、`sum(delta)==credit_score` 天然成立。★ 为什么不写成迁移（§14.3）：违规行挂在用户身上，而用户由 `DataInitializer` 播种、跑在所有迁移之后 —— 空库上"给 student1 造违规"的迁移面对的是还不存在的用户。方法在"跳过初始化"分支里也调用，并按证据里的 `DEMO_HISTORY_MARK` 自己判重，所以老演示库当场补得齐、重启 N 次只有一条；测试 profile 直接跳过（演示数据是给演示库看的，不是给夹具看的） |
+| `V23__open_window_prd.sql` | S7 | T-V2-24 收口（B1 那半句）：开放档案按 PRD §12-1 落值 —— 工作日 07:30–22:30（15..45）、周末 08:00–22:00（16..44）、考试周 07:00–23:00（14..46），节假日保持 V6 原值。配合 `BizConstants` 把"网格边界"与"默认窗口"拆开，热力图列数 / 演示取样 / 最早可约文案不受影响 |
+| （无 V24）| S7 | 演示数据补齐**改由 Java 落地**，不再欠迁移：`DataInitializer#seedDemoHistory` 给 student1~3 各补一条带证据的历史违规，一律走 `CreditService#applyViolation` 这个唯一写入口，所以 `t_violation`+`t_credit_log`+`t_user.credit_score` 同笔生效、`sum(delta)==credit_score` 天然成立。★ 为什么不写成迁移（§14.3）：违规行挂在用户身上，而用户由 `DataInitializer` 播种、跑在所有迁移之后 —— 空库上"给 student1 造违规"的迁移面对的是还不存在的用户。方法在"跳过初始化"分支里也调用，并按证据里的 `DEMO_HISTORY_MARK` 自己判重，所以老演示库当场补得齐、重启 N 次只有一条；测试 profile 直接跳过（演示数据是给演示库看的，不是给夹具看的） |
 
 ### 14.1 全局规则值与分区值的合成口径（2026-10-05 裁定）
 
@@ -851,17 +852,31 @@ CREATE INDEX IF NOT EXISTS idx_patrol_status ON t_patrol_task (status, level, cr
 > `Zone#dailyCapMin` 只能是本区收紧。种子曾经给考研专座放过 480，与全馆 360 直接矛盾
 > （一次 8 小时的预约就破全馆口径），V17 撤成 NULL —— 见 §14.3 里那次撤得不完全的教训。
 
-### 14.2 日型（`DayType`）与仍未拉平的窗口差异
+### 14.2 日型（`DayType`）与三档开放窗口（PRD §12-1 已全部可表达）
 
 日型有 `WORKDAY / WEEKEND / HOLIDAY / EXAM` 四档，管理员通过开放档案 + 开放日历覆盖。
-**窗口下界校验已补（ReservationService 第 3 步）**：起始格必须 ≥ 当日档案的 `open_start`。
-此前下界完全由 `BizConstants.SLOT_INDEX_MIN`（=16，恰好等于默认开窗）代职 —— 管理员把开门
-改到 10:00，09:00 的预约照样成功。这条是放宽窗口的前置条件（任务 #50）。
-**考试周目前只放宽规则、不延长窗口**：它的档案仍是 08:00–22:00，
-而 PRD §12-1 写的是 07:00–23:00。差的那两小时需要把 30 分钟网格的锚点
-（`BizConstants.SLOT_INDEX_MIN = 16`，即 08:00）前移，牵动全部时段运算、
-既有热力图格数与已落库的种子，属于时间模型重构，单独立项而不是塞进收口补丁。
-档案的 `remark` 里写明了这一点，避免运营以为"考试周档案已经等于 PRD"。
+`V23` 之后三档窗口与 PRD 一致：工作日 07:30–22:30（15..45）、周末 08:00–22:00（16..44）、
+考试周 07:00–23:00（14..46）；节假日 PRD 未给值，保持 V6 原样（10:00–18:00）。
+
+★ 这件事能落地的顺序本身就是结论，不能反着来：
+
+1. **先补下界校验**（`4fcb513`）：`ReservationService` 第 3 步要求起始格 ≥ 当日档案 `open_start`。
+   此前下界由 `SLOT_INDEX_MIN=16`（恰等于默认开窗）代职 —— 管理员把开门改到 10:00，
+   08:00 的预约照样成功。窗口一旦可配，这个洞就从隐患变成事实。
+2. **再拆两组常量**（`fbc26d3`）：`SLOT_INDEX_MIN/MAX`（网格：这个格号存不存在）与
+   `DEFAULT_WINDOW_START/MAX`（默认窗口：没特别说明时几点开门）。热力图列范围、演示数据取样、
+   "最早可约"文案读**默认窗口**那组，所以放宽网格不会凭空多出订不满的格子，
+   也不会把演示预约种到闭馆之后。
+3. **最后放宽网格 + 改档**（本轮 `V23`）。
+
+关键点是时段序号本来就是**绝对小时×2**：07:00=14、23:00=46 早就算得出来，`slot 16` 依然是 08:00
+⇒ **不需要搬任何已有占用行**。此前把它记成"时间模型重构、需要单独批准"是规模误判，
+根源是两个不同概念长期共用一对常量。
+
+验收（三条配套才成立）：`OpenRuleApiTest.examWeekWindowIsEnforceable`（考试周 07:00 可约、
+06:30 与 23:00 被拒，且工作日同格必须仍被拒 —— 反例配对说明生效的是**档案**而不是网格）、
+`weekendWindowIsEnforced`（周末 22:00 止 vs 工作日 22:30 止）、
+`lowerBoundFollowsProfile`（档案改 10:00 → 09:00 被拒；恢复 → 同一格可约）。
 
 ### 14.3 ★ 种子有两个写者，而迁移永远跑在前面（B9）
 

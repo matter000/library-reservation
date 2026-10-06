@@ -42,7 +42,7 @@ class OpenRuleApiTest extends ApiTestBase {
     }
 
     @Test
-    @DisplayName("【档案】种子三档齐全，工作日窗口与 V1 完全一致（08:00-22:00 / 28 格）")
+    @DisplayName("【档案】四档齐全，工作日窗口按 PRD §12-1（07:30-22:30 / 30 格）")
     void profilesSeeded() throws Exception {
         JsonNode profiles = data(exec(get("/api/admin/open/profiles")
                 .header("Authorization", bearer(admin))));
@@ -62,10 +62,10 @@ class OpenRuleApiTest extends ApiTestBase {
             }
         }
         assertTrue(workday != null, "必须存在工作日档案");
-        assertEquals("08:00", workday.path("startTime").asText());
-        assertEquals("22:00", workday.path("endTime").asText());
-        assertEquals(28, workday.path("slotCount").asInt(),
-                "★ 改造不得偷偷改变 V1 的开放口径：工作日仍是 08:00-22:00，只是切成 28 格");
+        assertEquals("07:30", workday.path("startTime").asText());
+        assertEquals("22:30", workday.path("endTime").asText());
+        assertEquals(30, workday.path("slotCount").asInt(),
+                "★ PRD §12-1：工作日 07:30-22:30，30 分钟一格共 30 格");
     }
 
     @Test
@@ -75,10 +75,10 @@ class OpenRuleApiTest extends ApiTestBase {
         JsonNode weekend = dayRule(admin, nextWeekend());
         assertEquals("WORKDAY", weekday.path("dayType").asText(), "dw(1) 必须解析为工作日");
         assertEquals("WEEKEND", weekend.path("dayType").asText(), "周末日必须解析为 WEEKEND");
-        assertEquals(16, weekday.path("openStart").asInt());
-        assertEquals(44, weekday.path("openEnd").asInt());
-        assertEquals(18, weekend.path("openStart").asInt(), "周末 09:00 起");
-        assertEquals(42, weekend.path("openEnd").asInt(), "周末 21:00 止");
+        assertEquals(15, weekday.path("openStart").asInt());
+        assertEquals(45, weekday.path("openEnd").asInt());
+        assertEquals(16, weekend.path("openStart").asInt(), "PRD §12-1：周末 08:00 起");
+        assertEquals(44, weekend.path("openEnd").asInt(), "PRD §12-1：周末 22:00 止");
         assertNotEquals(weekday.path("slotCount").asInt(), weekend.path("slotCount").asInt());
     }
 
@@ -187,8 +187,9 @@ class OpenRuleApiTest extends ApiTestBase {
                     "★ 开窗已被管理员改到 10:00，09:00 起仍可约就说明没人校验下界（此前由 SLOT_INDEX_MIN=16 代职）：" + raw);
             assertTrue(raw.contains("10:00"), "报错要说当天实际开窗时刻，而不是网格常量：" + raw);
         } finally {
-            req.put("name", "工作日 08:00-22:00");
-            req.put("openStart", 16);
+            req.put("name", "工作日 07:30-22:30");
+            req.put("openStart", 15);
+            req.put("openEnd", 45);
             exec(post("/api/admin/open/profiles").contentType(MediaType.APPLICATION_JSON)
                     .content(json(req)).header("Authorization", bearer(admin)));
         }
@@ -233,25 +234,69 @@ class OpenRuleApiTest extends ApiTestBase {
     void weekendWindowIsEnforced() throws Exception {
         String weekend = nextWeekend();
         String weekday = dw(1);
-        // 周末档案止于 21:00（格 42），从 20:30（格 41）起约 1 小时会越过边界
-        MvcResult weekendDenied = reserveRaw(newUser(), seatId(floor1, "A32"), weekend, 41, 1);
+        // 周末止于 22:00（格 44），从 21:30（格 43）起约 1 小时会越界；
+        // 工作日止于 22:30（格 45），同一格贴着边界，必须可约 —— 两档之差就是档案本身
+        MvcResult weekendDenied = reserveRaw(newUser(), seatId(floor1, "A32"), weekend, 43, 1);
         assertEquals(PARAM_ERROR, code(weekendDenied),
-                "★ 周末 20:30 起约 1 小时应越过 21:00 边界被拒：" + body(weekendDenied));
-        MvcResult weekdayOk = reserveRaw(newUser(), seatId(floor1, "A33"), weekday, 41, 1);
+                "★ 周末 21:30 起约 1 小时应越过 22:00 边界被拒：" + body(weekendDenied));
+        MvcResult weekdayOk = reserveRaw(newUser(), seatId(floor1, "A33"), weekday, 43, 1);
         assertEquals(0, code(weekdayOk),
-                "同一格在工作日（22:00 止）应可约：" + body(weekdayOk));
+                "同一格在工作日（22:30 止）应可约：" + body(weekdayOk));
+    }
+
+    /** 直接取响应正文：本类没有 body() 助手，用同一套 StandardCharsets 读法。 */
+    private String rawOf(MvcResult result) throws Exception {
+        return result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
     }
 
     @Test
+    @DisplayName("【考试周窗口】覆盖成考试周后 07:00 可约、06:30 与 23:00 被拒（PRD §12-1 的那两小时）")
+    void examWeekWindowIsEnforceable() throws Exception {
+        String day = dw(1);
+        Map<String, Object> req = new HashMap<>();
+        req.put("date", day);
+        req.put("dayType", "EXAM");
+        assertEquals(0, code(exec(post("/api/admin/open/calendar")
+                .contentType(MediaType.APPLICATION_JSON).content(json(req))
+                .header("Authorization", bearer(admin)))), "覆盖成考试周应成功");
+        try {
+            JsonNode rule = data(exec(get("/api/admin/open/day-rule")
+                    .param("date", day).header("Authorization", bearer(admin))));
+            assertEquals("EXAM", rule.path("dayType").asText(), "日历覆盖必须真的改变当天日型");
+            assertEquals(14, rule.path("openStart").asInt(), "考试周应 07:00 开门");
+            assertEquals(46, rule.path("openEnd").asInt(), "考试周应 23:00 闭馆");
+
+            // ★ 这道断言才是 §12-1 那两小时的验收：档案能写不等于订得到，
+            //   此前 07:00 会被网格下界（08:00）直接判非法，规则写在库里却走不通。
+            long seat = freeSeatOn(floor1, day, 14, 2);
+            String raw = rawOf(exec(post("/api/reservations")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(json(Map.of("seatId", seat, "date", day,
+                            "startSlot", 14, "duration", 1)))
+                    .header("Authorization", bearer(u1))));
+            assertTrue(raw.contains("\"code\":0"), "考试周 07:00 起约 1 小时必须可约：" + raw);
+
+            // 网格外的两头仍然要拒：06:30（格 13）与 23:00（格 46，开区间边界）
+            assertEquals(PARAM_ERROR, code(reserveRaw(u1, seat, day, 13, 1)),
+                    "06:30 不在网格内，必须 4001");
+            assertEquals(PARAM_ERROR, code(reserveRaw(u1, seat, day, 46, 1)),
+                    "23:00 是闭馆时刻，不能作为起始格");
+        } finally {
+            jdbc.update("delete from t_open_calendar where open_date = ?",
+                    java.time.LocalDate.parse(day));
+        }
+    }
+
+        @Test
     @DisplayName("【当前时段】nowSlot 必须按 30 分钟格返回，而非小时")
     void slotOptionsIndexIsHalfHourBased() throws Exception {
         JsonNode options = data(exec(get("/api/config/slots")
                 .param("date", dw(1)).header("Authorization", bearer(u1))));
-        assertEquals(28, options.size());
-        // 格序号必须从 16（08:00）开始且逐格 +1，标签必须出现半点
-        assertEquals(16, options.get(0).path("slotIndex").asInt());
-        assertEquals("08:00-08:30", options.get(0).path("label").asText());
-        assertEquals("08:30-09:00", options.get(1).path("label").asText());
+        assertEquals(30, options.size(), "工作日档案 07:30-22:30 ⇒ 30 格");
+        // 格序号必须从 15（07:30）开始且逐格 +1，标签必须体现半点格
+        assertEquals(15, options.get(0).path("slotIndex").asInt());
+        assertEquals("07:30-08:00", options.get(0).path("label").asText());
+        assertEquals("08:00-08:30", options.get(1).path("label").asText());
     }
 
     @Test

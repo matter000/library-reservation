@@ -51,11 +51,19 @@ public final class BizConstants {
     /** 默认窗口的最后一格起始（21:30）。 */
     public static final int DEFAULT_WINDOW_MAX = DEFAULT_SLOT_END - 1;
 
-    /** 时段网格下界（可作为起始时段的最小格）。本轮与默认窗口重合，PRD §12-1 放宽时只改这两行。 */
-    public static final int SLOT_INDEX_MIN = DEFAULT_WINDOW_START;
+    /**
+     * 时段网格下界 = 07:00。
+     *
+     * <p>★ 这里比默认窗口（08:00）更宽是有意的：档案可以把某天开到 07:00（PRD §12-1 考试周），
+     *   而"某天到底几点开门"由 {@code OpenRuleService#resolve} 判定，不靠网格下界代职——
+     *   以前两者重合，所以管理员把开门改到 10:00 后 08:00 仍可预约（已由第 3 步补上下界校验）。
+     *   需要"默认窗口"的地方（热力图列范围、演示取样、最早可约文案）请读
+     *   {@link #DEFAULT_WINDOW_START} / {@link #DEFAULT_WINDOW_MAX}，别读这两个。
+     */
+    public static final int SLOT_INDEX_MIN = 7 * SLOTS_PER_HOUR;
 
-    /** 时段网格上界（最后一格的起始时段）。与 {@link #SLOT_INDEX_MIN} 同理。 */
-    public static final int SLOT_INDEX_MAX = DEFAULT_WINDOW_MAX;
+    /** 时段网格上界（最后一格的起始时段）= 22:30，对应开区间边界 23:00。 */
+    public static final int SLOT_INDEX_MAX = 23 * SLOTS_PER_HOUR - 1;
 
     /** 默认时长（小时）。 */
     public static final int DEFAULT_DURATION = 2;

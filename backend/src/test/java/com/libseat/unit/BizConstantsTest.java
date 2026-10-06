@@ -23,15 +23,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class BizConstantsTest {
 
     @ParameterizedTest
-    @ValueSource(ints = {16, 20, 24, 42, 43})
-    @DisplayName("合法起始时段序号（08:00~21:30 的 30 分钟格）应通过校验")
+    @ValueSource(ints = {14, 15, 16, 24, 43, 44, 45})
+    @DisplayName("合法起始时段序号（网格 07:00~22:30）应通过校验")
     void validSlotIndex_shouldAccept(int slot) {
         assertTrue(BizConstants.validSlotIndex(slot), "slot=" + slot + " 应合法");
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {-1, 0, 15, 44, 45, 99})
-    @DisplayName("越界时段序号应被拒绝（15=07:30 早于开放，44=22:00 是结束边界不可作为起始）")
+    @ValueSource(ints = {-1, 0, 13, 46, 99})
+    @DisplayName("越界时段序号应被拒绝（13=06:30 早于网格，46=23:00 是开区间边界不可作为起始）")
+    // ★ 网格比任何一档窗口都宽：档案能不能约到某一格，由 OpenRuleApiTest 的下界/边界用例判，
+    //   这里只管"这个格号存不存在"。别把两者又合回一对常量。
     void validSlotIndex_shouldReject(int slot) {
         assertFalse(BizConstants.validSlotIndex(slot), "slot=" + slot + " 应非法");
     }
@@ -105,8 +107,8 @@ class BizConstantsTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"15,16", "0,16", "44,43", "50,43", "30,30"})
-    @DisplayName("clampToSlotRange 应把时段序号收敛到 [16,43]")
+    @CsvSource({"0,14", "13,14", "46,45", "50,45", "30,30"})
+    @DisplayName("clampToSlotRange 应把时段序号收敛到网格 [14,45]")
     void clampToSlotRange(int input, int expected) {
         assertEquals(expected, BizConstants.clampToSlotRange(input));
     }

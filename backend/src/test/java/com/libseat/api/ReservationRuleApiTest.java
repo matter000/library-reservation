@@ -566,14 +566,16 @@ class ReservationRuleApiTest extends ApiTestBase {
     // ==================== 时段选项 ====================
 
     @Test
-    @DisplayName("【时段】30 分钟格：工作日 28 格、标签 HH:mm-HH:mm，且周末窗口与工作日不同")
+    @DisplayName("【时段】30 分钟格：工作日 30 格、标签 HH:mm-HH:mm，且周末窗口与工作日不同")
     void slotOptions() throws Exception {
         String weekday = dw(1);
         JsonNode options = data(exec(get("/api/config/slots")
                 .param("date", weekday).header("Authorization", bearer(u1))));
-        assertEquals(com.libseat.common.BizConstants.SLOT_COUNT, options.size(),
-                "★ 默认窗口 08:00-22:00 在 30 分钟格下应为 28 项");
-        int slot = com.libseat.common.BizConstants.SLOT_INDEX_MIN;
+        // 选项来自**当日档案**（工作日 07:30–22:30 = 30 格），不是网格边界也不是默认窗口常量：
+        // 网格现在比档案更宽（07:00–23:00 可表达），拿网格当项数会多数两格
+        assertEquals(30, options.size(),
+                "★ 工作日档案 07:30-22:30 在 30 分钟格下应为 30 项");
+        int slot = 15;
         for (JsonNode option : options) {
             assertEquals(slot, option.path("slotIndex").asInt(), "格序号必须连续无空洞");
             // 验收 4：标签全站统一 HH:mm-HH:mm，且必须体现半点格

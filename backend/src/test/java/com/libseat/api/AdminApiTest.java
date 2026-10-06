@@ -435,7 +435,7 @@ class AdminApiTest extends ApiTestBase {
                 .header("Authorization", bearer(admin))));
         assertEquals(com.libseat.common.BizConstants.SLOT_COUNT, heat.size(),
                 "时段热度项数应等于默认窗口的格数（30 分钟一格）");
-        int index = com.libseat.common.BizConstants.SLOT_INDEX_MIN;
+        int index = com.libseat.common.BizConstants.DEFAULT_WINDOW_START;
         for (JsonNode node : heat) {
             assertEquals(index++, node.path("slotIndex").asInt());
             assertFalse(node.path("count").isNull(), "slot-heat 无数据时应为 0");
