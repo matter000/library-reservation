@@ -69,18 +69,18 @@ export const SEAT_BASE_STATUS_META = {
   DISABLED: { text: '已停用', color: 'default' },
 };
 
-/** 开放时间与时段（后端 BizConstants：08:00-22:00，V2 起内部格长 30 分钟）。 */
+/** 时段网格（后端 BizConstants 的**网格**边界：V23 起 07:00–23:00 可表达；具体某天几点开门由开放档案决定）。 */
 /** 每个时段的分钟数。 */
 export const SLOT_MINUTES = 30;
 
 /** 每小时格数。 */
 export const SLOTS_PER_HOUR = 60 / SLOT_MINUTES;
 
-/** 时段序号下界（08:00）。 */
-export const SLOT_INDEX_MIN = 8 * SLOTS_PER_HOUR;
+/** 时段序号下界（07:00）。★ 与后端 BizConstants.SLOT_INDEX_MIN 同步；这里是"网格"不是"开门时间"。 */
+export const SLOT_INDEX_MIN = 7 * SLOTS_PER_HOUR;
 
-/** 时段序号上界（21:30，最后一格的起始）。 */
-export const SLOT_INDEX_MAX = 22 * SLOTS_PER_HOUR - 1;
+/** 时段序号上界（22:30，最后一格的起始；开区间边界 23:00）。 */
+export const SLOT_INDEX_MAX = 23 * SLOTS_PER_HOUR - 1;
 
 /** 可选时长（★ 仅作为规则中心不可用时的兜底，真实值取自 /api/config/booking）。 */
 export const DURATION_OPTIONS = [

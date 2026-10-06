@@ -89,7 +89,9 @@ export default function MainLayout() {
         <Outlet />
       </Content>
       <Footer className="main-footer">
-        图书馆座位预约系统 · 开放时间 08:00-22:00 · 单次最多 4 小时
+        图书馆座位预约系统 · 开放时间与单次时长上限
+        <strong>以当日开放档案和规则中心为准</strong>
+        （系统管理员可改，改完立即对新预约生效）
       </Footer>
     </Layout>
   );

@@ -236,7 +236,7 @@ export default function OpenRuleManage() {
             type="info"
             showIcon
             message="时段边界以 30 分钟为一格"
-            description="工作日档案仍是 08:00-22:00，与改造前一致；格长只改变内部精度，不改变开放时间口径。"
+            description="格长 30 分钟是内部精度；每档窗口的起止由本页随时可改，V23 起默认值是 PRD §12-1 的工作日 07:30–22:30 / 周末 08:00–22:00 / 考试周 07:00–23:00。"
           />
           <Table rowKey="id" columns={profileColumns} dataSource={profiles} pagination={false} size="middle" />
         </Card>
