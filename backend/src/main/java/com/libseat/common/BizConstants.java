@@ -37,11 +37,25 @@ public final class BizConstants {
     /** 时段总数（默认窗口内可预约的起始时段数）。 */
     public static final int SLOT_COUNT = DEFAULT_SLOT_END - DEFAULT_SLOT_START;
 
-    /** slot_index 最小值（可作为起始时段的最小格）。 */
-    public static final int SLOT_INDEX_MIN = DEFAULT_SLOT_START;
+    /**
+     * 默认窗口的起始格（08:00）。
+     *
+     * <p>★ 与下面的 {@link #SLOT_INDEX_MIN} 是两件事，别混用：
+     *   网格边界回答"这个格号存不存在"，默认窗口回答"没特别说明时馆里几点开门"。
+     *   热力图的列范围、演示数据的取样范围、给用户的"最早可约"文案都属于**默认窗口**——
+     *   让它们跟着网格一起变宽，就会凭空多出几列永远订不满的格子和落在闭馆外的演示预约
+     *   （2026-10-06 放宽窗口的试做就是栽在这里，16 条用例红）。
+     */
+    public static final int DEFAULT_WINDOW_START = DEFAULT_SLOT_START;
 
-    /** slot_index 最大值（最后一格的起始时段，即 21:30）。 */
-    public static final int SLOT_INDEX_MAX = DEFAULT_SLOT_END - 1;
+    /** 默认窗口的最后一格起始（21:30）。 */
+    public static final int DEFAULT_WINDOW_MAX = DEFAULT_SLOT_END - 1;
+
+    /** 时段网格下界（可作为起始时段的最小格）。本轮与默认窗口重合，PRD §12-1 放宽时只改这两行。 */
+    public static final int SLOT_INDEX_MIN = DEFAULT_WINDOW_START;
+
+    /** 时段网格上界（最后一格的起始时段）。与 {@link #SLOT_INDEX_MIN} 同理。 */
+    public static final int SLOT_INDEX_MAX = DEFAULT_WINDOW_MAX;
 
     /** 默认时长（小时）。 */
     public static final int DEFAULT_DURATION = 2;

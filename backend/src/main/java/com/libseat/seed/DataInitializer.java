@@ -413,11 +413,11 @@ public class DataInitializer implements ApplicationRunner {
         }
 
         // ---------- 今天：已结束的上午时段 ----------
-        if (currentSlot >= BizConstants.SLOT_INDEX_MIN + 4) {
+        if (currentSlot >= BizConstants.DEFAULT_WINDOW_START + 4) {
             int upper = Math.min(currentSlot - 2, BizConstants.SLOT_INDEX_MAX - 2);
             for (int i = 0; i < 2; i++) {
-                int startSlot = BizConstants.SLOT_INDEX_MIN
-                        + random.nextInt(Math.max(1, upper - BizConstants.SLOT_INDEX_MIN));
+                int startSlot = BizConstants.DEFAULT_WINDOW_START
+                        + random.nextInt(Math.max(1, upper - BizConstants.DEFAULT_WINDOW_START));
                 int duration = 1 + random.nextInt(2);
                 if (startSlot + BizConstants.slotsOf(duration) > currentSlot) {
                     duration = Math.max(1,
@@ -432,7 +432,7 @@ public class DataInitializer implements ApplicationRunner {
 
         // ---------- 今天：正在使用中（CHECKED_IN，写 slot） ----------
         // 起始格取「当前格往前一小时」，配 2 小时时长，使该预约必然跨越当前时刻
-        if (currentSlot >= BizConstants.SLOT_INDEX_MIN + 2
+        if (currentSlot >= BizConstants.DEFAULT_WINDOW_START + 2
                 && currentSlot <= BizConstants.DEFAULT_SLOT_END - 2) {
             int startSlot = currentSlot - 2;
             int duration = 2;
@@ -453,7 +453,7 @@ public class DataInitializer implements ApplicationRunner {
             int latestStart = BizConstants.DEFAULT_SLOT_END - BizConstants.slotsOf(2);
             for (int i = 0; i < 3; i++) {
                 int startSlot = Math.min(latestStart, currentSlot + 2 + i * 2);
-                if (startSlot <= currentSlot || startSlot < BizConstants.SLOT_INDEX_MIN) {
+                if (startSlot <= currentSlot || startSlot < BizConstants.DEFAULT_WINDOW_START) {
                     continue;
                 }
                 int duration = 2;
@@ -500,9 +500,9 @@ public class DataInitializer implements ApplicationRunner {
      * @return 起始时段序号
      */
     private int randomStartSlot(Random random) {
-        int hours = (BizConstants.DEFAULT_SLOT_END - BizConstants.SLOT_INDEX_MIN) / BizConstants.SLOTS_PER_HOUR;
+        int hours = (BizConstants.DEFAULT_SLOT_END - BizConstants.DEFAULT_WINDOW_START) / BizConstants.SLOTS_PER_HOUR;
         int pick = random.nextInt(Math.max(1, hours - 3));
-        return BizConstants.SLOT_INDEX_MIN + pick * BizConstants.SLOTS_PER_HOUR;
+        return BizConstants.DEFAULT_WINDOW_START + pick * BizConstants.SLOTS_PER_HOUR;
     }
 
     private Reservation buildReservation(User user, Seat seat, LocalDate date, int startSlot, int duration,

@@ -701,7 +701,7 @@ public class GroupService {
         if (!BizConstants.validSlotIndex(startSlot)
                 || startSlot + BizConstants.slotsOf(duration) > day.getOpenEnd()) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "预约时段超出开放时间（"
-                    + BizConstants.slotText(BizConstants.SLOT_INDEX_MIN) + "-"
+                    + BizConstants.slotText(BizConstants.DEFAULT_WINDOW_START) + "-"
                     + BizConstants.slotText(day.getOpenEnd()) + "）");
         }
         if (!BizConstants.slotStart(date, startSlot).isAfter(LocalDateTime.now())) {

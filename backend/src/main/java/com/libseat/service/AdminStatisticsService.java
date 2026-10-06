@@ -123,14 +123,14 @@ public class AdminStatisticsService {
         Map<Integer, Long> counter = new HashMap<>();
         for (Reservation reservation : reservationRepository.findByReserveDateBetween(from, today)) {
             for (int slot = reservation.getStartSlot(); slot < reservation.getEndSlot(); slot++) {
-                if (slot < BizConstants.SLOT_INDEX_MIN || slot > BizConstants.SLOT_INDEX_MAX) {
+                if (slot < BizConstants.DEFAULT_WINDOW_START || slot > BizConstants.DEFAULT_WINDOW_MAX) {
                     continue;
                 }
                 counter.merge(slot, 1L, Long::sum);
             }
         }
         List<StatsDTO.SlotHeatVO> list = new ArrayList<>(BizConstants.SLOT_COUNT);
-        for (int slot = BizConstants.SLOT_INDEX_MIN; slot <= BizConstants.SLOT_INDEX_MAX; slot++) {
+        for (int slot = BizConstants.DEFAULT_WINDOW_START; slot <= BizConstants.DEFAULT_WINDOW_MAX; slot++) {
             list.add(StatsDTO.SlotHeatVO.builder()
                     .slotIndex(slot)
                     .label(BizConstants.slotLabel(slot))
