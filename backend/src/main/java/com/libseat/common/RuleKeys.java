@@ -76,6 +76,12 @@ public final class RuleKeys {
     /** 高峰时段改为前一天这个时刻才开放（{@code HH:mm}）。 */
     public static final String PEAK_OPEN_TIME = "peak.open-time";
 
+    /** 预约接口允许的同时在途请求数（0 等价于"暂停预约"，查看余座不受影响）。 */
+    public static final String PEAK_DEGRADE_MAX_INFLIGHT = "peak.degrade-max-inflight";
+
+    /** 过载时单个请求最长排队等待毫秒数，超时才返回 4291。 */
+    public static final String PEAK_DEGRADE_WAIT_MS = "peak.degrade-wait-ms";
+
     /** 教师单次时长上限（分钟），用于覆盖分区上限。 */
     public static final String BOOK_MAX_DURATION_TEACHER_MIN = "book.max-duration-teacher-min";
 

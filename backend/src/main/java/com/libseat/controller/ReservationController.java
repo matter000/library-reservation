@@ -4,6 +4,7 @@ import com.libseat.common.PageResult;
 import com.libseat.common.Result;
 import com.libseat.dto.ReservationDTO;
 import com.libseat.security.UserContext;
+import com.libseat.service.BookingDegradeGuard;
 import com.libseat.service.ReservationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,8 @@ public class ReservationController {
 
     private final ReservationService reservationService;
 
+    private final BookingDegradeGuard degradeGuard;
+
     /**
      * 提交预约。
      *
@@ -41,7 +44,13 @@ public class ReservationController {
     public Result<ReservationDTO.ReservationCreateVO> create(
             @Valid @RequestBody ReservationDTO.ReservationCreateRequest request) {
         Long userId = UserContext.getUserId();
-        return Result.ok(reservationService.createReservation(userId, request));
+        // PRD §13.4：过载时只有"写"这一侧排队与降级；查看余座的读接口不取许可，因此不受影响。
+        degradeGuard.acquire();
+        try {
+            return Result.ok(reservationService.createReservation(userId, request));
+        } finally {
+            degradeGuard.release();
+        }
     }
 
     /**

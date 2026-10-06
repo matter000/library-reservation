@@ -308,6 +308,16 @@ public class RuleConfigService {
     }
 
     /** 高峰时段单次时长上限（分钟）。 */
+    /** 高峰降级：允许同时在途的预约请求数（PRD §13.4）。 */
+    public int degradeMaxInflight() {
+        return getInt(RuleKeys.PEAK_DEGRADE_MAX_INFLIGHT, BizConstants.DEGRADE_MAX_INFLIGHT);
+    }
+
+    /** 高峰降级：排队等待上限（毫秒）。 */
+    public long degradeWaitMs() {
+        return getInt(RuleKeys.PEAK_DEGRADE_WAIT_MS, BizConstants.DEGRADE_WAIT_MS);
+    }
+
     public int peakCompressMin() {
         return getInt(RuleKeys.PEAK_COMPRESS_MIN, BizConstants.PEAK_COMPRESS_MIN);
     }

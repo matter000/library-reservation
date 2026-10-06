@@ -835,7 +835,8 @@ CREATE INDEX IF NOT EXISTS idx_patrol_status ON t_patrol_task (status, level, cr
 | `V21__leave_reason_relaxable.sql` | S7 | T-V2-24 收口（B8，用户裁定方案 ②）：`t_leave_reason` 加 `relaxable`，就餐/上课标 TRUE。分区值从此**只放宽可放宽的原因、只收紧其余原因**，§12-7「考研专座暂离放宽至 120 分钟」在 `min(原因, 分区)` 模型下第一次真的可见 |
 | `V22__user_student_no.sql` | S7 | T-V2-24 收口（B7）：给 `t_user.student_no` 回填演示账号的学号/教工号 —— 这一列与唯一索引自 V2 就在库里，但 Java 侧此前零引用，所以"馆员可见姓名+学号"其实不存在；★ 老库靠本迁移补齐、新库由 `DataInitializer` 写入，两处取值逐字一致（§14.3） |
 | `V23__open_window_prd.sql` | S7 | T-V2-24 收口（B1 那半句）：开放档案按 PRD §12-1 落值 —— 工作日 07:30–22:30（15..45）、周末 08:00–22:00（16..44）、考试周 07:00–23:00（14..46），节假日保持 V6 原值。配合 `BizConstants` 把"网格边界"与"默认窗口"拆开，热力图列数 / 演示取样 / 最早可约文案不受影响 |
-| （无 V24）| S7 | 演示数据补齐**改由 Java 落地**，不再欠迁移：`DataInitializer#seedDemoHistory` 给 student1~3 各补一条带证据的历史违规，一律走 `CreditService#applyViolation` 这个唯一写入口，所以 `t_violation`+`t_credit_log`+`t_user.credit_score` 同笔生效、`sum(delta)==credit_score` 天然成立。★ 为什么不写成迁移（§14.3）：违规行挂在用户身上，而用户由 `DataInitializer` 播种、跑在所有迁移之后 —— 空库上"给 student1 造违规"的迁移面对的是还不存在的用户。方法在"跳过初始化"分支里也调用，并按证据里的 `DEMO_HISTORY_MARK` 自己判重，所以老演示库当场补得齐、重启 N 次只有一条；测试 profile 直接跳过（演示数据是给演示库看的，不是给夹具看的） |
+| `V24__peak_degrade_rule.sql` | S7 | T-V2-24 收口（PRD §13.4 高峰降级）：播种 `peak.degrade-max-inflight`(16) 与 `peak.degrade-wait-ms`(2000)，供 `BookingDegradeGuard` 实时读取；前者设 0 即"暂停预约但不影响查看余座"的运营开关 |
+| （无 V25）| S7 | 演示数据补齐**改由 Java 落地**，不再欠迁移：`DataInitializer#seedDemoHistory` 给 student1~3 各补一条带证据的历史违规，一律走 `CreditService#applyViolation` 这个唯一写入口，所以 `t_violation`+`t_credit_log`+`t_user.credit_score` 同笔生效、`sum(delta)==credit_score` 天然成立。★ 为什么不写成迁移（§14.3）：违规行挂在用户身上，而用户由 `DataInitializer` 播种、跑在所有迁移之后 —— 空库上"给 student1 造违规"的迁移面对的是还不存在的用户。方法在"跳过初始化"分支里也调用，并按证据里的 `DEMO_HISTORY_MARK` 自己判重，所以老演示库当场补得齐、重启 N 次只有一条；测试 profile 直接跳过（演示数据是给演示库看的，不是给夹具看的） |
 
 ### 14.1 全局规则值与分区值的合成口径（2026-10-05 裁定）
 
@@ -921,7 +922,7 @@ CREATE INDEX IF NOT EXISTS idx_patrol_status ON t_patrol_task (status, level, cr
 | 状态可解释 | 每个禁用按钮必须带 `disabledReason`（后端计算，前端不重复实现规则——V1 约定） |
 | 色盲友好 | 颜色 + 形状双编码，新增 `ON_LEAVE` 用 ⌛ + 文案 |
 | 实时性 | 15–30s 轮询；页面隐藏暂停、切回补偿刷新（V1 已实现的优化保留） |
-| 高峰降级 | 查看余座接口与预约接口分线程池隔离；预约过载时返回 `4291 排队中` 而非 500 |
+| 高峰降级 | **已落地（V24 + `BookingDegradeGuard`）**：预约写侧按 `peak.degrade-max-inflight` 限在途数，超了先排队最长 `peak.degrade-wait-ms` 毫秒，等不到才返回 `4291`；读接口（平面图/余量/大屏）从不取许可，所以过载时"查看余座"仍然可用。没有引入独立线程池隔离（Tomcat 共享池 + 在途计数已满足 PRD 的语义），这一点与初稿的差异记在 §15 下方 |
 | 性能 | 平面图仍 2 次查询（座位 + 占用 Map）；分区余量单查询聚合；规则配置走内存快照 |
 | 安全 | 密码 BCrypt、参数化查询、水平越权防护、审计日志、强制释放必填原因 |
 

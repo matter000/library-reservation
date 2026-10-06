@@ -83,6 +83,12 @@ public final class BizConstants {
      */
     public static final int DAILY_CAP_MIN = 360;
 
+    /** 高峰降级：允许同时在途的预约请求数（PRD §13.4；0 = 暂停预约但不影响查看余座）。 */
+    public static final int DEGRADE_MAX_INFLIGHT = 16;
+
+    /** 高峰降级：排队等待上限（毫秒），超时返回 4291 而不是 500。 */
+    public static final int DEGRADE_WAIT_MS = 2000;
+
     /**
      * 考试周的单日累计上限（分钟）= 8 小时，PRD §12-3 括号里那半句。
      *
