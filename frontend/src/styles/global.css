@@ -448,6 +448,40 @@ body {
   align-items: center;
 }
 
+/* ★ 移动壳里凡是"用 antd 默认尺寸"的控件都要一起抬到 44：S7 只给显式的 .m-*-button 定了 44，
+   但 /m/my 的空态 CTA、/m/credit 的刷新与分页、/m/me 的两个入口是直接用 antd 默认（32px，分页 22px），
+   在 375×700 里实测就是按不准的小目标。规则收在 .m-layout 里，不碰 PC 端与已经合格的 .m/seat。 */
+.m-layout .ant-btn,
+.m-layout .ant-typography a {
+  min-height: 44px;
+}
+
+.m-layout .ant-btn-link {
+  display: inline-flex;
+  align-items: center;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* Tabs 的导航条与分页器同理：整行可点，不能让 22px 的方块当唯一入口 */
+.m-layout .ant-tabs-tab {
+  padding: 12px 0;
+}
+
+.m-layout .ant-pagination-item,
+.m-layout .ant-pagination-prev .ant-pagination-item-link,
+.m-layout .ant-pagination-next .ant-pagination-item-link {
+  min-height: 44px;
+  line-height: 42px;
+}
+
+/* ★ 分页真正被点到的是里面的 <a>（22px），只抬 li 等于没改 */
+.m-layout .ant-pagination-item a {
+  display: block;
+  min-height: 44px;
+  line-height: 42px;
+}
+
 .m-sheet-title {
   font-size: 17px;
 }
