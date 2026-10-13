@@ -108,20 +108,17 @@ powershell -ExecutionPolicy Bypass -File docs\api-smoke.ps1 -Base http://localho
 ## 7. 数据与运维提示
 
 - **默认跑 H2**（`application-h2.yml`，文件库 `./data/library`）。仓库另备一份 `application-mysql.yml`
-  （`--spring.profiles.active=mysql`，Flyway 脚本分方言放在 `db/migration/{h2,mysql}`），
-  ★ 但 **mysql 那一套从未在真 MySQL 上执行过**：本机 3306 有服务，而配置里的占位凭据 `root/root` 被拒（`ERROR 1045`）。
-  已做过的静态对账是：两套脚本的数据语句逐字同径、表/索引/DML 目标一致
-  （方法与逐条排除的误报见 `.workbuddy/regression-v2-s7/S7-24-GATE.md` §4.4）。
-  要在 MySQL 上真验收，请先改成可用凭据、建一个**专用**库（如 `library_seat_v2check`），
-  看启动日志是否 `now at version v24`，再核对 `t_open_profile` 三档窗口 = 15/45、16/44、14/46 —— 这件事已经写成一条命令：
-  `powershell -ExecutionPolicy Bypass -File docs\mysql-acceptance.ps1 -SqlUser 你的账号`（密码用 `Read-Host -AsSecureString` 现场输入，
-  只经环境变量传给子进程，不落盘、不进命令行、不进日志；默认建**专用库** `library_seat_v2check`，脚本不 DROP 任何东西）。
-  它跑三条判据：Flyway 到 v24、`flyway_schema_history` 成功记录 24 条、三档窗口逐值相等（另附表数/用户数/`t_table` 只报不判）。
-  ★ 脚本本身已过语法检查与预检失败路径（`-MysqlCli` 指错时 `exit 2`），但**真 MySQL 上的执行仍未做过一次**，因为这台机器没有可用凭据。
-  打包侧已用离线探针排除两类假故障：jar 里 `BOOT-INF/lib/mysql-connector-j-8.3.0.jar` 与 24 个 `db/migration/mysql/V*.sql` 都在；
-  以 `SPRING_PROFILES_ACTIVE=mysql` 指向一个**没有服务的端口**启动，日志是 `The following 1 profile is active: "mysql"` 之后
-  直接 `CommunicationsException … Connection refused`（栈帧来自那个驱动 jar），
-  **没有** `No suitable driver` / `Cannot load driver class` / profile 不解析这类错误 ⇒ 你只需要给一个可达的 MySQL + 凭据，剩下的是迁移本身。
+  （`--spring.profiles.active=mysql`，Flyway 脚本分方言放在 `db/migration/{h2,mysql}`）。
+  ★ **mysql 那一套已于 2026-10-13 在真 MySQL 8.0.40 上执行过**（专用库 `library_seat_v2check`）：
+  首次 `applied 24 migrations`、二次 `Successfully validated 24 migrations` + `up to date` + 种子幂等跳过，
+  `flyway_schema_history` 成功记录 24 条、三档窗口 15/45、16/44、14/46；该库上 `admin` 可登录、1F 平面图 60 座可用
+  （逐条见 `.workbuddy/regression-v2-s7/S7-24-GATE.md` §21）。
+  ★ 第一次执行时翻出一个真缺陷并已修：Flyway 9 起 MySQL 方言拆在独立模块里，
+  pom 只有 `flyway-core` 时会直接 `Unsupported Database: MySQL 8.0` —— 已补 `org.flywaydb:flyway-mysql`。
+  要自己复跑（换机器/换库）：`powershell -ExecutionPolicy Bypass -File docs\mysql-acceptance.ps1 -SqlUser 你的账号`
+  （密码 `Read-Host -AsSecureString` 现场输入，只经环境变量传给子进程，不落盘、不进 argv、不进日志；
+  默认用专用库 `library_seat_v2check`，脚本不 DROP 任何东西）。判据同上三条。
+  另外做过的静态对账（两套方言脚本数据语句逐字同径、表/索引/DML 目标一致）见门表 §4.4。
 
 - 规则全部可在 `/admin/rules` 改，**改后立即生效、无需重启**；变更前后值在 `/admin/rules/history`。
 - 已知的产品口径请读 `docs/DESIGN.md` §0.1（V2 生效范围）与 `docs/DESIGN-V2.md`；

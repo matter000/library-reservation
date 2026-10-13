@@ -42,6 +42,12 @@
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>
         </dependency>
+        <!-- Flyway 9 起 MySQL 方言拆在独立模块里，缺它就是 "Unsupported Database: MySQL 8.0"
+             （10-13 在真 MySQL 上的第一次执行抓到的，见门表 §21） -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
+        </dependency>
 
         <!-- Bean Validation -->
         <dependency>
